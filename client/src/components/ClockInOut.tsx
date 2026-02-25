@@ -38,9 +38,13 @@ export function ClockInOut() {
   }, []);
 
   const today = format(new Date(), "yyyy-MM-dd");
-  const todaysTs = timesheets?.find((t) => t.eid === user?.userId && t.date === today);
-  const hasClockedIn = !!todaysTs?.ci;
-  const hasClockedOut = !!todaysTs?.co;
+  const todaysTsList = (timesheets ?? []).filter((t) => t.eid === user?.userId && t.date === today);
+
+  // The active (open) shift: clocked in but not yet clocked out
+  const todaysTs = todaysTsList.find((t) => t.ci && !t.co) ?? null;
+
+  const hasClockedIn = !!todaysTs;
+  const hasClockedOut = false; // Once clocked out, the record is closed and a new shift can begin
 
   // Zones assigned to this employee that are active
   const assignedZoneNames = user?.geo ?? [];
@@ -262,16 +266,7 @@ export function ClockInOut() {
 
         {/* Clock button */}
         <div className="p-5 flex flex-col items-center justify-center gap-3 min-w-[180px]">
-          {hasClockedOut ? (
-            <div className="flex flex-col items-center gap-2 text-center">
-              <CheckCircle2 className="w-10 h-10 text-green-500" />
-              <p className="font-semibold text-sm">Shift Complete</p>
-              <p className="text-xs text-muted-foreground">Review and sign your timesheet</p>
-              <Button size="sm" className="mt-1 w-full" onClick={() => setLocation("/timesheets")} data-testid="button-go-sign">
-                <PenLine className="w-3.5 h-3.5 mr-1.5" /> Review & Sign
-              </Button>
-            </div>
-          ) : !hasClockedIn ? (
+          {!hasClockedIn ? (
             <>
               <Button
                 size="lg"
@@ -309,6 +304,28 @@ export function ClockInOut() {
           )}
         </div>
       </div>
+
+      {/* Banner: completed shift(s) awaiting employee signature */}
+      {(() => {
+        const unsigned = todaysTsList.filter((t) => t.ci && t.co && t.status === "pending_employee");
+        if (unsigned.length === 0) return null;
+        const single = unsigned.length === 1;
+        return (
+          <div className="border-t border-amber-200 bg-amber-50 px-5 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-2 text-sm text-amber-800">
+              <PenLine className="w-4 h-4 shrink-0" />
+              <span>
+                {single
+                  ? <>Your <strong>{unsigned[0].ci} – {unsigned[0].co}</strong> shift needs your signature before it can be approved.</>
+                  : <><strong>{unsigned.length} completed shifts</strong> today are awaiting your signature.</>}
+              </span>
+            </div>
+            <Button size="sm" variant="outline" className="border-amber-400 text-amber-800 hover:bg-amber-100 shrink-0" onClick={() => setLocation("/timesheets")} data-testid="button-go-sign">
+              <PenLine className="w-3.5 h-3.5 mr-1.5" /> Review & Sign
+            </Button>
+          </div>
+        );
+      })()}
     </div>
   );
 }
