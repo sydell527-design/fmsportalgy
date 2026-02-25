@@ -4,7 +4,8 @@ import { useCreateTimesheet, useTimesheets, useUpdateTimesheet } from "@/hooks/u
 import { useGeofences } from "@/hooks/use-geofences";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { MapPin, Clock, LogIn, LogOut, CheckCircle2, Navigation, AlertTriangle } from "lucide-react";
+import { MapPin, Clock, LogIn, LogOut, CheckCircle2, Navigation, AlertTriangle, PenLine } from "lucide-react";
+import { useLocation } from "wouter";
 import { format } from "date-fns";
 
 function haversineMetres(lat1: number, lng1: number, lat2: number, lng2: number) {
@@ -171,6 +172,8 @@ export function ClockInOut() {
     }
   };
 
+  const [, setLocation] = useLocation();
+
   if (!user) return null;
 
   const fenceOk = locationEnabled && selectedZone && isWithinFence();
@@ -263,7 +266,10 @@ export function ClockInOut() {
             <div className="flex flex-col items-center gap-2 text-center">
               <CheckCircle2 className="w-10 h-10 text-green-500" />
               <p className="font-semibold text-sm">Shift Complete</p>
-              <p className="text-xs text-muted-foreground">Submit your timesheet for approval</p>
+              <p className="text-xs text-muted-foreground">Review and sign your timesheet</p>
+              <Button size="sm" className="mt-1 w-full" onClick={() => setLocation("/timesheets")} data-testid="button-go-sign">
+                <PenLine className="w-3.5 h-3.5 mr-1.5" /> Review & Sign
+              </Button>
             </div>
           ) : !hasClockedIn ? (
             <>
