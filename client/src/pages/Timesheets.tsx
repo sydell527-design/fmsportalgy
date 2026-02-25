@@ -84,13 +84,20 @@ export default function Timesheets() {
 
   const allTs = timesheets ?? [];
 
+  const isSupervisor = user.pos === "Shift Supervisor";
+
   const visible = allTs.filter((ts) => {
-    if (user.role === "employee") return ts.eid === user.userId;
+    if (user.role === "admin") return true;
     if (user.role === "manager") {
       const emp = users?.find((u) => u.userId === ts.eid);
       return ts.eid === user.userId || emp?.fa === user.pos || emp?.sa === user.pos;
     }
-    return true;
+    // Shift supervisors also see their direct reports
+    if (isSupervisor) {
+      const emp = users?.find((u) => u.userId === ts.eid);
+      return ts.eid === user.userId || emp?.fa === user.pos;
+    }
+    return ts.eid === user.userId;
   }).sort((a, b) => (b.date ?? "").localeCompare(a.date ?? ""));
 
   const empName = (eid: string) => users?.find((u) => u.userId === eid)?.name ?? eid;
@@ -116,6 +123,13 @@ export default function Timesheets() {
   // Admin or JGM can override-edit any timesheet (even approved)
   const canAdminEdit = (ts: Timesheet) =>
     (user.role === "admin" || user.pos === "Junior General Manager") && ts.status !== "pending_employee";
+
+  // Shift Supervisor can edit a timesheet that awaits their 1st sign-off (not yet locked by JGM)
+  const canSupervisorEdit = (ts: Timesheet) => {
+    if (!isSupervisor) return false;
+    const emp = users?.find((u) => u.userId === ts.eid);
+    return ts.status === "pending_first_approval" && emp?.fa === user.pos && !ts.f2Sig && ts.eid !== user.userId;
+  };
 
   const openReview = (ts: Timesheet) => {
     setReviewForm({ ci: ts.ci ?? "", co: ts.co ?? "", brk: String(ts.brk ?? 30), notes: ts.notes ?? "", sigName: user.name });
@@ -304,6 +318,13 @@ export default function Timesheets() {
                           <XCircle className="w-3.5 h-3.5 mr-1" /> Reject
                         </Button>
                       </>
+                    )}
+
+                    {/* Supervisor can edit pending_first_approval records before JGM signs */}
+                    {canSupervisorEdit(ts) && (
+                      <Button size="sm" variant="outline" onClick={() => openAdminEdit(ts)} data-testid={`button-sup-edit-ts-${ts.id}`}>
+                        <Edit2 className="w-3.5 h-3.5 mr-1" /> Edit
+                      </Button>
                     )}
 
                     {/* Admin override edit — for locked timesheets */}

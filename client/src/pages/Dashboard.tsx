@@ -1,6 +1,8 @@
+import { useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { Layout } from "@/components/Layout";
 import { ClockInOut } from "@/components/ClockInOut";
+import { ActiveOfficers } from "@/components/ActiveOfficers";
 import { useTimesheets, useUpdateTimesheet } from "@/hooks/use-timesheets";
 import { useRequests } from "@/hooks/use-requests";
 import { useUsers } from "@/hooks/use-users";
@@ -10,10 +12,9 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useState } from "react";
 import {
   Users, Clock, CheckCircle2, AlertTriangle, FileText,
-  TrendingUp, BarChart2, Calendar, PenLine, XCircle,
+  TrendingUp, BarChart2, Calendar, PenLine, XCircle, UserCheck,
 } from "lucide-react";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
@@ -47,6 +48,9 @@ export default function Dashboard() {
   const { mutateAsync: updateTimesheet } = useUpdateTimesheet();
   const { toast } = useToast();
 
+  const isSupervisor = user?.pos === "Shift Supervisor";
+  const [supTab, setSupTab] = useState<"my-shift" | "active-officers">("my-shift");
+
   const [sigModal, setSigModal] = useState<{ ts: Timesheet; role: "approver" } | null>(null);
   const [sigName, setSigName] = useState("");
   const [rejectModal, setRejectModal] = useState<Timesheet | null>(null);
@@ -56,7 +60,7 @@ export default function Dashboard() {
   const today = format(new Date(), "yyyy-MM-dd");
   const currentMonth = format(new Date(), "yyyy-MM");
 
-  // ── Admin / Manager stats ───────────────────────────────────────────────────
+  // ── Admin / Manager stats ──────────────────────────────────────────────────
   const totalEmployees = users?.filter((u) => u.status === "active").length ?? 0;
   const clockedInToday = timesheets?.filter((t) => t.date === today && t.ci && !t.co).length ?? 0;
 
@@ -76,12 +80,20 @@ export default function Dashboard() {
   const payrollReady = timesheets?.filter((t) => t.status === "approved" && t.date?.startsWith(currentMonth)).length ?? 0;
   const pendingRequests = requests?.filter((r) => r.status === "pending").length ?? 0;
 
-  // ── Employee stats ──────────────────────────────────────────────────────────
+  // ── Employee / Supervisor stats ────────────────────────────────────────────
   const myTimesheets = timesheets?.filter((t) => t.eid === user.userId) ?? [];
   const myMonthTs = myTimesheets.filter((t) => t.date?.startsWith(currentMonth));
   const myRegHours = myMonthTs.filter((t) => t.status === "approved").reduce((s, t) => s + (t.reg ?? 0), 0);
   const myOtHours = myMonthTs.filter((t) => t.status === "approved").reduce((s, t) => s + (t.ot ?? 0), 0);
-  const myPending = myTimesheets.filter((t) => t.status === "pending_employee");
+  const myPending = myTimesheets.filter((t) => t.status === "pending_employee" && !!t.co);
+
+  // For supervisor: count officers needing sign-off
+  const officersNeedingSignoff = isSupervisor
+    ? (timesheets ?? []).filter((ts) => {
+        const emp = users?.find((u) => u.userId === ts.eid);
+        return ts.status === "pending_first_approval" && emp?.fa === user.pos && !ts.f2Sig;
+      }).length
+    : 0;
 
   const handleApprove = async (ts: Timesheet) => {
     setSigModal({ ts, role: "approver" });
@@ -126,97 +138,178 @@ export default function Dashboard() {
         <div className="bg-primary rounded-md p-6 text-primary-foreground">
           <h2 className="text-2xl font-bold mb-0.5">Welcome, {user.name}</h2>
           <p className="text-primary-foreground/80 text-sm">
-            {user.role === "admin" ? "Administrator — Full System Access" : user.role === "manager" ? "Manager — Team Oversight & Approvals" : `${user.pos} — ${user.dept}`}
+            {user.role === "admin"
+              ? "Administrator — Full System Access"
+              : user.role === "manager"
+              ? "Manager — Team Oversight & Approvals"
+              : `${user.pos} — ${user.dept}`}
           </p>
           <p className="text-primary-foreground/60 text-xs mt-1">{format(new Date(), "EEEE, MMMM d, yyyy")}</p>
         </div>
 
-        {/* Employee: Clock In/Out */}
-        {user.role === "employee" && <ClockInOut />}
+        {/* ══ SHIFT SUPERVISOR LAYOUT ══════════════════════════════════════ */}
+        {isSupervisor && (
+          <>
+            {/* Tabs */}
+            <div className="flex border-b border-border">
+              <button
+                onClick={() => setSupTab("my-shift")}
+                className={`px-5 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+                  supTab === "my-shift"
+                    ? "border-primary text-primary"
+                    : "border-transparent text-muted-foreground hover:text-foreground"
+                }`}
+                data-testid="tab-my-shift"
+              >
+                <Clock className="inline w-4 h-4 mr-1.5 -mt-0.5" />
+                My Shift
+              </button>
+              <button
+                onClick={() => setSupTab("active-officers")}
+                className={`px-5 py-2.5 text-sm font-medium border-b-2 transition-colors flex items-center gap-1.5 ${
+                  supTab === "active-officers"
+                    ? "border-primary text-primary"
+                    : "border-transparent text-muted-foreground hover:text-foreground"
+                }`}
+                data-testid="tab-active-officers"
+              >
+                <UserCheck className="w-4 h-4" />
+                Active Officers
+                {officersNeedingSignoff > 0 && (
+                  <span className="ml-1 bg-amber-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-bold">
+                    {officersNeedingSignoff}
+                  </span>
+                )}
+              </button>
+            </div>
 
-        {/* Employee: Stats */}
-        {user.role === "employee" && (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <StatCard icon={Clock} label="Regular Hours (MTD)" value={`${myRegHours.toFixed(1)}h`} />
-            <StatCard icon={TrendingUp} label="Overtime (MTD)" value={`${myOtHours.toFixed(1)}h`} />
-            <StatCard icon={FileText} label="Timesheets (MTD)" value={myMonthTs.length} />
-            <StatCard icon={AlertTriangle} label="Awaiting My Signature" value={myPending.length} color={myPending.length > 0 ? "text-amber-600" : undefined} />
-          </div>
-        )}
-
-        {/* Employee: My pending timesheets */}
-        {user.role === "employee" && myPending.length > 0 && (
-          <Card className="p-5">
-            <h3 className="font-semibold text-sm mb-3">Timesheets Awaiting Your Signature</h3>
-            <div className="space-y-2">
-              {myPending.map((ts) => (
-                <div key={ts.id} className="flex items-center justify-between py-2 border-b border-border last:border-0" data-testid={`pending-ts-${ts.id}`}>
-                  <div>
-                    <span className="font-medium text-sm">{ts.date}</span>
-                    <span className="text-muted-foreground text-xs ml-3">{ts.ci} → {ts.co}</span>
-                  </div>
-                  <Badge variant="outline" className="text-xs text-blue-600 border-blue-200 bg-blue-50">Sign Required</Badge>
+            {/* My Shift Tab */}
+            {supTab === "my-shift" && (
+              <div className="space-y-5">
+                <ClockInOut />
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <StatCard icon={Clock} label="Regular Hours (MTD)" value={`${myRegHours.toFixed(1)}h`} />
+                  <StatCard icon={TrendingUp} label="Overtime (MTD)" value={`${myOtHours.toFixed(1)}h`} />
+                  <StatCard icon={FileText} label="Timesheets (MTD)" value={myMonthTs.length} />
+                  <StatCard
+                    icon={AlertTriangle}
+                    label="My Pending Signature"
+                    value={myPending.length}
+                    color={myPending.length > 0 ? "text-amber-600" : undefined}
+                  />
                 </div>
-              ))}
-            </div>
-          </Card>
-        )}
-
-        {/* Admin / Manager: Stats */}
-        {user.role !== "employee" && (
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
-            {user.role === "admin" && <StatCard icon={Users} label="Active Employees" value={totalEmployees} />}
-            <StatCard icon={Clock} label="Clocked In Today" value={clockedInToday} color="text-green-600" />
-            <StatCard icon={AlertTriangle} label="Pending Approvals" value={pendingApprovals.length} color={pendingApprovals.length > 0 ? "text-amber-600" : undefined} />
-            <StatCard icon={CheckCircle2} label="Approved (MTD)" value={payrollReady} />
-            <StatCard icon={Calendar} label="Open Requests" value={pendingRequests} />
-            {user.role === "admin" && <StatCard icon={BarChart2} label="Disputes Pending" value={disputesPending} color={disputesPending > 0 ? "text-red-500" : undefined} />}
-          </div>
-        )}
-
-        {/* Admin / Manager: Pending Approvals Queue */}
-        {user.role !== "employee" && (
-          <Card className="p-5">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-semibold">Pending Approvals Queue</h3>
-              <Badge variant="secondary">{pendingApprovals.length} item{pendingApprovals.length !== 1 ? "s" : ""}</Badge>
-            </div>
-            {pendingApprovals.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground border-2 border-dashed border-border rounded-md">
-                <CheckCircle2 className="w-8 h-8 mx-auto mb-2 opacity-30" />
-                <p className="text-sm">All clear — no approvals waiting.</p>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {pendingApprovals.map((ts) => {
-                  const emp = users?.find((u) => u.userId === ts.eid);
-                  return (
-                    <div key={ts.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 border border-border rounded-md" data-testid={`approval-row-${ts.id}`}>
-                      <div className="flex items-center gap-3">
-                        <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-sm shrink-0">
-                          {emp?.av ?? ts.eid.slice(0, 2)}
+                {myPending.length > 0 && (
+                  <Card className="p-5">
+                    <h3 className="font-semibold text-sm mb-3">Timesheets Awaiting Your Signature</h3>
+                    <div className="space-y-2">
+                      {myPending.map((ts) => (
+                        <div key={ts.id} className="flex items-center justify-between py-2 border-b border-border last:border-0" data-testid={`pending-ts-${ts.id}`}>
+                          <div>
+                            <span className="font-medium text-sm">{ts.date}</span>
+                            <span className="text-muted-foreground text-xs ml-3">{ts.ci} → {ts.co}</span>
+                          </div>
+                          <Badge variant="outline" className="text-xs text-blue-600 border-blue-200 bg-blue-50">Sign Required</Badge>
                         </div>
-                        <div>
-                          <p className="font-semibold text-sm">{emp?.name ?? ts.eid}</p>
-                          <p className="text-xs text-muted-foreground">{ts.date} · {ts.ci} – {ts.co ?? "?"} · {ts.reg}h reg{(ts.ot ?? 0) > 0 ? ` + ${ts.ot}h OT` : ""}</p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className={`text-xs px-2 py-0.5 rounded border ${statusColor(ts.status)}`}>{statusLabel(ts.status)}</span>
-                        {ts.disputed && <span className="text-xs px-2 py-0.5 rounded border bg-orange-100 text-orange-700 border-orange-200">Disputed</span>}
-                        <Button size="sm" onClick={() => handleApprove(ts)} data-testid={`button-approve-${ts.id}`}>
-                          <PenLine className="w-3.5 h-3.5 mr-1.5" /> Sign
-                        </Button>
-                        <Button size="sm" variant="outline" onClick={() => handleReject(ts)} data-testid={`button-reject-${ts.id}`}>
-                          <XCircle className="w-3.5 h-3.5 mr-1.5" /> Reject
-                        </Button>
-                      </div>
+                      ))}
                     </div>
-                  );
-                })}
+                  </Card>
+                )}
               </div>
             )}
-          </Card>
+
+            {/* Active Officers Tab */}
+            {supTab === "active-officers" && <ActiveOfficers />}
+          </>
+        )}
+
+        {/* ══ REGULAR EMPLOYEE LAYOUT ══════════════════════════════════════ */}
+        {user.role === "employee" && !isSupervisor && (
+          <>
+            <ClockInOut />
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <StatCard icon={Clock} label="Regular Hours (MTD)" value={`${myRegHours.toFixed(1)}h`} />
+              <StatCard icon={TrendingUp} label="Overtime (MTD)" value={`${myOtHours.toFixed(1)}h`} />
+              <StatCard icon={FileText} label="Timesheets (MTD)" value={myMonthTs.length} />
+              <StatCard
+                icon={AlertTriangle}
+                label="Awaiting My Signature"
+                value={myPending.length}
+                color={myPending.length > 0 ? "text-amber-600" : undefined}
+              />
+            </div>
+            {myPending.length > 0 && (
+              <Card className="p-5">
+                <h3 className="font-semibold text-sm mb-3">Timesheets Awaiting Your Signature</h3>
+                <div className="space-y-2">
+                  {myPending.map((ts) => (
+                    <div key={ts.id} className="flex items-center justify-between py-2 border-b border-border last:border-0" data-testid={`pending-ts-${ts.id}`}>
+                      <div>
+                        <span className="font-medium text-sm">{ts.date}</span>
+                        <span className="text-muted-foreground text-xs ml-3">{ts.ci} → {ts.co}</span>
+                      </div>
+                      <Badge variant="outline" className="text-xs text-blue-600 border-blue-200 bg-blue-50">Sign Required</Badge>
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            )}
+          </>
+        )}
+
+        {/* ══ ADMIN / MANAGER LAYOUT ═══════════════════════════════════════ */}
+        {user.role !== "employee" && (
+          <>
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+              {user.role === "admin" && <StatCard icon={Users} label="Active Employees" value={totalEmployees} />}
+              <StatCard icon={Clock} label="Clocked In Today" value={clockedInToday} color="text-green-600" />
+              <StatCard icon={AlertTriangle} label="Pending Approvals" value={pendingApprovals.length} color={pendingApprovals.length > 0 ? "text-amber-600" : undefined} />
+              <StatCard icon={CheckCircle2} label="Approved (MTD)" value={payrollReady} />
+              <StatCard icon={Calendar} label="Open Requests" value={pendingRequests} />
+              {user.role === "admin" && <StatCard icon={BarChart2} label="Disputes Pending" value={disputesPending} color={disputesPending > 0 ? "text-red-500" : undefined} />}
+            </div>
+
+            <Card className="p-5">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-semibold">Pending Approvals Queue</h3>
+                <Badge variant="secondary">{pendingApprovals.length} item{pendingApprovals.length !== 1 ? "s" : ""}</Badge>
+              </div>
+              {pendingApprovals.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground border-2 border-dashed border-border rounded-md">
+                  <CheckCircle2 className="w-8 h-8 mx-auto mb-2 opacity-30" />
+                  <p className="text-sm">All clear — no approvals waiting.</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {pendingApprovals.map((ts) => {
+                    const emp = users?.find((u) => u.userId === ts.eid);
+                    return (
+                      <div key={ts.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 border border-border rounded-md" data-testid={`approval-row-${ts.id}`}>
+                        <div className="flex items-center gap-3">
+                          <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-sm shrink-0">
+                            {emp?.av ?? ts.eid.slice(0, 2)}
+                          </div>
+                          <div>
+                            <p className="font-semibold text-sm">{emp?.name ?? ts.eid}</p>
+                            <p className="text-xs text-muted-foreground">{ts.date} · {ts.ci} – {ts.co ?? "?"} · {ts.reg}h reg{(ts.ot ?? 0) > 0 ? ` + ${ts.ot}h OT` : ""}</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className={`text-xs px-2 py-0.5 rounded border ${statusColor(ts.status)}`}>{statusLabel(ts.status)}</span>
+                          {ts.disputed && <span className="text-xs px-2 py-0.5 rounded border bg-orange-100 text-orange-700 border-orange-200">Disputed</span>}
+                          <Button size="sm" onClick={() => handleApprove(ts)} data-testid={`button-approve-${ts.id}`}>
+                            <PenLine className="w-3.5 h-3.5 mr-1.5" /> Sign
+                          </Button>
+                          <Button size="sm" variant="outline" onClick={() => handleReject(ts)} data-testid={`button-reject-${ts.id}`}>
+                            <XCircle className="w-3.5 h-3.5 mr-1.5" /> Reject
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </Card>
+          </>
         )}
       </div>
 
@@ -236,14 +329,9 @@ export default function Dashboard() {
               </div>
               <div className="space-y-1.5">
                 <Label>Your Full Name (typed signature)</Label>
-                <Input
-                  value={sigName}
-                  onChange={(e) => setSigName(e.target.value)}
-                  placeholder="Type your full name"
-                  data-testid="input-sig-name"
-                />
+                <Input value={sigName} onChange={(e) => setSigName(e.target.value)} placeholder="Type your full name" data-testid="input-sig-name" />
               </div>
-              <p className="text-xs text-muted-foreground">By typing your name, you are applying a legally binding electronic signature to approve this timesheet entry. Timestamp and source will be recorded.</p>
+              <p className="text-xs text-muted-foreground">By typing your name, you are applying a legally binding electronic signature. Timestamp and source will be recorded.</p>
               <div className="flex gap-2 justify-end">
                 <Button variant="outline" onClick={() => setSigModal(null)}>Cancel</Button>
                 <Button onClick={submitApproval} disabled={!sigName.trim()} data-testid="button-confirm-sig">
