@@ -69,6 +69,8 @@ export default function Timesheets() {
   const { toast } = useToast();
 
   const [expandedId, setExpandedId] = useState<number | null>(null);
+  // Tab only shown for Full Access + Supervisors
+  const [tsTab, setTsTab] = useState<"mine" | "general">("mine");
 
   // Review & Sign modal (employee — opens after clock-out)
   const [reviewModal, setReviewModal] = useState<Timesheet | null>(null);
@@ -108,6 +110,12 @@ export default function Timesheets() {
     // Stage 1: basic employee sees only own
     return ts.eid === user.userId;
   }).sort((a, b) => (b.date ?? "").localeCompare(a.date ?? ""));
+
+  // Split for tabbed view — available to Full Access users and Supervisors
+  const hasTeamView = isFullAccess || isSupervisor;
+  const myTs   = visible.filter((ts) => ts.eid === user.userId);
+  const teamTs = visible.filter((ts) => ts.eid !== user.userId);
+  const displayTs = hasTeamView ? (tsTab === "mine" ? myTs : teamTs) : visible;
 
   const empName = (eid: string) => users?.find((u) => u.userId === eid)?.name ?? eid;
   const empAv = (eid: string) => users?.find((u) => u.userId === eid)?.av ?? eid.slice(0, 2);
@@ -246,7 +254,9 @@ export default function Timesheets() {
         <div>
           <h1 className="text-2xl font-bold">Timesheets</h1>
           <p className="text-muted-foreground text-sm mt-0.5">
-            {isFullAccess ? "Team timesheets and approval workflow" : "Your attendance records and approval status"}
+            {hasTeamView
+              ? tsTab === "mine" ? "Your personal attendance records" : "Team timesheets and approval workflow"
+              : "Your attendance records and approval status"}
           </p>
         </div>
 
@@ -268,15 +278,49 @@ export default function Timesheets() {
         </div>
       </div>
 
+      {/* ── Tab bar (Full Access & Supervisors only) ──────────────────────── */}
+      {hasTeamView && (
+        <div className="flex border-b border-border mb-5">
+          <button
+            onClick={() => setTsTab("mine")}
+            className={`px-5 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+              tsTab === "mine"
+                ? "border-primary text-primary"
+                : "border-transparent text-muted-foreground hover:text-foreground"
+            }`}
+            data-testid="tab-my-timesheet"
+          >
+            My Timesheet
+            {myTs.length > 0 && (
+              <span className="ml-2 text-xs bg-muted text-muted-foreground rounded-full px-1.5 py-0.5">{myTs.length}</span>
+            )}
+          </button>
+          <button
+            onClick={() => setTsTab("general")}
+            className={`px-5 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+              tsTab === "general"
+                ? "border-primary text-primary"
+                : "border-transparent text-muted-foreground hover:text-foreground"
+            }`}
+            data-testid="tab-general-timesheet"
+          >
+            General Timesheet
+            {teamTs.length > 0 && (
+              <span className="ml-2 text-xs bg-muted text-muted-foreground rounded-full px-1.5 py-0.5">{teamTs.length}</span>
+            )}
+          </button>
+        </div>
+      )}
+
       {isLoading ? (
         <div className="text-center py-12 text-muted-foreground text-sm">Loading...</div>
-      ) : visible.length === 0 ? (
+      ) : displayTs.length === 0 ? (
         <div className="text-center py-16 border-2 border-dashed border-border rounded-md text-muted-foreground text-sm">
           No timesheet records found.
         </div>
       ) : (
         <div className="space-y-3">
-          {visible.map((ts) => {
+          {displayTs.map((ts) => {
             const expanded = expandedId === ts.id;
             const inProgress = isInProgress(ts);
             const isLocked = ts.status !== "pending_employee";
@@ -292,7 +336,8 @@ export default function Timesheets() {
                   {/* Main info */}
                   <div className="flex-1 min-w-0">
                     <div className="flex flex-wrap items-center gap-2 mb-1">
-                      {(isFullAccess || isSupervisor) && (
+                      {/* Show employee name on General tab only — on My Timesheet it's always the current user */}
+                      {(isFullAccess || isSupervisor) && tsTab === "general" && (
                         <span className="font-semibold text-sm">{empName(ts.eid)}</span>
                       )}
                       <span className="text-sm text-muted-foreground">{ts.date}</span>
