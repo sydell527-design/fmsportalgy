@@ -170,6 +170,7 @@ export function ActiveOfficers() {
                     <p className="text-xs text-muted-foreground mt-0.5">
                       Clocked in <strong>{ts.ci}</strong>
                       {ts.zone && <> · <MapPin className="inline w-3 h-3" /> {ts.zone}</>}
+                      {ts.post && <> · Post <strong>{ts.post}</strong></>}
                     </p>
                     <p className="text-xs text-green-600 font-medium mt-1 flex items-center gap-1">
                       <Clock className="w-3 h-3" /> On duty for {elapsed(ts.ci!)}

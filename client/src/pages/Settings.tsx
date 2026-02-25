@@ -18,7 +18,7 @@ import { useToast } from "@/hooks/use-toast";
 import { PAYROLL_CONSTANTS } from "@/lib/payroll";
 import type { Geofence } from "@shared/schema";
 
-const EMPTY_FENCE = { name: "", lat: "", lng: "", radius: "150", description: "", active: true };
+const EMPTY_FENCE = { name: "", lat: "", lng: "", radius: "150", posts: "10", description: "", active: true };
 
 export default function Settings() {
   const { user, refreshUser } = useAuth();
@@ -58,23 +58,24 @@ export default function Settings() {
 
   // ── Geofence CRUD ──────────────────────────────────────────────────────────
   const openCreate = () => setFenceModal({ mode: "create", data: { ...EMPTY_FENCE } });
-  const openEdit = (g: Geofence) => setFenceModal({ mode: "edit", data: { id: g.id, name: g.name, lat: String(g.lat), lng: String(g.lng), radius: String(g.radius), description: g.description ?? "", active: g.active } });
+  const openEdit = (g: Geofence) => setFenceModal({ mode: "edit", data: { id: g.id, name: g.name, lat: String(g.lat), lng: String(g.lng), radius: String(g.radius), posts: String(g.posts ?? 10), description: g.description ?? "", active: g.active } });
 
   const handleFenceSave = async () => {
     if (!fenceModal) return;
-    const { name, lat, lng, radius, description, active, id } = fenceModal.data;
+    const { name, lat, lng, radius, posts, description, active, id } = fenceModal.data;
     if (!name.trim()) { toast({ title: "Zone name is required", variant: "destructive" }); return; }
     const latNum = parseFloat(lat);
     const lngNum = parseFloat(lng);
     const radiusNum = parseInt(radius);
+    const postsNum = Math.max(1, Math.min(50, parseInt(posts) || 10));
     if (isNaN(latNum) || isNaN(lngNum)) { toast({ title: "Enter valid GPS coordinates", variant: "destructive" }); return; }
     if (isNaN(radiusNum) || radiusNum < 10) { toast({ title: "Radius must be at least 10 metres", variant: "destructive" }); return; }
     try {
       if (fenceModal.mode === "create") {
-        await createGeofence({ name: name.trim(), lat: latNum, lng: lngNum, radius: radiusNum, description: description || null, active });
+        await createGeofence({ name: name.trim(), lat: latNum, lng: lngNum, radius: radiusNum, posts: postsNum, description: description || null, active });
         toast({ title: "Geofence zone created" });
       } else {
-        await updateGeofence({ id: id!, name: name.trim(), lat: latNum, lng: lngNum, radius: radiusNum, description: description || null, active });
+        await updateGeofence({ id: id!, name: name.trim(), lat: latNum, lng: lngNum, radius: radiusNum, posts: postsNum, description: description || null, active });
         toast({ title: "Geofence zone updated" });
       }
       setFenceModal(null);
@@ -291,7 +292,7 @@ export default function Settings() {
 
                   <div className="text-xs text-muted-foreground font-mono mb-3 space-y-0.5">
                     <p>Lat: {g.lat.toFixed(6)} · Lng: {g.lng.toFixed(6)}</p>
-                    <p>Radius: <strong className="text-foreground">{g.radius}m</strong></p>
+                    <p>Radius: <strong className="text-foreground">{g.radius}m</strong> · Posts: <strong className="text-foreground">{g.posts ?? 10}</strong></p>
                   </div>
 
                   <div className="flex items-center gap-2">
@@ -398,18 +399,33 @@ export default function Settings() {
                   />
                 </div>
               </div>
-              <div className="space-y-1.5">
-                <Label>Radius (metres) <span className="text-destructive">*</span></Label>
-                <Input
-                  type="number"
-                  min={10}
-                  max={5000}
-                  value={fenceModal.data.radius}
-                  onChange={(e) => setFenceModal({ ...fenceModal, data: { ...fenceModal.data, radius: e.target.value } })}
-                  placeholder="150"
-                  data-testid="input-fence-radius"
-                />
-                <p className="text-xs text-muted-foreground">Recommended: 50–150m for a building, 200–500m for a compound.</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label>Radius (metres) <span className="text-destructive">*</span></Label>
+                  <Input
+                    type="number"
+                    min={10}
+                    max={5000}
+                    value={fenceModal.data.radius}
+                    onChange={(e) => setFenceModal({ ...fenceModal, data: { ...fenceModal.data, radius: e.target.value } })}
+                    placeholder="150"
+                    data-testid="input-fence-radius"
+                  />
+                  <p className="text-xs text-muted-foreground">50–150m building, 200–500m compound</p>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Number of Posts <span className="text-destructive">*</span></Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    max={50}
+                    value={fenceModal.data.posts}
+                    onChange={(e) => setFenceModal({ ...fenceModal, data: { ...fenceModal.data, posts: e.target.value } })}
+                    placeholder="10"
+                    data-testid="input-fence-posts"
+                  />
+                  <p className="text-xs text-muted-foreground">Posts available at this zone (1–50)</p>
+                </div>
               </div>
               <div className="flex items-center gap-2">
                 <input

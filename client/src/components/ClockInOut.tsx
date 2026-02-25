@@ -4,7 +4,7 @@ import { useCreateTimesheet, useTimesheets, useUpdateTimesheet } from "@/hooks/u
 import { useGeofences } from "@/hooks/use-geofences";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { MapPin, Clock, LogIn, LogOut, CheckCircle2, Navigation, AlertTriangle, PenLine } from "lucide-react";
+import { MapPin, Clock, LogIn, LogOut, CheckCircle2, Navigation, AlertTriangle, PenLine, ShieldCheck } from "lucide-react";
 import { useLocation } from "wouter";
 import { format } from "date-fns";
 
@@ -28,6 +28,7 @@ export function ClockInOut() {
 
   const [currentTime, setCurrentTime] = useState(new Date());
   const [selectedZone, setSelectedZone] = useState("");
+  const [selectedPost, setSelectedPost] = useState("");
   const [gpsCoords, setGpsCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [gpsStatus, setGpsStatus] = useState<"idle" | "locating" | "ok" | "error">("idle");
   const [distanceFromZone, setDistanceFromZone] = useState<number | null>(null);
@@ -89,6 +90,7 @@ export function ClockInOut() {
 
   const handleZoneChange = (zoneName: string) => {
     setSelectedZone(zoneName);
+    setSelectedPost(""); // reset post when zone changes
     const fence = availableZones.find((g) => g.name === zoneName);
     if (fence && gpsCoords) {
       const dist = haversineMetres(gpsCoords.lat, gpsCoords.lng, fence.lat, fence.lng);
@@ -115,6 +117,10 @@ export function ClockInOut() {
       toast({ title: "Work location required", description: "Please select your work location.", variant: "destructive" });
       return;
     }
+    if (!selectedPost) {
+      toast({ title: "Post number required", description: "Please select your post number.", variant: "destructive" });
+      return;
+    }
     if (!isWithinFence()) {
       const dist = distanceFromZone ?? "?";
       toast({
@@ -133,11 +139,12 @@ export function ClockInOut() {
         ci: format(new Date(), "HH:mm"),
         gIn: gpsCoords,
         zone: selectedZone,
+        post: selectedPost,
         status: "pending_employee",
         reg: 0, ot: 0, brk: 0,
         notes: "", edited: false, hist: [],
       } as any);
-      toast({ title: "Clocked in!", description: `Zone: ${selectedZone}` });
+      toast({ title: "Clocked in!", description: `${selectedZone} · Post ${selectedPost}` });
     } catch (err: any) {
       toast({ title: "Clock in failed", description: err.message, variant: "destructive" });
     }
@@ -201,6 +208,7 @@ export function ClockInOut() {
               Clocked in: <strong className="text-foreground">{todaysTs.ci}</strong>
               {todaysTs.co && <> · Out: <strong className="text-foreground">{todaysTs.co}</strong></>}
               {todaysTs.zone && <> · Zone: <strong className="text-foreground">{todaysTs.zone}</strong></>}
+              {todaysTs.post && <> · Post: <strong className="text-foreground">{todaysTs.post}</strong></>}
             </p>
           )}
         </div>
@@ -228,6 +236,33 @@ export function ClockInOut() {
                   ))}
                 </select>
               )}
+
+            {/* Post number — shown when a zone is selected */}
+            {selectedZone && !hasClockedIn && (
+              <div className="mt-3">
+                <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide mb-1.5 flex items-center gap-1.5">
+                  <ShieldCheck className="w-3.5 h-3.5" /> Post Number
+                </p>
+                <select
+                  className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm disabled:opacity-50"
+                  value={selectedPost}
+                  onChange={(e) => setSelectedPost(e.target.value)}
+                  data-testid="select-post-number"
+                >
+                  <option value="">— Select post —</option>
+                  {Array.from({ length: selectedFence?.posts ?? 10 }, (_, i) => i + 1).map((n) => (
+                    <option key={n} value={String(n)}>Post {n}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {/* Show current post when clocked in */}
+            {hasClockedIn && todaysTs?.post && (
+              <p className="text-xs text-muted-foreground mt-2">
+                Post: <strong className="text-foreground">Post {todaysTs.post}</strong>
+              </p>
+            )}
             </div>
 
             {/* GPS button */}
@@ -273,15 +308,15 @@ export function ClockInOut() {
                 size="lg"
                 className="w-full"
                 onClick={handleClockIn}
-                disabled={isCreating || !locationEnabled || !selectedZone || gpsStatus === "locating"}
+                disabled={isCreating || !locationEnabled || !selectedZone || !selectedPost || gpsStatus === "locating"}
                 data-testid="button-clock-in"
               >
                 <LogIn className="w-5 h-5 mr-2" />
                 {isCreating ? "Processing..." : "Clock In"}
               </Button>
-              {(!locationEnabled || !selectedZone) && (
+              {(!locationEnabled || !selectedZone || !selectedPost) && (
                 <p className="text-xs text-muted-foreground text-center">
-                  {!selectedZone ? "Select location first" : "Enable location first"}
+                  {!selectedZone ? "Select location first" : !selectedPost ? "Select post number" : "Enable location first"}
                 </p>
               )}
             </>

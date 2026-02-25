@@ -38,6 +38,7 @@ export const timesheets = pgTable("timesheets", {
   gIn: jsonb("g_in").$type<{ lat: number; lng: number } | null>(),
   gOut: jsonb("g_out").$type<{ lat: number; lng: number } | null>(),
   zone: text("zone"),
+  post: text("post"),
   status: text("status").notNull(),
   eSig: jsonb("e_sig").$type<{ name: string; time: string; ip: string } | null>(),
   f1Sig: jsonb("f1_sig").$type<{ name: string; time: string; ip: string } | null>(),
@@ -71,6 +72,7 @@ export const geofences = pgTable("geofences", {
   lat: doublePrecision("lat").notNull(),
   lng: doublePrecision("lng").notNull(),
   radius: integer("radius").notNull().default(150),
+  posts: integer("posts").notNull().default(10),
   description: text("description"),
   active: boolean("active").notNull().default(true),
 });

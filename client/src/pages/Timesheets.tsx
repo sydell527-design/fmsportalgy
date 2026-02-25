@@ -355,7 +355,7 @@ export default function Timesheets() {
                       <span className="flex items-center gap-1"><Clock className="w-3 h-3" /> Out: <strong className="text-foreground">{ts.co ?? "--"}</strong></span>
                       <span>Reg: <strong className="text-foreground">{ts.reg}h</strong></span>
                       {(ts.ot ?? 0) > 0 && <span>OT: <strong className="text-amber-600">{ts.ot}h</strong></span>}
-                      {ts.zone && <span className="flex items-center gap-1"><MapPin className="w-3 h-3" /> {ts.zone}</span>}
+                      {ts.zone && <span className="flex items-center gap-1"><MapPin className="w-3 h-3" /> {ts.zone}{ts.post ? ` · Post ${ts.post}` : ""}</span>}
                       {ts.edited && <span className="text-amber-500 font-medium">Edited</span>}
                     </div>
                   </div>
