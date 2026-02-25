@@ -1,5 +1,8 @@
 import { z } from 'zod';
 import { insertUserSchema, insertTimesheetSchema, insertRequestSchema, users, timesheets, requests } from './schema';
+import type { User, InsertUser, Timesheet, InsertTimesheet, Request, InsertRequest } from './schema';
+
+export type { User, InsertUser, Timesheet, InsertTimesheet, Request, InsertRequest };
 
 export const errorSchemas = {
   validation: z.object({ message: z.string(), field: z.string().optional() }),
@@ -22,9 +25,7 @@ export const api = {
     logout: {
       method: 'POST' as const,
       path: '/api/auth/logout' as const,
-      responses: {
-        200: z.object({ message: z.string() }),
-      }
+      responses: { 200: z.object({ message: z.string() }) }
     },
     me: {
       method: 'GET' as const,
@@ -39,9 +40,7 @@ export const api = {
     list: {
       method: 'GET' as const,
       path: '/api/users' as const,
-      responses: {
-        200: z.array(z.custom<typeof users.$inferSelect>()),
-      }
+      responses: { 200: z.array(z.custom<typeof users.$inferSelect>()) }
     },
     create: {
       method: 'POST' as const,
@@ -67,9 +66,7 @@ export const api = {
     list: {
       method: 'GET' as const,
       path: '/api/timesheets' as const,
-      responses: {
-        200: z.array(z.custom<typeof timesheets.$inferSelect>()),
-      }
+      responses: { 200: z.array(z.custom<typeof timesheets.$inferSelect>()) }
     },
     create: {
       method: 'POST' as const,
@@ -95,9 +92,7 @@ export const api = {
     list: {
       method: 'GET' as const,
       path: '/api/requests' as const,
-      responses: {
-        200: z.array(z.custom<typeof requests.$inferSelect>()),
-      }
+      responses: { 200: z.array(z.custom<typeof requests.$inferSelect>()) }
     },
     create: {
       method: 'POST' as const,

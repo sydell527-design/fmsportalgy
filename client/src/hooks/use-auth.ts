@@ -1,17 +1,32 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { api, type User } from "@shared/routes";
+import { api } from "@shared/routes";
+import type { User } from "@shared/schema";
+
+const AUTH_KEY = "fms:session";
+
+function getStoredUser(): User | null {
+  try {
+    const raw = localStorage.getItem(AUTH_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function storeUser(user: User | null) {
+  if (user) {
+    localStorage.setItem(AUTH_KEY, JSON.stringify(user));
+  } else {
+    localStorage.removeItem(AUTH_KEY);
+  }
+}
 
 export function useAuth() {
   const queryClient = useQueryClient();
 
-  const { data: user, isLoading, error } = useQuery<User | null>({
+  const { data: user, isLoading } = useQuery<User | null>({
     queryKey: [api.auth.me.path],
-    queryFn: async () => {
-      const res = await fetch(api.auth.me.path, { credentials: "include" });
-      if (res.status === 401) return null;
-      if (!res.ok) throw new Error("Failed to fetch user");
-      return api.auth.me.responses[200].parse(await res.json());
-    },
+    queryFn: async () => getStoredUser(),
     staleTime: Infinity,
     retry: false,
   });
@@ -19,30 +34,25 @@ export function useAuth() {
   const loginMutation = useMutation({
     mutationFn: async (credentials: { username: string; password: string }) => {
       const res = await fetch(api.auth.login.path, {
-        method: api.auth.login.method,
+        method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(credentials),
-        credentials: "include",
       });
-      
       if (!res.ok) {
         if (res.status === 401) throw new Error("Invalid username or password");
         throw new Error("Login failed");
       }
-      return api.auth.login.responses[200].parse(await res.json());
+      return await res.json() as User;
     },
     onSuccess: (data) => {
+      storeUser(data);
       queryClient.setQueryData([api.auth.me.path], data);
     },
   });
 
   const logoutMutation = useMutation({
     mutationFn: async () => {
-      const res = await fetch(api.auth.logout.path, {
-        method: api.auth.logout.method,
-        credentials: "include",
-      });
-      if (!res.ok) throw new Error("Logout failed");
+      storeUser(null);
     },
     onSuccess: () => {
       queryClient.setQueryData([api.auth.me.path], null);
@@ -51,13 +61,19 @@ export function useAuth() {
     },
   });
 
+  // Used to refresh user data after password change or profile update
+  const refreshUser = (updatedUser: User) => {
+    storeUser(updatedUser);
+    queryClient.setQueryData([api.auth.me.path], updatedUser);
+  };
+
   return {
-    user,
+    user: user ?? null,
     isLoading,
-    error,
     login: loginMutation.mutateAsync,
     isLoggingIn: loginMutation.isPending,
     logout: logoutMutation.mutateAsync,
     isLoggingOut: logoutMutation.isPending,
+    refreshUser,
   };
 }
