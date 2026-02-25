@@ -1,6 +1,17 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, buildUrl, type InsertUser, type User } from "@shared/routes";
 
+export function useDeleteUser() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: number) => {
+      const res = await fetch(`/api/users/${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Failed to delete user");
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: [api.users.list.path] }),
+  });
+}
+
 export function useUsers() {
   return useQuery<User[]>({
     queryKey: [api.users.list.path],

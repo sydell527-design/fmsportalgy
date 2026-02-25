@@ -39,6 +39,12 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       res.status(500).json({ message: "Server error" });
     }
   });
+  app.delete("/api/users/:id", async (req, res) => {
+    try {
+      await storage.deleteUser(Number(req.params.id));
+      res.status(204).send();
+    } catch { res.status(500).json({ message: "Server error" }); }
+  });
 
   // ── TIMESHEETS ────────────────────────────────────────────────────────────
   app.get(api.timesheets.list.path, async (_req, res) => res.json(await storage.getTimesheets()));
