@@ -15,6 +15,7 @@ import Settings from "@/pages/Settings";
 import Payroll from "@/pages/Payroll";
 import Reports from "@/pages/Reports";
 import Changelog from "@/pages/Changelog";
+import EmployeeProfile from "@/pages/EmployeeProfile";
 
 function ProtectedRoute({ component: Component }: { component: any }) {
   const { user, isLoading } = useAuth();
@@ -39,6 +40,7 @@ function Router() {
       <Route path="/payroll">{() => <ProtectedRoute component={Payroll} />}</Route>
       <Route path="/reports">{() => <ProtectedRoute component={Reports} />}</Route>
       <Route path="/employees">{() => <ProtectedRoute component={Employees} />}</Route>
+      <Route path="/employees/:userId">{() => <ProtectedRoute component={EmployeeProfile} />}</Route>
       <Route path="/settings">{() => <ProtectedRoute component={Settings} />}</Route>
       <Route path="/changelog">{() => <ProtectedRoute component={Changelog} />}</Route>
       <Route component={NotFound} />

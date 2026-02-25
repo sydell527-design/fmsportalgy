@@ -3,7 +3,7 @@ import { Layout } from "@/components/Layout";
 import { useUsers, useCreateUser, useUpdateUser, useDeleteUser } from "@/hooks/use-users";
 import { useGeofences } from "@/hooks/use-geofences";
 import { useAuth } from "@/hooks/use-auth";
-import { Redirect } from "wouter";
+import { Redirect, Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -260,7 +260,7 @@ export default function Employees() {
                           {u.av || getInitials(u.name)}
                         </div>
                         <div>
-                          <p className="font-semibold leading-tight" data-testid={`text-name-${u.id}`}>{u.name}</p>
+                          <Link href={`/employees/${u.userId}`} className="font-semibold leading-tight hover:underline hover:text-primary transition-colors" data-testid={`link-profile-${u.id}`}>{u.name}</Link>
                           <p className="text-xs text-muted-foreground font-mono">{u.userId}</p>
                         </div>
                       </div>

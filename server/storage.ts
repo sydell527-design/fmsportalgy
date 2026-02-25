@@ -1,10 +1,12 @@
 import { db } from "./db";
 import {
-  users, timesheets, requests, geofences,
+  users, timesheets, requests, geofences, employeeChildren, employeeLoans,
   type User, type InsertUser,
   type Timesheet, type InsertTimesheet,
   type Request, type InsertRequest,
   type Geofence, type InsertGeofence,
+  type EmployeeChild, type InsertEmployeeChild,
+  type EmployeeLoan, type InsertEmployeeLoan,
 } from "@shared/schema";
 import { eq, and, gte, lte, desc } from "drizzle-orm";
 
@@ -40,6 +42,16 @@ export interface IStorage {
   createGeofence(geo: InsertGeofence): Promise<Geofence>;
   updateGeofence(id: number, updates: Partial<InsertGeofence>): Promise<Geofence>;
   deleteGeofence(id: number): Promise<void>;
+
+  getChildrenByEid(eid: string): Promise<EmployeeChild[]>;
+  createChild(child: InsertEmployeeChild): Promise<EmployeeChild>;
+  updateChild(id: number, updates: Partial<InsertEmployeeChild>): Promise<EmployeeChild>;
+  deleteChild(id: number): Promise<void>;
+
+  getLoansByEid(eid: string): Promise<EmployeeLoan[]>;
+  createLoan(loan: InsertEmployeeLoan): Promise<EmployeeLoan>;
+  updateLoan(id: number, updates: Partial<InsertEmployeeLoan>): Promise<EmployeeLoan>;
+  deleteLoan(id: number): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -126,6 +138,36 @@ export class DatabaseStorage implements IStorage {
   }
   async deleteGeofence(id: number) {
     await db.delete(geofences).where(eq(geofences.id, id));
+  }
+
+  async getChildrenByEid(eid: string) {
+    return db.select().from(employeeChildren).where(eq(employeeChildren.eid, eid));
+  }
+  async createChild(child: InsertEmployeeChild) {
+    const [c] = await db.insert(employeeChildren).values(child).returning();
+    return c;
+  }
+  async updateChild(id: number, updates: Partial<InsertEmployeeChild>) {
+    const [c] = await db.update(employeeChildren).set(updates).where(eq(employeeChildren.id, id)).returning();
+    return c;
+  }
+  async deleteChild(id: number) {
+    await db.delete(employeeChildren).where(eq(employeeChildren.id, id));
+  }
+
+  async getLoansByEid(eid: string) {
+    return db.select().from(employeeLoans).where(eq(employeeLoans.eid, eid));
+  }
+  async createLoan(loan: InsertEmployeeLoan) {
+    const [l] = await db.insert(employeeLoans).values(loan).returning();
+    return l;
+  }
+  async updateLoan(id: number, updates: Partial<InsertEmployeeLoan>) {
+    const [l] = await db.update(employeeLoans).set(updates).where(eq(employeeLoans.id, id)).returning();
+    return l;
+  }
+  async deleteLoan(id: number) {
+    await db.delete(employeeLoans).where(eq(employeeLoans.id, id));
   }
 }
 

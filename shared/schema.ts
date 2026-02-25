@@ -89,6 +89,29 @@ export const requests = pgTable("requests", {
   comments: jsonb("comments").$type<string[]>(),
 });
 
+export const employeeChildren = pgTable("employee_children", {
+  id: serial("id").primaryKey(),
+  eid: text("eid").notNull(),
+  firstName: text("first_name").notNull(),
+  lastName: text("last_name").notNull(),
+  dob: text("dob").notNull(),
+  relationship: text("relationship").notNull().default("biological"),
+  school: text("school"),
+  active: boolean("active").notNull().default(true),
+});
+
+export const employeeLoans = pgTable("employee_loans", {
+  id: serial("id").primaryKey(),
+  eid: text("eid").notNull(),
+  description: text("description").notNull(),
+  principal: integer("principal").notNull(),
+  balance: integer("balance").notNull(),
+  monthlyPayment: integer("monthly_payment").notNull(),
+  startDate: text("start_date").notNull(),
+  status: text("status").notNull().default("active"),
+  notes: text("notes"),
+});
+
 export const geofences = pgTable("geofences", {
   id: serial("id").primaryKey(),
   name: text("name").notNull().unique(),
@@ -101,6 +124,8 @@ export const geofences = pgTable("geofences", {
   active: boolean("active").notNull().default(true),
 });
 
+export const insertEmployeeChildSchema = createInsertSchema(employeeChildren).omit({ id: true });
+export const insertEmployeeLoanSchema = createInsertSchema(employeeLoans).omit({ id: true });
 export const insertUserSchema = createInsertSchema(users).omit({ id: true });
 export const insertTimesheetSchema = createInsertSchema(timesheets).omit({ id: true });
 export const insertRequestSchema = createInsertSchema(requests).omit({ id: true });
@@ -117,3 +142,9 @@ export type InsertRequest = z.infer<typeof insertRequestSchema>;
 
 export type Geofence = typeof geofences.$inferSelect;
 export type InsertGeofence = z.infer<typeof insertGeofenceSchema>;
+
+export type EmployeeChild = typeof employeeChildren.$inferSelect;
+export type InsertEmployeeChild = z.infer<typeof insertEmployeeChildSchema>;
+
+export type EmployeeLoan = typeof employeeLoans.$inferSelect;
+export type InsertEmployeeLoan = z.infer<typeof insertEmployeeLoanSchema>;

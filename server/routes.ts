@@ -2,6 +2,7 @@ import type { Express } from "express";
 import type { Server } from "http";
 import { storage } from "./storage";
 import { api } from "@shared/routes";
+import { insertEmployeeChildSchema, insertEmployeeLoanSchema } from "@shared/schema";
 import { z } from "zod";
 
 export async function registerRoutes(httpServer: Server, app: Express): Promise<Server> {
@@ -126,6 +127,62 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       await storage.deleteGeofence(Number(req.params.id));
       res.status(204).send();
     } catch { res.status(500).json({ message: "Server error" }); }
+  });
+
+  // ── EMPLOYEE CHILDREN ─────────────────────────────────────────────────────
+  app.get("/api/employees/:eid/children", async (req, res) => {
+    try { res.json(await storage.getChildrenByEid(req.params.eid)); }
+    catch { res.status(500).json({ message: "Server error" }); }
+  });
+  app.post("/api/employees/:eid/children", async (req, res) => {
+    try {
+      const input = insertEmployeeChildSchema.parse({ ...req.body, eid: req.params.eid });
+      res.status(201).json(await storage.createChild(input));
+    } catch (err) {
+      if (err instanceof z.ZodError) return res.status(400).json({ message: err.errors[0].message });
+      res.status(500).json({ message: "Server error" });
+    }
+  });
+  app.put("/api/children/:id", async (req, res) => {
+    try {
+      const input = insertEmployeeChildSchema.partial().parse(req.body);
+      res.json(await storage.updateChild(Number(req.params.id), input));
+    } catch (err) {
+      if (err instanceof z.ZodError) return res.status(400).json({ message: err.errors[0].message });
+      res.status(500).json({ message: "Server error" });
+    }
+  });
+  app.delete("/api/children/:id", async (req, res) => {
+    try { await storage.deleteChild(Number(req.params.id)); res.status(204).send(); }
+    catch { res.status(500).json({ message: "Server error" }); }
+  });
+
+  // ── EMPLOYEE LOANS ────────────────────────────────────────────────────────
+  app.get("/api/employees/:eid/loans", async (req, res) => {
+    try { res.json(await storage.getLoansByEid(req.params.eid)); }
+    catch { res.status(500).json({ message: "Server error" }); }
+  });
+  app.post("/api/employees/:eid/loans", async (req, res) => {
+    try {
+      const input = insertEmployeeLoanSchema.parse({ ...req.body, eid: req.params.eid });
+      res.status(201).json(await storage.createLoan(input));
+    } catch (err) {
+      if (err instanceof z.ZodError) return res.status(400).json({ message: err.errors[0].message });
+      res.status(500).json({ message: "Server error" });
+    }
+  });
+  app.put("/api/loans/:id", async (req, res) => {
+    try {
+      const input = insertEmployeeLoanSchema.partial().parse(req.body);
+      res.json(await storage.updateLoan(Number(req.params.id), input));
+    } catch (err) {
+      if (err instanceof z.ZodError) return res.status(400).json({ message: err.errors[0].message });
+      res.status(500).json({ message: "Server error" });
+    }
+  });
+  app.delete("/api/loans/:id", async (req, res) => {
+    try { await storage.deleteLoan(Number(req.params.id)); res.status(204).send(); }
+    catch { res.status(500).json({ message: "Server error" }); }
   });
 
   await seedDatabase();
