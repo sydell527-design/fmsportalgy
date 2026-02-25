@@ -265,6 +265,27 @@ export default function Dashboard() {
         {/* ══ FULL ACCESS LAYOUT (Admin + Manager) ════════════════════════ */}
         {isFullAccess && (
           <>
+            {/* Own clock in/out — all personnel can clock regardless of role */}
+            <ClockInOut />
+
+            {/* Personal timesheets awaiting own signature */}
+            {myPending.length > 0 && (
+              <Card className="p-5">
+                <h3 className="font-semibold text-sm mb-3">Your Timesheets Awaiting Signature</h3>
+                <div className="space-y-2">
+                  {myPending.map((ts) => (
+                    <div key={ts.id} className="flex items-center justify-between py-2 border-b border-border last:border-0" data-testid={`pending-ts-${ts.id}`}>
+                      <div>
+                        <span className="font-medium text-sm">{ts.date}</span>
+                        <span className="text-muted-foreground text-xs ml-3">{ts.ci} → {ts.co}</span>
+                      </div>
+                      <Badge variant="outline" className="text-xs text-blue-600 border-blue-200 bg-blue-50">Sign Required</Badge>
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            )}
+
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
               <StatCard icon={Users} label="Active Employees" value={totalEmployees} />
               <StatCard icon={Clock} label="Clocked In Today" value={clockedInToday} color="text-green-600" />
