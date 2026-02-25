@@ -48,10 +48,15 @@ export default function Dashboard() {
   const { mutateAsync: updateTimesheet } = useUpdateTimesheet();
   const { toast } = useToast();
 
-  // Stage 2 is employee role + Shift Supervisor position only
-  // Managers and admins always get Full Access portal regardless of position
+  // Full Access: admin or manager always get the full portal
   const isFullAccess = user.role === "admin" || user.role === "manager";
-  const isSupervisor = user.role === "employee" && user.pos === "Shift Supervisor";
+  // Stage 2 (Supervisor): any employee whose position appears as fa or sa on at least one other employee
+  // Dynamically derived — no position titles are hardcoded
+  const isSupervisor =
+    user.role === "employee" &&
+    (users ?? []).some(
+      (u) => u.userId !== user.userId && (u.fa === user.pos || u.sa === user.pos)
+    );
   const [supTab, setSupTab] = useState<"my-shift" | "active-officers">("my-shift");
 
   const [sigModal, setSigModal] = useState<{ ts: Timesheet; role: "approver" } | null>(null);

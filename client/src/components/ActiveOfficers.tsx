@@ -54,9 +54,10 @@ export function ActiveOfficers() {
 
   const today = format(new Date(), "yyyy-MM-dd");
 
-  // Officers whose 1st approver is this supervisor's position
+  // Officers who list this user's position as their 1st or 2nd sign-off approver
+  // Fully dynamic — no position titles hardcoded anywhere
   const myOfficers = (users ?? []).filter(
-    (u) => u.fa === user.pos && u.userId !== user.userId
+    (u) => u.userId !== user.userId && (u.fa === user.pos || u.sa === user.pos)
   );
   const officerIds = myOfficers.map((u) => u.userId);
 

@@ -91,15 +91,19 @@ export default function Timesheets() {
   const allTs = timesheets ?? [];
 
   const isFullAccess = user.role === "admin" || user.role === "manager";
-  // Stage 2: only employees with Shift Supervisor position (managers with same pos get Full Access)
-  const isSupervisor = user.role === "employee" && user.pos === "Shift Supervisor";
+  // Stage 2: employee whose position appears as fa or sa on at least one other employee (dynamic, no hardcoded titles)
+  const isSupervisor =
+    user.role === "employee" &&
+    (users ?? []).some(
+      (u) => u.userId !== user.userId && (u.fa === user.pos || u.sa === user.pos)
+    );
 
   const visible = allTs.filter((ts) => {
     if (isFullAccess) return true; // admin & manager see all timesheets
-    // Stage 2: supervisor sees own + direct reports
+    // Stage 2: supervisor sees own timesheets + any employee whose fa or sa matches their position
     if (isSupervisor) {
       const emp = users?.find((u) => u.userId === ts.eid);
-      return ts.eid === user.userId || emp?.fa === user.pos;
+      return ts.eid === user.userId || emp?.fa === user.pos || emp?.sa === user.pos;
     }
     // Stage 1: basic employee sees only own
     return ts.eid === user.userId;
