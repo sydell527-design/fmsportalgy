@@ -73,6 +73,7 @@ export const geofences = pgTable("geofences", {
   lng: doublePrecision("lng").notNull(),
   radius: integer("radius").notNull().default(150),
   posts: integer("posts").notNull().default(10),
+  postNames: jsonb("post_names").$type<string[]>(),
   description: text("description"),
   active: boolean("active").notNull().default(true),
 });

@@ -250,8 +250,11 @@ export function ClockInOut() {
                   data-testid="select-post-number"
                 >
                   <option value="">— Select post —</option>
-                  {Array.from({ length: selectedFence?.posts ?? 10 }, (_, i) => i + 1).map((n) => (
-                    <option key={n} value={String(n)}>Post {n}</option>
+                  {(selectedFence?.postNames?.length
+                    ? selectedFence.postNames
+                    : Array.from({ length: selectedFence?.posts ?? 10 }, (_, i) => `Post ${i + 1}`)
+                  ).map((name) => (
+                    <option key={name} value={name}>{name}</option>
                   ))}
                 </select>
               </div>
