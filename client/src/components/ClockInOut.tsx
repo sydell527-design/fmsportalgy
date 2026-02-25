@@ -19,7 +19,8 @@ function haversineMetres(lat1: number, lng1: number, lat2: number, lng2: number)
 
 export function ClockInOut() {
   const { user } = useAuth();
-  const { data: timesheets } = useTimesheets();
+  const todayDate = format(new Date(), "yyyy-MM-dd");
+  const { data: timesheets } = useTimesheets({ startDate: todayDate, endDate: todayDate, eid: user?.userId });
   const { data: allGeofences } = useGeofences();
   const { mutateAsync: createTimesheet, isPending: isCreating } = useCreateTimesheet();
   const { mutateAsync: updateTimesheet, isPending: isUpdating } = useUpdateTimesheet();
@@ -37,8 +38,8 @@ export function ClockInOut() {
     return () => clearInterval(t);
   }, []);
 
-  const today = format(new Date(), "yyyy-MM-dd");
-  const todaysTsList = (timesheets ?? []).filter((t) => t.eid === user?.userId && t.date === today);
+  const today = todayDate;
+  const todaysTsList = timesheets ?? [];
 
   // The active (open) shift: clocked in but not yet clocked out
   const todaysTs = todaysTsList.find((t) => t.ci && !t.co) ?? null;

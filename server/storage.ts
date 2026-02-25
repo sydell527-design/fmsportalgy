@@ -6,7 +6,16 @@ import {
   type Request, type InsertRequest,
   type Geofence, type InsertGeofence,
 } from "@shared/schema";
-import { eq } from "drizzle-orm";
+import { eq, and, gte, lte, desc } from "drizzle-orm";
+
+export interface TimesheetFilters {
+  startDate?: string;   // "YYYY-MM-DD"
+  endDate?: string;     // "YYYY-MM-DD"
+  eid?: string;
+  status?: string;
+  limit?: number;
+  offset?: number;
+}
 
 export interface IStorage {
   getUser(id: number): Promise<User | undefined>;
@@ -16,7 +25,7 @@ export interface IStorage {
   updateUser(id: number, updates: Partial<InsertUser>): Promise<User>;
   deleteUser(id: number): Promise<void>;
 
-  getTimesheets(): Promise<Timesheet[]>;
+  getTimesheets(filters?: TimesheetFilters): Promise<Timesheet[]>;
   getTimesheet(id: number): Promise<Timesheet | undefined>;
   createTimesheet(ts: InsertTimesheet): Promise<Timesheet>;
   updateTimesheet(id: number, updates: Partial<InsertTimesheet>): Promise<Timesheet>;
@@ -55,7 +64,26 @@ export class DatabaseStorage implements IStorage {
     await db.delete(users).where(eq(users.id, id));
   }
 
-  async getTimesheets() { return db.select().from(timesheets); }
+  async getTimesheets(filters: TimesheetFilters = {}) {
+    const conditions = [];
+    if (filters.startDate) conditions.push(gte(timesheets.date, filters.startDate));
+    if (filters.endDate)   conditions.push(lte(timesheets.date, filters.endDate));
+    if (filters.eid)       conditions.push(eq(timesheets.eid, filters.eid));
+    if (filters.status)    conditions.push(eq(timesheets.status, filters.status));
+
+    const query = db
+      .select()
+      .from(timesheets)
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .orderBy(desc(timesheets.date), desc(timesheets.id));
+
+    if (filters.limit !== undefined) {
+      // @ts-ignore — drizzle limit/offset chaining
+      return query.limit(filters.limit).offset(filters.offset ?? 0);
+    }
+    return query;
+  }
+
   async getTimesheet(id: number) {
     const [ts] = await db.select().from(timesheets).where(eq(timesheets.id, id));
     return ts;

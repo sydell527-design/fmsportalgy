@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Layout } from "@/components/Layout";
 import { useTimesheets, useUpdateTimesheet } from "@/hooks/use-timesheets";
 import { useUsers } from "@/hooks/use-users";
@@ -12,9 +12,9 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Clock, MapPin, PenLine, AlertTriangle, CheckCircle2,
-  XCircle, ChevronDown, ChevronUp, Lock, ShieldCheck, Edit2,
+  XCircle, ChevronDown, ChevronUp, Lock, ShieldCheck, Edit2, CalendarDays, ChevronLeft, ChevronRight,
 } from "lucide-react";
-import { format } from "date-fns";
+import { format, startOfMonth, endOfMonth, subMonths, addMonths } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import type { Timesheet } from "@shared/schema";
 
@@ -57,7 +57,13 @@ function SigBlock({ sig, label }: { sig: any; label: string }) {
 
 export default function Timesheets() {
   const { user } = useAuth();
-  const { data: timesheets, isLoading } = useTimesheets();
+
+  // Month navigation — default to current month
+  const [viewMonth, setViewMonth] = useState(new Date());
+  const monthStart = format(startOfMonth(viewMonth), "yyyy-MM-dd");
+  const monthEnd   = format(endOfMonth(viewMonth),   "yyyy-MM-dd");
+
+  const { data: timesheets, isLoading } = useTimesheets({ startDate: monthStart, endDate: monthEnd });
   const { data: users } = useUsers();
   const { mutateAsync: updateTimesheet } = useUpdateTimesheet();
   const { toast } = useToast();
@@ -232,12 +238,29 @@ export default function Timesheets() {
 
   return (
     <Layout>
-      <div className="flex items-center justify-between mb-5">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
         <div>
           <h1 className="text-2xl font-bold">Timesheets</h1>
           <p className="text-muted-foreground text-sm mt-0.5">
             {user.role === "employee" ? "Your attendance records and approval status" : "Team timesheets and approval workflow"}
           </p>
+        </div>
+
+        {/* Month navigation */}
+        <div className="flex items-center gap-1 bg-muted rounded-md p-1 self-start sm:self-auto">
+          <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setViewMonth(subMonths(viewMonth, 1))} data-testid="button-prev-month">
+            <ChevronLeft className="w-4 h-4" />
+          </Button>
+          <div className="flex items-center gap-1.5 px-2 min-w-[130px] justify-center">
+            <CalendarDays className="w-3.5 h-3.5 text-muted-foreground" />
+            <span className="text-sm font-medium">{format(viewMonth, "MMMM yyyy")}</span>
+          </div>
+          <Button size="icon" variant="ghost" className="h-7 w-7"
+            onClick={() => setViewMonth(addMonths(viewMonth, 1))}
+            disabled={format(viewMonth, "yyyy-MM") >= format(new Date(), "yyyy-MM")}
+            data-testid="button-next-month">
+            <ChevronRight className="w-4 h-4" />
+          </Button>
         </div>
       </div>
 

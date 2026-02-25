@@ -47,7 +47,17 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
 
   // ── TIMESHEETS ────────────────────────────────────────────────────────────
-  app.get(api.timesheets.list.path, async (_req, res) => res.json(await storage.getTimesheets()));
+  app.get(api.timesheets.list.path, async (req, res) => {
+    const { startDate, endDate, eid, status, limit, offset } = req.query as Record<string, string>;
+    res.json(await storage.getTimesheets({
+      startDate: startDate || undefined,
+      endDate:   endDate   || undefined,
+      eid:       eid       || undefined,
+      status:    status    || undefined,
+      limit:     limit     ? Number(limit)  : undefined,
+      offset:    offset    ? Number(offset) : undefined,
+    }));
+  });
   app.post(api.timesheets.create.path, async (req, res) => {
     try {
       const input = api.timesheets.create.input.parse(req.body);

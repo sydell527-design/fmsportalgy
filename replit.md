@@ -1,7 +1,17 @@
 # FMS Timetrack — Facility Management Services (Guyana)
 
 ## Overview
-Role-based workforce management system with GPS geofenced attendance, dual electronic signature approval, Guyana 2026 compliant payroll, QuickBooks export, and multi-tab reports.
+Role-based workforce management system with GPS geofenced attendance, three-stage electronic signature approval (Employee → Shift Supervisor → General Manager), Guyana 2026 compliant payroll, QuickBooks export, multi-tab reports, and a full changelog.
+
+## Key Features (v1.6.0)
+- GPS geofenced clock in/out — multiple shifts per day supported
+- Three-stage e-signature approval chain with lock enforcement
+- Shift Supervisor portal with Active Officers real-time view
+- Server-side date filtering on timesheets — handles years of historical data
+- Month-by-month navigation in Timesheets page (← →)
+- Fully responsive layout: desktop sidebar, tablet/phone bottom navigation bar + hamburger menu
+- Changelog page at `/changelog` (admin only)
+- Payroll engine: NIS 5.6%/8.4%, PAYE 28%, GYD 100k allowance, 1.5× OT, QuickBooks CSV export
 
 ## Architecture
 - **Frontend**: React + Vite + TypeScript + TailwindCSS + shadcn/ui

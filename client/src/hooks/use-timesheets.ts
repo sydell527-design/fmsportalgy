@@ -1,11 +1,35 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, buildUrl, type InsertTimesheet, type Timesheet } from "@shared/routes";
 
-export function useTimesheets() {
+export interface TimesheetFilters {
+  startDate?: string;
+  endDate?: string;
+  eid?: string;
+  status?: string;
+  limit?: number;
+  offset?: number;
+}
+
+function buildTimesheetUrl(filters: TimesheetFilters = {}): string {
+  const params = new URLSearchParams();
+  if (filters.startDate) params.set("startDate", filters.startDate);
+  if (filters.endDate)   params.set("endDate",   filters.endDate);
+  if (filters.eid)       params.set("eid",       filters.eid);
+  if (filters.status)    params.set("status",    filters.status);
+  if (filters.limit !== undefined)  params.set("limit",  String(filters.limit));
+  if (filters.offset !== undefined) params.set("offset", String(filters.offset));
+  const qs = params.toString();
+  return qs ? `${api.timesheets.list.path}?${qs}` : api.timesheets.list.path;
+}
+
+export function useTimesheets(filters: TimesheetFilters = {}) {
+  const url = buildTimesheetUrl(filters);
+  // Use a stable key that includes the filters so different filter combos cache separately
+  const queryKey = [api.timesheets.list.path, filters];
   return useQuery<Timesheet[]>({
-    queryKey: [api.timesheets.list.path],
+    queryKey,
     queryFn: async () => {
-      const res = await fetch(api.timesheets.list.path, { credentials: "include" });
+      const res = await fetch(url, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch timesheets");
       return api.timesheets.list.responses[200].parse(await res.json());
     },
