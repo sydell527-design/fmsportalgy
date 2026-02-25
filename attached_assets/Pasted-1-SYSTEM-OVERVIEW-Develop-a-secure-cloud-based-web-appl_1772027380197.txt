@@ -1,0 +1,353 @@
+1. SYSTEM OVERVIEW
+
+Develop a secure, cloud-based web application that captures employee time, manages approvals with dual electronic signatures, runs payroll compliant with Guyana 2026 labor laws, and exports payroll data to QuickBooks.
+
+The system must include:
+
+Admin Portal
+
+Management Approval Portal
+
+Employee Portal
+
+Google Maps Geofencing Integration
+
+Payroll Engine
+
+Reporting Module
+
+QuickBooks Export Functionality
+
+2. USER ROLES & ACCESS
+2.1 Admin Portal
+
+Default Credentials:
+
+Username: ADMIN001
+
+Password: admin123
+
+Forced password change on first login
+
+Admin Capabilities:
+
+Create, edit, deactivate employees
+
+Bulk upload employees via CSV/Excel
+
+Assign employee category:
+
+Fixed
+
+Executive
+
+Time
+
+Assign reporting structure:
+
+First Approver (Reporting Manager)
+
+Second Approver (e.g., General Manager)
+
+Configure Google Maps geofencing zones
+
+Configure payroll rules (Guyana 2026 compliant)
+
+Generate payroll
+
+Generate reports
+
+Export payroll to QuickBooks (CSV/IIF format)
+
+Configure tax rates, NIS ceilings, and overtime multipliers
+
+2.2 Employee Portal
+
+When Admin creates an employee:
+
+Username = Employee Number (Example: 1234)
+
+Default Password = temp
+
+Mandatory password change on first login
+
+Employee Dashboard Tabs:
+
+My Time
+
+Disputes
+
+Requests
+
+3. TIME MANAGEMENT
+3.1 Clock In / Clock Out
+
+Employees must clock in and clock out.
+
+GPS location must be captured.
+
+Geofencing verification required.
+
+Admin defines allowed work zone using Google Maps.
+
+Clock-in denied if outside permitted area.
+
+GPS coordinates stored in audit log.
+
+3.2 Time Editing
+
+Employees may edit time entries before submission.
+
+All edits flagged and logged.
+
+Full audit trail required.
+
+4. TIMESHEET APPROVAL WORKFLOW (MANDATORY 2 SIGNATURES)
+
+After clock-out:
+
+Time entry appears under “My Time”.
+
+Employee must:
+
+Approve or Disapprove their own time.
+
+Apply electronic signature (typed name + timestamp + IP address).
+
+First Approver (Reporting Manager):
+
+Approve or Reject.
+
+Electronic signature required.
+
+Second Approver (e.g., General Manager):
+
+Approve or Reject.
+
+Electronic signature required.
+
+Rule:
+No payroll processing without two management signatures.
+
+Admin selects both approvers during employee creation.
+
+Example:
+Security Officer → Shift Supervisor → General Manager
+
+Each timesheet must contain exactly two management signatures.
+
+5. REQUEST MANAGEMENT
+
+Under the “Requests” tab, employees can submit:
+
+Leave requests
+
+Overtime requests
+
+Shift swap requests
+
+Payroll disputes
+
+Approvers and Admin can:
+
+Approve
+
+Reject
+
+Comment
+
+All actions logged.
+
+6. GEOFENCING (GOOGLE MAPS INTEGRATION)
+
+Admin must be able to:
+
+Draw custom geofence areas
+
+Set radius (e.g., 100m, 500m)
+
+Assign geofence per employee or department
+
+Log GPS coordinates at clock-in/out
+
+Generate geofence violation reports
+
+7. PAYROLL SYSTEM (GUYANA 2026 COMPLIANT)
+Employee Categories
+Fixed
+
+Fixed monthly salary
+
+Overtime eligible if configured
+
+Executive
+
+Fixed salary
+
+Optional overtime exclusion
+
+Time
+
+Hourly rate
+
+Overtime calculation required
+
+Payroll Calculations Must Include:
+
+Regular Hours
+
+Overtime (1.5x or per Guyana labor law)
+
+National Insurance Scheme (NIS) deductions
+
+PAYE (Income Tax) per Guyana tax brackets
+
+Holiday pay
+
+Weekend rates
+
+Public holiday multipliers
+
+Leave accrual calculations
+
+Net Pay
+
+Employer NIS contributions
+
+Admin must be able to:
+
+Update tax brackets annually
+
+Adjust NIS ceilings
+
+Configure overtime multipliers
+
+Configure separate rules for:
+
+Security Officers
+
+Office Staff
+
+8. REPORTING MODULE
+Time Reports
+
+Employee Time Summary
+
+Overtime Report
+
+Attendance Report
+
+Late Clock-In Report
+
+Geofence Violation Report
+
+Approval Audit Trail
+
+Payroll Reports
+
+Payroll Summary
+
+Department Payroll Report
+
+NIS Contribution Report
+
+PAYE Report
+
+Net Pay Summary
+
+Payslip (PDF Downloadable)
+
+Year-To-Date Earnings
+
+9. QUICKBOOKS INTEGRATION
+
+System must:
+
+Export payroll in QuickBooks-compatible format (CSV/IIF).
+
+Allow mapping of:
+
+Employee Name
+
+Payroll Expense
+
+NIS
+
+PAYE
+
+Net Pay
+
+Employer Contributions
+
+Allow Admin to configure chart-of-accounts mapping.
+
+One-click export per payroll cycle.
+
+10. SECURITY & AUDIT
+
+Encrypted passwords
+
+Role-based access control
+
+Login logs
+
+IP address logs
+
+GPS logs
+
+Time edit history
+
+Signature timestamps
+
+Electronic signatures legally traceable
+
+Automatic session timeout
+
+Backup & restore functionality
+
+11. DASHBOARD FEATURES
+Admin Dashboard
+
+Total Employees
+
+Employees Clocked In
+
+Pending Approvals
+
+Payroll Ready Status
+
+Disputes Pending
+
+Notifications Panel
+
+Manager Dashboard
+
+Pending Approvals
+
+Team Attendance Overview
+
+Overtime Alerts
+
+Employee Dashboard
+
+Clock In / Clock Out Button
+
+Weekly Hours Summary
+
+Approval Status Tracker
+
+12. SYSTEM REQUIREMENTS
+
+Cloud-based architecture
+
+Mobile responsive design
+
+Secure database
+
+Multi-location support
+
+Scalable infrastructure
+
+Data encryption
+
+Automated backups
