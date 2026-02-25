@@ -90,19 +90,18 @@ export default function Timesheets() {
 
   const allTs = timesheets ?? [];
 
-  const isSupervisor = user.pos === "Shift Supervisor";
+  const isFullAccess = user.role === "admin" || user.role === "manager";
+  // Stage 2: only employees with Shift Supervisor position (managers with same pos get Full Access)
+  const isSupervisor = user.role === "employee" && user.pos === "Shift Supervisor";
 
   const visible = allTs.filter((ts) => {
-    if (user.role === "admin") return true;
-    if (user.role === "manager") {
-      const emp = users?.find((u) => u.userId === ts.eid);
-      return ts.eid === user.userId || emp?.fa === user.pos || emp?.sa === user.pos;
-    }
-    // Shift supervisors also see their direct reports
+    if (isFullAccess) return true; // admin & manager see all timesheets
+    // Stage 2: supervisor sees own + direct reports
     if (isSupervisor) {
       const emp = users?.find((u) => u.userId === ts.eid);
       return ts.eid === user.userId || emp?.fa === user.pos;
     }
+    // Stage 1: basic employee sees only own
     return ts.eid === user.userId;
   }).sort((a, b) => (b.date ?? "").localeCompare(a.date ?? ""));
 
@@ -123,12 +122,13 @@ export default function Timesheets() {
     if (ts.status === "pending_second_approval" && emp?.sa === user.pos) return true;
     return false;
   };
+  // Full access users can sign at any approval stage
   const canAdminSign = (ts: Timesheet) =>
-    user.role === "admin" && (ts.status === "pending_first_approval" || ts.status === "pending_second_approval");
+    isFullAccess && (ts.status === "pending_first_approval" || ts.status === "pending_second_approval");
 
-  // Admin or JGM can override-edit any timesheet (even approved)
+  // Full access users or JGM can override-edit any locked timesheet
   const canAdminEdit = (ts: Timesheet) =>
-    (user.role === "admin" || user.pos === "Junior General Manager") && ts.status !== "pending_employee";
+    (isFullAccess || user.pos === "Junior General Manager") && ts.status !== "pending_employee";
 
   // Shift Supervisor can edit a timesheet that awaits their 1st sign-off (not yet locked by JGM)
   const canSupervisorEdit = (ts: Timesheet) => {
@@ -242,7 +242,7 @@ export default function Timesheets() {
         <div>
           <h1 className="text-2xl font-bold">Timesheets</h1>
           <p className="text-muted-foreground text-sm mt-0.5">
-            {user.role === "employee" ? "Your attendance records and approval status" : "Team timesheets and approval workflow"}
+            {isFullAccess ? "Team timesheets and approval workflow" : "Your attendance records and approval status"}
           </p>
         </div>
 
@@ -288,7 +288,7 @@ export default function Timesheets() {
                   {/* Main info */}
                   <div className="flex-1 min-w-0">
                     <div className="flex flex-wrap items-center gap-2 mb-1">
-                      {user.role !== "employee" && (
+                      {(isFullAccess || isSupervisor) && (
                         <span className="font-semibold text-sm">{empName(ts.eid)}</span>
                       )}
                       <span className="text-sm text-muted-foreground">{ts.date}</span>

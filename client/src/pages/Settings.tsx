@@ -99,10 +99,12 @@ export default function Settings() {
     } catch { toast({ title: "Failed to delete zone", variant: "destructive" }); }
   };
 
+  const isFullAccess = user.role === "admin" || user.role === "manager";
+
   const tabs = [
     { key: "profile" as const, label: "Profile", icon: UserCircle },
     { key: "password" as const, label: "Password", icon: KeyRound },
-    ...(user.role === "admin" ? [
+    ...(isFullAccess ? [
       { key: "payroll" as const, label: "Payroll Rules", icon: DollarSign },
       { key: "geofence" as const, label: "Geofences", icon: MapPin },
     ] : []),
@@ -207,8 +209,8 @@ export default function Settings() {
         </Card>
       )}
 
-      {/* ── PAYROLL RULES (admin) ───────────────────────────────────────────── */}
-      {activeTab === "payroll" && user.role === "admin" && (
+      {/* ── PAYROLL RULES (full access) ─────────────────────────────────────── */}
+      {activeTab === "payroll" && isFullAccess && (
         <div className="grid gap-5 md:grid-cols-2">
           <Card className="p-6">
             <h3 className="font-semibold mb-4">Guyana 2026 Payroll Configuration</h3>
@@ -247,8 +249,8 @@ export default function Settings() {
         </div>
       )}
 
-      {/* ── GEOFENCES (admin) ──────────────────────────────────────────────── */}
-      {activeTab === "geofence" && user.role === "admin" && (
+      {/* ── GEOFENCES (full access) ────────────────────────────────────────── */}
+      {activeTab === "geofence" && isFullAccess && (
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <div>

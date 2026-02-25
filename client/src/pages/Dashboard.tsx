@@ -48,7 +48,10 @@ export default function Dashboard() {
   const { mutateAsync: updateTimesheet } = useUpdateTimesheet();
   const { toast } = useToast();
 
-  const isSupervisor = user?.pos === "Shift Supervisor";
+  // Stage 2 is employee role + Shift Supervisor position only
+  // Managers and admins always get Full Access portal regardless of position
+  const isFullAccess = user.role === "admin" || user.role === "manager";
+  const isSupervisor = user.role === "employee" && user.pos === "Shift Supervisor";
   const [supTab, setSupTab] = useState<"my-shift" | "active-officers">("my-shift");
 
   const [sigModal, setSigModal] = useState<{ ts: Timesheet; role: "approver" } | null>(null);
@@ -138,10 +141,8 @@ export default function Dashboard() {
         <div className="bg-primary rounded-md p-6 text-primary-foreground">
           <h2 className="text-2xl font-bold mb-0.5">Welcome, {user.name}</h2>
           <p className="text-primary-foreground/80 text-sm">
-            {user.role === "admin"
-              ? "Administrator — Full System Access"
-              : user.role === "manager"
-              ? "Manager — Team Oversight & Approvals"
+            {isFullAccess
+              ? "Full Access — Administration & Team Management"
               : `${user.pos} — ${user.dept}`}
           </p>
           <p className="text-primary-foreground/60 text-xs mt-1">{format(new Date(), "EEEE, MMMM d, yyyy")}</p>
@@ -222,7 +223,7 @@ export default function Dashboard() {
           </>
         )}
 
-        {/* ══ REGULAR EMPLOYEE LAYOUT ══════════════════════════════════════ */}
+        {/* ══ REGULAR EMPLOYEE LAYOUT (Stage 1) ═══════════════════════════ */}
         {user.role === "employee" && !isSupervisor && (
           <>
             <ClockInOut />
@@ -256,16 +257,16 @@ export default function Dashboard() {
           </>
         )}
 
-        {/* ══ ADMIN / MANAGER LAYOUT ═══════════════════════════════════════ */}
-        {user.role !== "employee" && (
+        {/* ══ FULL ACCESS LAYOUT (Admin + Manager) ════════════════════════ */}
+        {isFullAccess && (
           <>
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
-              {user.role === "admin" && <StatCard icon={Users} label="Active Employees" value={totalEmployees} />}
+              <StatCard icon={Users} label="Active Employees" value={totalEmployees} />
               <StatCard icon={Clock} label="Clocked In Today" value={clockedInToday} color="text-green-600" />
               <StatCard icon={AlertTriangle} label="Pending Approvals" value={pendingApprovals.length} color={pendingApprovals.length > 0 ? "text-amber-600" : undefined} />
               <StatCard icon={CheckCircle2} label="Approved (MTD)" value={payrollReady} />
               <StatCard icon={Calendar} label="Open Requests" value={pendingRequests} />
-              {user.role === "admin" && <StatCard icon={BarChart2} label="Disputes Pending" value={disputesPending} color={disputesPending > 0 ? "text-red-500" : undefined} />}
+              <StatCard icon={BarChart2} label="Disputes Pending" value={disputesPending} color={disputesPending > 0 ? "text-red-500" : undefined} />
             </div>
 
             <Card className="p-5">
