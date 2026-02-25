@@ -436,6 +436,10 @@ export default function Settings() {
           zone={mapZone}
           allZones={geofences ?? []}
           onClose={() => setMapZone(null)}
+          onSaveLocation={async (id, lat, lng) => {
+            await updateGeofence({ id, lat, lng });
+            toast({ title: "Zone center updated", description: `${mapZone.name} repositioned successfully.` });
+          }}
         />
       )}
 
