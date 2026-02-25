@@ -633,119 +633,192 @@ function EmployeeFormDialog({
     }
   };
 
-  const TAB_STYLE = (active: boolean) =>
-    `flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
-      active ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"
-    }`;
+  const TABS = [
+    { id: "personal"   as const, label: "Personal Details",       Icon: UserCircle  },
+    { id: "pay"        as const, label: "Pay Structure",          Icon: Banknote    },
+    { id: "deductions" as const, label: "Deductions & Compliance",Icon: ShieldCheck },
+  ];
 
   return (
     <Dialog open onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[720px] max-h-[92vh] flex flex-col p-0 gap-0">
-        {/* Header */}
-        <DialogHeader className="px-6 pt-6 pb-0 shrink-0">
-          <DialogTitle className="text-lg">{user ? `Edit — ${user.name}` : "New Employee Profile"}</DialogTitle>
+      <DialogContent className="max-w-5xl w-[95vw] h-[88vh] flex flex-col p-0 gap-0 overflow-hidden">
+
+        {/* ── Top header bar ────────────────────────────────────────────── */}
+        <DialogHeader className="px-6 py-4 border-b border-border shrink-0 flex-row items-center justify-between space-y-0">
+          <DialogTitle className="text-base font-semibold">
+            {user ? `Edit Employee — ${user.name}` : "New Employee Profile"}
+          </DialogTitle>
+          <Badge variant="outline" className="text-xs capitalize">{pc.frequency}</Badge>
         </DialogHeader>
 
-        {/* Tab strip */}
-        <div className="flex border-b border-border px-6 mt-4 shrink-0 overflow-x-auto">
-          <button type="button" onClick={() => setTab("personal")} className={TAB_STYLE(tab === "personal")} data-testid="tab-personal">
-            <UserCircle className="w-4 h-4" /> Personal Details
-          </button>
-          <button type="button" onClick={() => setTab("pay")} className={TAB_STYLE(tab === "pay")} data-testid="tab-pay">
-            <Banknote className="w-4 h-4" /> Pay Structure
-          </button>
-          <button type="button" onClick={() => setTab("deductions")} className={TAB_STYLE(tab === "deductions")} data-testid="tab-deductions">
-            <TrendingDown className="w-4 h-4" /> Deductions &amp; Compliance
-          </button>
-        </div>
+        {/* ── Landscape body: sidebar + content ─────────────────────────── */}
+        <form onSubmit={handleSubmit} className="flex flex-1 overflow-hidden">
 
-        {/* Scrollable content */}
-        <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden">
-          <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
+          {/* LEFT SIDEBAR */}
+          <div className="w-52 shrink-0 border-r border-border flex flex-col bg-muted/20">
 
-            {/* ══ TAB 1: PERSONAL DETAILS ══════════════════════════════════════ */}
+            {/* Nav tabs (vertical) */}
+            <div className="p-3 space-y-0.5 flex-1">
+              {TABS.map(({ id, label, Icon }) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setTab(id)}
+                  data-testid={`tab-${id}`}
+                  className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-md text-sm font-medium transition-colors text-left
+                    ${tab === id ? "bg-primary text-primary-foreground" : "hover:bg-muted text-muted-foreground hover:text-foreground"}`}
+                >
+                  <Icon className="w-4 h-4 shrink-0" />
+                  <span className="truncate">{label}</span>
+                </button>
+              ))}
+            </div>
+
+            {/* Live Pay Preview — always visible */}
+            <div className="p-3 border-t border-border space-y-2">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-1">
+                <DollarSign className="w-3 h-3" /> Pay Preview
+              </p>
+              <div className="space-y-1 text-xs">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Basic</span>
+                  <span className="font-medium">{fmt(calc.monthlyBasic)}</span>
+                </div>
+                {calc.allowances > 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Allowances</span>
+                    <span className="text-green-700">+{fmt(calc.allowances)}</span>
+                  </div>
+                )}
+                <div className="flex justify-between border-t border-border pt-1">
+                  <span className="text-muted-foreground">Gross</span>
+                  <span className="font-semibold">{fmt(calc.gross)}</span>
+                </div>
+                {calc.statutory > 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Statutory</span>
+                    <span className="text-red-600">−{fmt(calc.statutory)}</span>
+                  </div>
+                )}
+                {calc.voluntary > 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Voluntary</span>
+                    <span className="text-amber-600">−{fmt(calc.voluntary)}</span>
+                  </div>
+                )}
+                <div className="flex justify-between border-t-2 border-primary/30 pt-1 font-bold">
+                  <span>Net Pay</span>
+                  <span className="text-primary">{fmt(calc.net)}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Action buttons */}
+            <div className="p-3 border-t border-border flex flex-col gap-2">
+              <Button type="submit" disabled={creating || updating} className="w-full" data-testid="button-submit-employee">
+                {creating || updating ? "Saving…" : user ? "Save Changes" : "Create Profile"}
+              </Button>
+              <Button type="button" variant="outline" className="w-full" onClick={onClose} data-testid="button-cancel-employee">Cancel</Button>
+            </div>
+          </div>
+
+          {/* RIGHT CONTENT PANEL */}
+          <div className="flex-1 overflow-y-auto p-5 space-y-5 min-w-0">
+
+            {/* ══ PERSONAL DETAILS ══════════════════════════════════════════ */}
             {tab === "personal" && (
               <>
-                <div className="grid grid-cols-2 gap-4">
+                {/* Row 1 */}
+                <div className="grid grid-cols-3 gap-4">
                   <div className="space-y-1.5">
-                    <Label>Employee ID <span className="text-muted-foreground text-xs">(login username)</span></Label>
-                    <Input value={formData.userId} onChange={(e) => setFormData({ ...formData, userId: e.target.value, username: e.target.value })} placeholder="e.g. 1006" required disabled={!!user} data-testid="input-employee-id" />
+                    <Label>Employee ID <span className="text-muted-foreground text-xs">(login)</span></Label>
+                    <Input value={formData.userId} onChange={(e) => setFormData({ ...formData, userId: e.target.value, username: e.target.value })}
+                      placeholder="e.g. 1006" required disabled={!!user} data-testid="input-employee-id" />
                   </div>
                   <div className="space-y-1.5">
                     <Label>Full Name</Label>
-                    <Input value={formData.name} onChange={(e) => { const n = e.target.value; setFormData((p) => ({ ...p, name: n, av: getInitials(n) })); }} placeholder="First and Last name" required data-testid="input-employee-name" />
+                    <Input value={formData.name} onChange={(e) => { const n = e.target.value; setFormData((p) => ({ ...p, name: n, av: getInitials(n) })); }}
+                      placeholder="First and Last name" required data-testid="input-employee-name" />
                   </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1.5">
                     <Label>System Role</Label>
-                    {sel(formData.role, (v) => setFormData({ ...formData, role: v }), [["employee","Employee"],["manager","Manager"],["admin","Admin"]], "select-employee-role")}
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>Department</Label>
-                    <Input value={formData.dept} onChange={(e) => setFormData({ ...formData, dept: e.target.value })} placeholder="e.g. Security" required data-testid="input-employee-dept" />
+                    {sel(formData.role, (v) => setFormData({ ...formData, role: v }),
+                      [["employee","Employee"],["manager","Manager"],["admin","Admin"]], "select-employee-role")}
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
+                {/* Row 2 */}
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="space-y-1.5">
+                    <Label>Department</Label>
+                    <Input value={formData.dept} onChange={(e) => setFormData({ ...formData, dept: e.target.value })}
+                      placeholder="e.g. Security" required data-testid="input-employee-dept" />
+                  </div>
                   <div className="space-y-1.5">
                     <Label>Position Title</Label>
-                    <Input value={formData.pos} onChange={(e) => setFormData({ ...formData, pos: e.target.value })} placeholder="e.g. Security Officer" list="positions-list" required data-testid="input-employee-pos" />
+                    <Input value={formData.pos} onChange={(e) => setFormData({ ...formData, pos: e.target.value })}
+                      placeholder="e.g. Security Officer" list="positions-list" required data-testid="input-employee-pos" />
                     <datalist id="positions-list">{POSITIONS.map((p) => <option key={p} value={p} />)}</datalist>
                   </div>
                   <div className="space-y-1.5">
                     <Label>Phone</Label>
-                    <Input value={formData.phone} onChange={(e) => setFormData({ ...formData, phone: e.target.value })} placeholder="592-600-XXXX" data-testid="input-employee-phone" />
+                    <Input value={formData.phone} onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                      placeholder="592-600-XXXX" data-testid="input-employee-phone" />
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
+                {/* Row 3 */}
+                <div className="grid grid-cols-3 gap-4">
                   <div className="space-y-1.5">
                     <Label>Email</Label>
-                    <Input type="email" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} placeholder="name@fms.gy" data-testid="input-employee-email" />
+                    <Input type="email" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                      placeholder="name@fms.gy" data-testid="input-employee-email" />
                   </div>
                   <div className="space-y-1.5">
                     <Label>Join Date</Label>
-                    <Input type="date" value={formData.joined} onChange={(e) => setFormData({ ...formData, joined: e.target.value })} data-testid="input-employee-joined" />
+                    <Input type="date" value={formData.joined} onChange={(e) => setFormData({ ...formData, joined: e.target.value })}
+                      data-testid="input-employee-joined" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Status</Label>
+                    {sel(formData.status, (v) => setFormData({ ...formData, status: v }),
+                      [["active","Active"],["inactive","Inactive"]], "select-employee-status")}
                   </div>
                 </div>
 
+                {/* Row 4 */}
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1.5">
                     <Label>1st Sign-off Position</Label>
-                    <Input value={formData.fa ?? ""} onChange={(e) => setFormData({ ...formData, fa: e.target.value })} placeholder="e.g. Shift Supervisor" list="positions-list" data-testid="input-employee-fa" />
+                    <Input value={formData.fa ?? ""} onChange={(e) => setFormData({ ...formData, fa: e.target.value })}
+                      placeholder="e.g. Shift Supervisor" list="positions-list" data-testid="input-employee-fa" />
                   </div>
                   <div className="space-y-1.5">
                     <Label>2nd Sign-off Position</Label>
-                    <Input value={formData.sa ?? ""} onChange={(e) => setFormData({ ...formData, sa: e.target.value })} placeholder="e.g. Junior General Manager" list="positions-list" data-testid="input-employee-sa" />
+                    <Input value={formData.sa ?? ""} onChange={(e) => setFormData({ ...formData, sa: e.target.value })}
+                      placeholder="e.g. Junior General Manager" list="positions-list" data-testid="input-employee-sa" />
                   </div>
                 </div>
 
+                {/* Locations */}
                 <div className="space-y-2">
                   <Label>Authorized Work Locations</Label>
-                  {availableLocations.length === 0 ? (
-                    <p className="text-xs text-muted-foreground italic">No active geofence zones. Add zones in Settings.</p>
-                  ) : (
-                    <div className="flex flex-wrap gap-2">
-                      {availableLocations.map((loc) => {
-                        const on = formData.geo.includes(loc);
-                        return (
-                          <button key={loc} type="button" onClick={() => toggleLocation(loc)}
-                            className={`px-3 py-1 rounded-md border text-xs font-medium transition-colors ${on ? "bg-primary text-primary-foreground border-primary" : "bg-background text-muted-foreground border-border"}`}
-                            data-testid={`toggle-location-${loc}`}>{loc}</button>
-                        );
-                      })}
-                    </div>
-                  )}
+                  {availableLocations.length === 0
+                    ? <p className="text-xs text-muted-foreground italic">No active geofence zones. Add zones in Settings.</p>
+                    : (
+                      <div className="flex flex-wrap gap-2">
+                        {availableLocations.map((loc) => {
+                          const on = formData.geo.includes(loc);
+                          return (
+                            <button key={loc} type="button" onClick={() => toggleLocation(loc)}
+                              className={`px-3 py-1 rounded-md border text-xs font-medium transition-colors
+                                ${on ? "bg-primary text-primary-foreground border-primary" : "bg-background text-muted-foreground border-border hover:border-primary/50"}`}
+                              data-testid={`toggle-location-${loc}`}>{loc}</button>
+                          );
+                        })}
+                      </div>
+                    )}
                 </div>
-
-                {user && (
-                  <div className="space-y-1.5">
-                    <Label>Status</Label>
-                    {sel(formData.status, (v) => setFormData({ ...formData, status: v }), [["active","Active"],["inactive","Inactive"]], "select-employee-status")}
-                  </div>
-                )}
 
                 {!user && (
                   <div className="rounded-md border border-border bg-muted/40 px-4 py-3 text-sm text-muted-foreground flex items-start gap-2">
@@ -756,77 +829,88 @@ function EmployeeFormDialog({
               </>
             )}
 
-            {/* ══ TAB 2: PAY STRUCTURE ══════════════════════════════════════════ */}
+            {/* ══ PAY STRUCTURE ═════════════════════════════════════════════ */}
             {tab === "pay" && (
-              <>
-                {/* Basic classification */}
-                <div className="rounded-md border border-border bg-muted/20 p-4 space-y-4">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Basic Compensation</p>
-                  <div className="grid grid-cols-3 gap-4">
-                    <div className="space-y-1.5">
-                      <Label>Pay Category</Label>
-                      {sel(formData.cat, (v) => setFormData({ ...formData, cat: v }), [["Time","Time (Hourly)"],["Fixed","Fixed (Salary)"],["Executive","Executive"]], "select-employee-cat")}
+              <div className="grid grid-cols-2 gap-5">
+
+                {/* Left: Basic + multipliers */}
+                <div className="space-y-4">
+                  <div className="rounded-md border border-border bg-muted/20 p-4 space-y-4">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Basic Compensation</p>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1.5">
+                        <Label>Pay Category</Label>
+                        {sel(formData.cat, (v) => setFormData({ ...formData, cat: v }),
+                          [["Time","Time (Hourly)"],["Fixed","Fixed (Salary)"],["Executive","Executive"]], "select-employee-cat")}
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label>Pay Frequency</Label>
+                        {sel(pc.frequency, (v) => setPc({ frequency: v as any }),
+                          [["weekly","Weekly"],["biweekly","Bi-weekly"],["monthly","Monthly"]], "select-pay-frequency")}
+                      </div>
                     </div>
-                    <div className="space-y-1.5">
-                      <Label>Pay Frequency</Label>
-                      {sel(pc.frequency, (v) => setPc({ frequency: v as any }), [["weekly","Weekly"],["biweekly","Bi-weekly"],["monthly","Monthly"]], "select-pay-frequency")}
-                    </div>
+
                     <div className="space-y-1.5">
                       {formData.cat === "Time" ? (
                         <>
                           <Label>Hourly Rate (GYD)</Label>
-                          <Input type="number" min={0} value={formData.hourlyRate} onChange={(e) => setFormData({ ...formData, hourlyRate: Number(e.target.value) })} data-testid="input-employee-hourly" />
+                          <Input type="number" min={0} value={formData.hourlyRate}
+                            onChange={(e) => setFormData({ ...formData, hourlyRate: Number(e.target.value) })} data-testid="input-employee-hourly" />
                           <p className="text-xs text-muted-foreground">≈ {fmt(formData.hourlyRate * 173.33)}/mo</p>
                         </>
                       ) : (
                         <>
                           <Label>Monthly Salary (GYD)</Label>
-                          <Input type="number" min={0} value={formData.salary} onChange={(e) => setFormData({ ...formData, salary: Number(e.target.value) })} data-testid="input-employee-salary" />
+                          <Input type="number" min={0} value={formData.salary}
+                            onChange={(e) => setFormData({ ...formData, salary: Number(e.target.value) })} data-testid="input-employee-salary" />
                         </>
                       )}
                     </div>
-                  </div>
 
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-1.5">
-                      <Label>OT Multiplier <span className="text-muted-foreground text-xs">(regular overtime)</span></Label>
-                      <Input type="number" step="0.1" min={1} max={4} value={pc.otMultiplier} onChange={(e) => setPc({ otMultiplier: Number(e.target.value) })} data-testid="input-ot-mult" />
-                      <p className="text-xs text-muted-foreground">Standard: 1.5× (Labour Act §16)</p>
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label>Public Holiday Multiplier</Label>
-                      <Input type="number" step="0.5" min={1} max={4} value={pc.phMultiplier} onChange={(e) => setPc({ phMultiplier: Number(e.target.value) })} data-testid="input-ph-mult" />
-                      <p className="text-xs text-muted-foreground">Standard: 2.0× (Labour Act §22)</p>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1.5">
+                        <Label>OT Multiplier</Label>
+                        <Input type="number" step="0.1" min={1} max={4} value={pc.otMultiplier}
+                          onChange={(e) => setPc({ otMultiplier: Number(e.target.value) })} data-testid="input-ot-mult" />
+                        <p className="text-xs text-muted-foreground">Standard: 1.5× (§16)</p>
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label>Public Holiday Rate</Label>
+                        <Input type="number" step="0.5" min={1} max={4} value={pc.phMultiplier}
+                          onChange={(e) => setPc({ phMultiplier: Number(e.target.value) })} data-testid="input-ph-mult" />
+                        <p className="text-xs text-muted-foreground">Standard: 2.0× (§22)</p>
+                      </div>
                     </div>
                   </div>
                 </div>
 
-                {/* Allowances */}
+                {/* Right: Allowances */}
                 <div className="rounded-md border border-border bg-muted/20 p-4 space-y-4">
                   <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-1.5">
                     <TrendingUp className="w-3.5 h-3.5 text-green-600" /> Allowances (Monthly GYD)
                   </p>
 
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-2 gap-3">
                     {([
-                      ["housingAllowance", "Housing Allowance"],
-                      ["transportAllowance", "Transport Allowance"],
-                      ["mealAllowance", "Meal Allowance"],
-                      ["uniformAllowance", "Uniform Allowance"],
-                      ["riskAllowance", "Risk / Hazard Allowance"],
-                      ["shiftAllowance", "Shift Differential"],
+                      ["housingAllowance",   "Housing"],
+                      ["transportAllowance", "Transport"],
+                      ["mealAllowance",      "Meal"],
+                      ["uniformAllowance",   "Uniform"],
+                      ["riskAllowance",      "Risk / Hazard"],
+                      ["shiftAllowance",     "Shift Differential"],
                     ] as const).map(([key, label]) => (
                       <div key={key} className="space-y-1.5">
                         <Label>{label}</Label>
-                        <Input type="number" min={0} value={pc[key]} onChange={(e) => setPc({ [key]: Number(e.target.value) })} data-testid={`input-${key}`} />
+                        <Input type="number" min={0} value={pc[key]}
+                          onChange={(e) => setPc({ [key]: Number(e.target.value) })} data-testid={`input-${key}`} />
                       </div>
                     ))}
                   </div>
 
-                  {/* Dynamic other allowances */}
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
-                      <Label>Other Allowances</Label>
+                      <Label className="text-xs">Other Allowances</Label>
                       <Button type="button" variant="outline" size="sm"
                         onClick={() => setPc({ otherAllowances: [...(pc.otherAllowances ?? []), { name: "", amount: 0 }] })}
                         data-testid="button-add-other-allowance">
@@ -835,80 +919,80 @@ function EmployeeFormDialog({
                     </div>
                     {(pc.otherAllowances ?? []).map((a, i) => (
                       <div key={i} className="flex gap-2 items-center">
-                        <Input placeholder="Allowance name" value={a.name}
+                        <Input placeholder="Name" value={a.name}
                           onChange={(e) => { const arr = [...pc.otherAllowances]; arr[i] = { ...arr[i], name: e.target.value }; setPc({ otherAllowances: arr }); }}
                           className="flex-1" data-testid={`input-other-allowance-name-${i}`} />
                         <Input type="number" min={0} placeholder="GYD" value={a.amount}
                           onChange={(e) => { const arr = [...pc.otherAllowances]; arr[i] = { ...arr[i], amount: Number(e.target.value) }; setPc({ otherAllowances: arr }); }}
-                          className="w-32" data-testid={`input-other-allowance-amount-${i}`} />
-                        <Button type="button" variant="ghost" size="icon" className="text-destructive shrink-0"
+                          className="w-28" data-testid={`input-other-allowance-amount-${i}`} />
+                        <Button type="button" variant="ghost" size="icon" className="text-destructive h-9 w-9 shrink-0"
                           onClick={() => setPc({ otherAllowances: pc.otherAllowances.filter((_, j) => j !== i) })}>
                           <X className="w-4 h-4" />
                         </Button>
                       </div>
                     ))}
                     {(pc.otherAllowances ?? []).length === 0 && (
-                      <p className="text-xs text-muted-foreground italic">No additional allowances. Click "Add" to include custom allowances.</p>
+                      <p className="text-xs text-muted-foreground italic">No additional allowances.</p>
                     )}
                   </div>
 
-                  {/* Allowance total */}
                   <div className="flex justify-between items-center pt-2 border-t border-border text-sm">
-                    <span className="text-muted-foreground">Total Allowances / Month</span>
+                    <span className="text-muted-foreground">Total / Month</span>
                     <span className="font-bold text-green-700">{fmt(calc.allowances)}</span>
                   </div>
                 </div>
-              </>
+              </div>
             )}
 
-            {/* ══ TAB 3: DEDUCTIONS & COMPLIANCE ════════════════════════════════ */}
+            {/* ══ DEDUCTIONS & COMPLIANCE ═══════════════════════════════════ */}
             {tab === "deductions" && (
-              <>
-                {/* Statutory deductions */}
+              <div className="grid grid-cols-2 gap-5">
+
+                {/* Left: Statutory */}
                 <div className="rounded-md border border-border bg-muted/20 p-4 space-y-4">
                   <div className="flex items-center gap-2">
                     <ShieldCheck className="w-4 h-4 text-primary" />
-                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Statutory Deductions (Guyana 2026)</p>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Statutory (Guyana 2026)</p>
                   </div>
 
                   {/* NIS */}
                   <div className="p-3 rounded-md border border-border bg-background space-y-2">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="font-medium text-sm">NIS — National Insurance Scheme</p>
-                        <p className="text-xs text-muted-foreground">Employee 5.6% · Employer 8.4% · Max insurable: {fmt(GY_NIS_MAX_INSURABLE)}/mo</p>
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="font-medium text-sm">NIS</p>
+                        <p className="text-xs text-muted-foreground">Emp 5.6% · Employer 8.4% · Max {fmt(GY_NIS_MAX_INSURABLE)}</p>
                       </div>
-                      <label className="flex items-center gap-2 text-xs cursor-pointer">
+                      <label className="flex items-center gap-1.5 text-xs cursor-pointer shrink-0">
                         <input type="checkbox" checked={pc.nisExempt} onChange={(e) => setPc({ nisExempt: e.target.checked })} data-testid="checkbox-nis-exempt" />
                         Exempt
                       </label>
                     </div>
                     {!pc.nisExempt && (
-                      <div className="grid grid-cols-2 gap-3 text-xs bg-muted/40 rounded p-2">
-                        <div><span className="text-muted-foreground">Employee deduction:</span> <strong className="text-red-600">{fmt(calc.nisEmployee)}/mo</strong></div>
-                        <div><span className="text-muted-foreground">Employer contribution:</span> <strong className="text-blue-600">{fmt(calc.nisEmployer)}/mo</strong></div>
+                      <div className="grid grid-cols-2 gap-2 text-xs bg-muted/40 rounded p-2">
+                        <div><span className="text-muted-foreground">Employee:</span> <strong className="text-red-600">{fmt(calc.nisEmployee)}/mo</strong></div>
+                        <div><span className="text-muted-foreground">Employer:</span> <strong className="text-blue-600">{fmt(calc.nisEmployer)}/mo</strong></div>
                       </div>
                     )}
                   </div>
 
-                  {/* Health Surcharge */}
+                  {/* Health */}
                   <div className="p-3 rounded-md border border-border bg-background space-y-2">
-                    <div className="flex items-center justify-between">
-                      <div>
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="min-w-0">
                         <p className="font-medium text-sm">Health Surcharge</p>
-                        <p className="text-xs text-muted-foreground">Full: GYD 1,200/mo · Reduced: GYD 600/mo (casual/part-time)</p>
+                        <p className="text-xs text-muted-foreground">Full GYD 1,200 · Reduced GYD 600/mo</p>
                       </div>
-                      <label className="flex items-center gap-2 text-xs cursor-pointer">
+                      <label className="flex items-center gap-1.5 text-xs cursor-pointer shrink-0">
                         <input type="checkbox" checked={pc.healthSurchargeExempt} onChange={(e) => setPc({ healthSurchargeExempt: e.target.checked })} data-testid="checkbox-hs-exempt" />
                         Exempt
                       </label>
                     </div>
                     {!pc.healthSurchargeExempt && (
-                      <div className="flex items-center gap-4">
+                      <div className="flex items-center gap-3 flex-wrap">
                         {(["full","half"] as const).map((r) => (
                           <label key={r} className="flex items-center gap-1.5 text-xs cursor-pointer">
                             <input type="radio" name="hsRate" checked={pc.healthSurchargeRate === r} onChange={() => setPc({ healthSurchargeRate: r })} data-testid={`radio-hs-${r}`} />
-                            {r === "full" ? `Full — GYD 1,200/mo` : `Reduced — GYD 600/mo`}
+                            {r === "full" ? "Full — 1,200" : "Reduced — 600"}
                           </label>
                         ))}
                         <span className="ml-auto text-xs font-medium text-red-600">{fmt(calc.healthSurcharge)}/mo</span>
@@ -916,139 +1000,110 @@ function EmployeeFormDialog({
                     )}
                   </div>
 
-                  {/* Income Tax */}
+                  {/* PAYE */}
                   <div className="p-3 rounded-md border border-border bg-background space-y-2">
-                    <div className="flex items-center justify-between">
-                      <div>
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="min-w-0">
                         <p className="font-medium text-sm">Income Tax (PAYE)</p>
-                        <p className="text-xs text-muted-foreground">Personal allowance: {fmt(GY_PERSONAL_ALLOWANCE)}/mo · 28% on ≤{fmt(GY_TAX_LOWER_LIMIT)} · 40% above</p>
+                        <p className="text-xs text-muted-foreground">Allowance {fmt(GY_PERSONAL_ALLOWANCE)} · 28%/40%</p>
                       </div>
-                      <label className="flex items-center gap-2 text-xs cursor-pointer">
+                      <label className="flex items-center gap-1.5 text-xs cursor-pointer shrink-0">
                         <input type="checkbox" checked={pc.taxExempt} onChange={(e) => setPc({ taxExempt: e.target.checked })} data-testid="checkbox-tax-exempt" />
                         Exempt
                       </label>
                     </div>
                     {!pc.taxExempt && (
-                      <div className="grid grid-cols-2 gap-3 text-xs bg-muted/40 rounded p-2">
-                        <div><span className="text-muted-foreground">Chargeable income:</span> <strong>{fmt(calc.chargeable)}/mo</strong></div>
-                        <div><span className="text-muted-foreground">PAYE deduction:</span> <strong className="text-red-600">{fmt(calc.tax)}/mo</strong></div>
+                      <div className="grid grid-cols-2 gap-2 text-xs bg-muted/40 rounded p-2">
+                        <div><span className="text-muted-foreground">Chargeable:</span> <strong>{fmt(calc.chargeable)}</strong></div>
+                        <div><span className="text-muted-foreground">PAYE:</span> <strong className="text-red-600">{fmt(calc.tax)}/mo</strong></div>
                       </div>
                     )}
                   </div>
                 </div>
 
-                {/* Voluntary deductions */}
-                <div className="rounded-md border border-border bg-muted/20 p-4 space-y-4">
-                  <div className="flex items-center gap-2">
-                    <CreditCard className="w-4 h-4 text-muted-foreground" />
-                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Voluntary Deductions (Monthly GYD)</p>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    {([
-                      ["creditUnion", "Credit Union"],
-                      ["loanRepayment", "Loan Repayment"],
-                      ["advancesRecovery", "Advances Recovery"],
-                      ["unionDues", "Union Dues"],
-                    ] as const).map(([key, label]) => (
-                      <div key={key} className="space-y-1.5">
-                        <Label>{label}</Label>
-                        <Input type="number" min={0} value={pc[key]} onChange={(e) => setPc({ [key]: Number(e.target.value) })} data-testid={`input-${key}`} />
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* Dynamic other deductions */}
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <Label>Other Deductions</Label>
-                      <Button type="button" variant="outline" size="sm"
-                        onClick={() => setPc({ otherDeductions: [...(pc.otherDeductions ?? []), { name: "", amount: 0 }] })}
-                        data-testid="button-add-other-deduction">
-                        <PlusCircle className="w-3.5 h-3.5 mr-1" /> Add
-                      </Button>
+                {/* Right: Voluntary + full pay breakdown */}
+                <div className="space-y-4">
+                  <div className="rounded-md border border-border bg-muted/20 p-4 space-y-4">
+                    <div className="flex items-center gap-2">
+                      <CreditCard className="w-4 h-4 text-muted-foreground" />
+                      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Voluntary Deductions (Monthly GYD)</p>
                     </div>
-                    {(pc.otherDeductions ?? []).map((d, i) => (
-                      <div key={i} className="flex gap-2 items-center">
-                        <Input placeholder="Deduction name" value={d.name}
-                          onChange={(e) => { const arr = [...pc.otherDeductions]; arr[i] = { ...arr[i], name: e.target.value }; setPc({ otherDeductions: arr }); }}
-                          className="flex-1" data-testid={`input-other-deduction-name-${i}`} />
-                        <Input type="number" min={0} placeholder="GYD" value={d.amount}
-                          onChange={(e) => { const arr = [...pc.otherDeductions]; arr[i] = { ...arr[i], amount: Number(e.target.value) }; setPc({ otherDeductions: arr }); }}
-                          className="w-32" data-testid={`input-other-deduction-amount-${i}`} />
-                        <Button type="button" variant="ghost" size="icon" className="text-destructive shrink-0"
-                          onClick={() => setPc({ otherDeductions: pc.otherDeductions.filter((_, j) => j !== i) })}>
-                          <X className="w-4 h-4" />
+
+                    <div className="grid grid-cols-2 gap-3">
+                      {([
+                        ["creditUnion",      "Credit Union"],
+                        ["loanRepayment",    "Loan Repayment"],
+                        ["advancesRecovery", "Advances Recovery"],
+                        ["unionDues",        "Union Dues"],
+                      ] as const).map(([key, label]) => (
+                        <div key={key} className="space-y-1.5">
+                          <Label>{label}</Label>
+                          <Input type="number" min={0} value={pc[key]}
+                            onChange={(e) => setPc({ [key]: Number(e.target.value) })} data-testid={`input-${key}`} />
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-xs">Other Deductions</Label>
+                        <Button type="button" variant="outline" size="sm"
+                          onClick={() => setPc({ otherDeductions: [...(pc.otherDeductions ?? []), { name: "", amount: 0 }] })}
+                          data-testid="button-add-other-deduction">
+                          <PlusCircle className="w-3.5 h-3.5 mr-1" /> Add
                         </Button>
                       </div>
-                    ))}
-                    {(pc.otherDeductions ?? []).length === 0 && (
-                      <p className="text-xs text-muted-foreground italic">No additional deductions configured.</p>
-                    )}
+                      {(pc.otherDeductions ?? []).map((d, i) => (
+                        <div key={i} className="flex gap-2 items-center">
+                          <Input placeholder="Name" value={d.name}
+                            onChange={(e) => { const arr = [...pc.otherDeductions]; arr[i] = { ...arr[i], name: e.target.value }; setPc({ otherDeductions: arr }); }}
+                            className="flex-1" data-testid={`input-other-deduction-name-${i}`} />
+                          <Input type="number" min={0} placeholder="GYD" value={d.amount}
+                            onChange={(e) => { const arr = [...pc.otherDeductions]; arr[i] = { ...arr[i], amount: Number(e.target.value) }; setPc({ otherDeductions: arr }); }}
+                            className="w-28" data-testid={`input-other-deduction-amount-${i}`} />
+                          <Button type="button" variant="ghost" size="icon" className="text-destructive h-9 w-9 shrink-0"
+                            onClick={() => setPc({ otherDeductions: pc.otherDeductions.filter((_, j) => j !== i) })}>
+                            <X className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      ))}
+                      {(pc.otherDeductions ?? []).length === 0 && (
+                        <p className="text-xs text-muted-foreground italic">No additional deductions.</p>
+                      )}
+                    </div>
                   </div>
-                </div>
 
-                {/* Live Pay Preview */}
-                <div className="rounded-md border-2 border-primary/20 bg-primary/5 p-4 space-y-3">
-                  <div className="flex items-center gap-2">
-                    <DollarSign className="w-4 h-4 text-primary" />
-                    <p className="font-semibold text-sm">Estimated Monthly Pay Summary</p>
-                    <Badge variant="outline" className="text-xs ml-auto capitalize">{pc.frequency}</Badge>
-                  </div>
-                  <div className="space-y-1.5 text-sm">
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Basic {formData.cat === "Time" ? "Wage" : "Salary"}</span>
-                      <span className="font-medium">{fmt(calc.monthlyBasic)}</span>
+                  {/* Full pay summary */}
+                  <div className="rounded-md border-2 border-primary/20 bg-primary/5 p-4 space-y-2.5">
+                    <div className="flex items-center gap-2 mb-1">
+                      <DollarSign className="w-4 h-4 text-primary" />
+                      <p className="font-semibold text-sm">Estimated Monthly Pay</p>
                     </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Total Allowances</span>
-                      <span className="font-medium text-green-700">+ {fmt(calc.allowances)}</span>
+                    <div className="space-y-1.5 text-sm">
+                      <div className="flex justify-between"><span className="text-muted-foreground">Basic {formData.cat === "Time" ? "Wage" : "Salary"}</span><span>{fmt(calc.monthlyBasic)}</span></div>
+                      <div className="flex justify-between"><span className="text-muted-foreground">Allowances</span><span className="text-green-700">+ {fmt(calc.allowances)}</span></div>
+                      <div className="flex justify-between border-t border-border pt-1 font-semibold"><span>Gross</span><span>{fmt(calc.gross)}</span></div>
                     </div>
-                    <div className="flex justify-between border-t border-border pt-1.5 font-semibold">
-                      <span>Gross Earnings</span>
-                      <span>{fmt(calc.gross)}</span>
+                    <div className="space-y-1 text-sm border-t border-border pt-2">
+                      {!pc.nisExempt && <div className="flex justify-between text-red-600"><span>NIS (5.6%)</span><span>− {fmt(calc.nisEmployee)}</span></div>}
+                      {!pc.healthSurchargeExempt && <div className="flex justify-between text-red-600"><span>Health Surcharge</span><span>− {fmt(calc.healthSurcharge)}</span></div>}
+                      {!pc.taxExempt && calc.tax > 0 && <div className="flex justify-between text-red-600"><span>PAYE</span><span>− {fmt(calc.tax)}</span></div>}
+                      {calc.voluntary > 0 && <div className="flex justify-between text-amber-600"><span>Voluntary</span><span>− {fmt(calc.voluntary)}</span></div>}
                     </div>
+                    <div className="flex justify-between items-center pt-2 border-t-2 border-primary/20 font-bold text-base">
+                      <span>Net Pay</span>
+                      <span className="text-primary">{fmt(calc.net)}</span>
+                    </div>
+                    <p className="text-[10px] text-muted-foreground flex items-start gap-1">
+                      <Info className="w-3 h-3 shrink-0 mt-0.5" />
+                      Estimate only — excludes OT, public holiday pay, mid-period adjustments.
+                    </p>
                   </div>
-                  <div className="space-y-1 text-sm border-t border-border pt-2">
-                    {!pc.nisExempt && <div className="flex justify-between text-red-600"><span>NIS (employee 5.6%)</span><span>− {fmt(calc.nisEmployee)}</span></div>}
-                    {!pc.healthSurchargeExempt && <div className="flex justify-between text-red-600"><span>Health Surcharge</span><span>− {fmt(calc.healthSurcharge)}</span></div>}
-                    {!pc.taxExempt && calc.tax > 0 && <div className="flex justify-between text-red-600"><span>PAYE (Income Tax)</span><span>− {fmt(calc.tax)}</span></div>}
-                    {calc.voluntary > 0 && <div className="flex justify-between text-amber-600"><span>Voluntary Deductions</span><span>− {fmt(calc.voluntary)}</span></div>}
-                  </div>
-                  <div className="flex justify-between items-center pt-2 border-t-2 border-primary/20 font-bold text-base">
-                    <span>Estimated Net Pay</span>
-                    <span className="text-primary">{fmt(calc.net)}</span>
-                  </div>
-                  <p className="text-xs text-muted-foreground flex items-start gap-1">
-                    <Info className="w-3 h-3 shrink-0 mt-0.5" />
-                    Estimate only — does not include OT, PHD, mid-month adjustments or advance recoveries not entered above.
-                  </p>
                 </div>
-              </>
+              </div>
             )}
-          </div>
 
-          {/* Footer */}
-          <div className="flex items-center justify-between px-6 py-4 border-t border-border bg-muted/20 shrink-0">
-            <div className="flex gap-1">
-              {(["personal","pay","deductions"] as const).map((t) => (
-                <div key={t} className={`h-1.5 w-6 rounded-full transition-colors ${tab === t ? "bg-primary" : "bg-muted"}`} />
-              ))}
-            </div>
-            <div className="flex gap-2">
-              <Button type="button" variant="outline" onClick={onClose} data-testid="button-cancel-employee">Cancel</Button>
-              {tab !== "deductions" && (
-                <Button type="button" onClick={() => setTab(tab === "personal" ? "pay" : "deductions")} data-testid="button-next-tab">
-                  Next →
-                </Button>
-              )}
-              {tab === "deductions" && (
-                <Button type="submit" disabled={creating || updating} data-testid="button-submit-employee">
-                  {creating || updating ? "Saving..." : user ? "Save Changes" : "Create Profile"}
-                </Button>
-              )}
-            </div>
-          </div>
+          </div>{/* end right content */}
         </form>
       </DialogContent>
     </Dialog>
