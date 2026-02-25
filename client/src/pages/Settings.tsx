@@ -2,68 +2,102 @@ import { useState } from "react";
 import { Layout } from "@/components/Layout";
 import { useAuth } from "@/hooks/use-auth";
 import { useUpdateUser } from "@/hooks/use-users";
+import { useGeofences, useCreateGeofence, useUpdateGeofence, useDeleteGeofence } from "@/hooks/use-geofences";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Shield, Building2, UserCircle, KeyRound, MapPin, DollarSign } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  Shield, Building2, UserCircle, KeyRound, MapPin, DollarSign,
+  Plus, Pencil, Trash2, ToggleLeft, ToggleRight, ExternalLink,
+} from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { PAYROLL_CONSTANTS } from "@/lib/payroll";
+import type { Geofence } from "@shared/schema";
 
-const WORK_LOCATIONS = ["CARICOM", "EU", "UN", "DMC", "ARU", "HEAD OFFICE", "CANTEEN"];
-
-const GEOFENCES = {
-  "HEAD OFFICE": { lat: 6.813348, lng: -58.147854, radius: 150 },
-  "CARICOM": { lat: 6.820398, lng: -58.116849, radius: 200 },
-  "EU": { lat: 6.8080, lng: -58.1600, radius: 200 },
-  "UN": { lat: 6.8100, lng: -58.1550, radius: 200 },
-  "DMC": { lat: 6.8050, lng: -58.1620, radius: 200 },
-  "ARU": { lat: 6.8120, lng: -58.1480, radius: 200 },
-  "CANTEEN": { lat: 6.8135, lng: -58.1478, radius: 80 },
-};
+const EMPTY_FENCE = { name: "", lat: "", lng: "", radius: "150", description: "", active: true };
 
 export default function Settings() {
   const { user, refreshUser } = useAuth();
   const { mutateAsync: updateUser, isPending } = useUpdateUser();
+  const { data: geofences, isLoading: loadingFences } = useGeofences();
+  const { mutateAsync: createGeofence, isPending: creating } = useCreateGeofence();
+  const { mutateAsync: updateGeofence, isPending: updating } = useUpdateGeofence();
+  const { mutateAsync: deleteGeofence } = useDeleteGeofence();
   const { toast } = useToast();
 
   const [pw, setPw] = useState({ current: "", next: "", confirm: "" });
   const [activeTab, setActiveTab] = useState<"profile" | "password" | "payroll" | "geofence">("profile");
 
+  // Geofence modal state
+  const [fenceModal, setFenceModal] = useState<{ mode: "create" | "edit"; data: typeof EMPTY_FENCE & { id?: number } } | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<Geofence | null>(null);
+
   if (!user) return null;
 
+  // ── Password change ────────────────────────────────────────────────────────
   const handlePasswordChange = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (pw.current !== user.password) {
-      toast({ title: "Current password is incorrect", variant: "destructive" });
-      return;
-    }
-    if (pw.next.length < 6) {
-      toast({ title: "New password must be at least 6 characters", variant: "destructive" });
-      return;
-    }
-    if (pw.next !== pw.confirm) {
-      toast({ title: "Passwords do not match", variant: "destructive" });
-      return;
-    }
-    if (pw.next === "temp") {
-      toast({ title: "Cannot reuse the default password", variant: "destructive" });
-      return;
-    }
+    if (pw.current !== user.password) { toast({ title: "Current password incorrect", variant: "destructive" }); return; }
+    if (pw.next.length < 6) { toast({ title: "Password must be at least 6 characters", variant: "destructive" }); return; }
+    if (pw.next !== pw.confirm) { toast({ title: "Passwords do not match", variant: "destructive" }); return; }
+    if (pw.next === "temp") { toast({ title: "Cannot reuse the default password", variant: "destructive" }); return; }
     try {
       const updated = await updateUser({ id: user.id, password: pw.next, fpc: false });
       refreshUser(updated);
-      toast({ title: "Password changed successfully" });
+      toast({ title: "Password updated successfully" });
       setPw({ current: "", next: "", confirm: "" });
-    } catch {
-      toast({ title: "Failed to update password", variant: "destructive" });
+    } catch { toast({ title: "Failed to update password", variant: "destructive" }); }
+  };
+
+  // ── Geofence CRUD ──────────────────────────────────────────────────────────
+  const openCreate = () => setFenceModal({ mode: "create", data: { ...EMPTY_FENCE } });
+  const openEdit = (g: Geofence) => setFenceModal({ mode: "edit", data: { id: g.id, name: g.name, lat: String(g.lat), lng: String(g.lng), radius: String(g.radius), description: g.description ?? "", active: g.active } });
+
+  const handleFenceSave = async () => {
+    if (!fenceModal) return;
+    const { name, lat, lng, radius, description, active, id } = fenceModal.data;
+    if (!name.trim()) { toast({ title: "Zone name is required", variant: "destructive" }); return; }
+    const latNum = parseFloat(lat);
+    const lngNum = parseFloat(lng);
+    const radiusNum = parseInt(radius);
+    if (isNaN(latNum) || isNaN(lngNum)) { toast({ title: "Enter valid GPS coordinates", variant: "destructive" }); return; }
+    if (isNaN(radiusNum) || radiusNum < 10) { toast({ title: "Radius must be at least 10 metres", variant: "destructive" }); return; }
+    try {
+      if (fenceModal.mode === "create") {
+        await createGeofence({ name: name.trim(), lat: latNum, lng: lngNum, radius: radiusNum, description: description || null, active });
+        toast({ title: "Geofence zone created" });
+      } else {
+        await updateGeofence({ id: id!, name: name.trim(), lat: latNum, lng: lngNum, radius: radiusNum, description: description || null, active });
+        toast({ title: "Geofence zone updated" });
+      }
+      setFenceModal(null);
+    } catch (err: any) {
+      toast({ title: "Failed to save", description: err.message, variant: "destructive" });
     }
+  };
+
+  const handleToggleActive = async (g: Geofence) => {
+    try {
+      await updateGeofence({ id: g.id, active: !g.active });
+      toast({ title: g.active ? "Zone deactivated" : "Zone activated" });
+    } catch { toast({ title: "Failed to toggle zone", variant: "destructive" }); }
+  };
+
+  const handleDelete = async () => {
+    if (!deleteConfirm) return;
+    try {
+      await deleteGeofence(deleteConfirm.id);
+      toast({ title: "Geofence zone deleted" });
+      setDeleteConfirm(null);
+    } catch { toast({ title: "Failed to delete zone", variant: "destructive" }); }
   };
 
   const tabs = [
     { key: "profile" as const, label: "Profile", icon: UserCircle },
-    { key: "password" as const, label: "Change Password", icon: KeyRound },
+    { key: "password" as const, label: "Password", icon: KeyRound },
     ...(user.role === "admin" ? [
       { key: "payroll" as const, label: "Payroll Rules", icon: DollarSign },
       { key: "geofence" as const, label: "Geofences", icon: MapPin },
@@ -91,18 +125,18 @@ export default function Settings() {
         ))}
       </div>
 
-      {/* PROFILE TAB */}
+      {/* ── PROFILE ────────────────────────────────────────────────────────── */}
       {activeTab === "profile" && (
         <div className="grid gap-5 md:grid-cols-2">
           <Card className="p-6">
-            <div className="flex items-center gap-4 mb-6 pb-5 border-b border-border">
-              <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-2xl">
+            <div className="flex items-center gap-4 mb-5 pb-4 border-b border-border">
+              <div className="w-14 h-14 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-xl shrink-0">
                 {user.av || user.name.charAt(0)}
               </div>
               <div>
                 <h2 className="text-xl font-bold">{user.name}</h2>
                 <p className="text-muted-foreground text-sm font-mono">{user.userId}</p>
-                <Badge className="mt-1 capitalize">{user.role}</Badge>
+                <Badge className="mt-1 capitalize text-xs">{user.role}</Badge>
               </div>
             </div>
             <div className="space-y-3 text-sm">
@@ -110,58 +144,34 @@ export default function Settings() {
                 { icon: UserCircle, label: "Role", value: user.role },
                 { icon: Building2, label: "Department", value: user.dept },
                 { icon: Shield, label: "Position", value: user.pos },
+                ...(user.email ? [{ icon: UserCircle, label: "Email", value: user.email }] : []),
+                ...(user.phone ? [{ icon: UserCircle, label: "Phone", value: user.phone }] : []),
+                ...(user.joined ? [{ icon: UserCircle, label: "Joined", value: user.joined }] : []),
               ].map(({ icon: Icon, label, value }) => (
                 <div key={label} className="flex items-center justify-between">
                   <span className="text-muted-foreground flex items-center gap-1.5"><Icon className="w-3.5 h-3.5" /> {label}</span>
                   <span className="font-medium">{value}</span>
                 </div>
               ))}
-              {user.email && (
-                <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground">Email</span>
-                  <span className="font-medium">{user.email}</span>
-                </div>
-              )}
-              {user.phone && (
-                <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground">Phone</span>
-                  <span className="font-medium">{user.phone}</span>
-                </div>
-              )}
-              {user.joined && (
-                <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground">Joined</span>
-                  <span className="font-medium">{user.joined}</span>
-                </div>
-              )}
             </div>
           </Card>
 
           <Card className="p-6">
-            <h3 className="font-semibold mb-3">Authorized Work Locations</h3>
-            <p className="text-xs text-muted-foreground mb-4">These are the geofenced zones you are authorized to clock in from.</p>
-            <div className="flex flex-wrap gap-2">
+            <h3 className="font-semibold mb-1 text-sm">Authorized Work Zones</h3>
+            <p className="text-xs text-muted-foreground mb-4">Geofenced locations you can clock in from.</p>
+            <div className="flex flex-wrap gap-2 mb-5">
               {user.geo && user.geo.length > 0 ? (
-                user.geo.map((zone, i) => (
-                  <Badge key={i} variant="secondary" className="text-sm" data-testid={`zone-badge-${zone}`}>{zone}</Badge>
-                ))
+                user.geo.map((zone, i) => <Badge key={i} variant="secondary">{zone}</Badge>)
               ) : (
-                <span className="text-sm text-muted-foreground italic">No specific locations assigned.</span>
+                <span className="text-sm text-muted-foreground italic">No locations assigned.</span>
               )}
             </div>
-
-            {user.fa && (
-              <div className="mt-5 pt-4 border-t border-border">
-                <h3 className="font-semibold text-sm mb-3">Reporting Chain</h3>
+            {(user.fa || user.sa) && (
+              <div className="pt-4 border-t border-border">
+                <h3 className="font-semibold text-sm mb-3">Approval Chain</h3>
                 <div className="space-y-2 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">1st Sign-off</span>
-                    <span className="font-medium">{user.fa}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">2nd Sign-off</span>
-                    <span className="font-medium">{user.sa}</span>
-                  </div>
+                  {user.fa && <div className="flex justify-between"><span className="text-muted-foreground">1st Approver</span><span className="font-medium">{user.fa}</span></div>}
+                  {user.sa && <div className="flex justify-between"><span className="text-muted-foreground">2nd Approver</span><span className="font-medium">{user.sa}</span></div>}
                 </div>
               </div>
             )}
@@ -169,46 +179,22 @@ export default function Settings() {
         </div>
       )}
 
-      {/* PASSWORD TAB */}
+      {/* ── PASSWORD ───────────────────────────────────────────────────────── */}
       {activeTab === "password" && (
         <Card className="p-6 max-w-md">
           <h3 className="font-semibold mb-4">Change Password</h3>
           <form onSubmit={handlePasswordChange} className="space-y-4">
             <div className="space-y-1.5">
-              <Label htmlFor="current-pw">Current Password</Label>
-              <Input
-                id="current-pw"
-                type="password"
-                value={pw.current}
-                onChange={(e) => setPw({ ...pw, current: e.target.value })}
-                placeholder="Your current password"
-                data-testid="input-current-pw"
-                required
-              />
+              <Label>Current Password</Label>
+              <Input type="password" value={pw.current} onChange={(e) => setPw({ ...pw, current: e.target.value })} placeholder="Current password" data-testid="input-current-pw" required />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="new-pw">New Password</Label>
-              <Input
-                id="new-pw"
-                type="password"
-                value={pw.next}
-                onChange={(e) => setPw({ ...pw, next: e.target.value })}
-                placeholder="At least 6 characters"
-                data-testid="input-new-pw"
-                required
-              />
+              <Label>New Password</Label>
+              <Input type="password" value={pw.next} onChange={(e) => setPw({ ...pw, next: e.target.value })} placeholder="At least 6 characters" data-testid="input-new-pw" required />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="confirm-pw">Confirm New Password</Label>
-              <Input
-                id="confirm-pw"
-                type="password"
-                value={pw.confirm}
-                onChange={(e) => setPw({ ...pw, confirm: e.target.value })}
-                placeholder="Repeat new password"
-                data-testid="input-confirm-pw"
-                required
-              />
+              <Label>Confirm New Password</Label>
+              <Input type="password" value={pw.confirm} onChange={(e) => setPw({ ...pw, confirm: e.target.value })} placeholder="Repeat new password" data-testid="input-confirm-pw" required />
             </div>
             <Button type="submit" disabled={isPending} className="w-full" data-testid="button-change-password">
               {isPending ? "Updating..." : "Update Password"}
@@ -217,86 +203,244 @@ export default function Settings() {
         </Card>
       )}
 
-      {/* PAYROLL RULES TAB (Admin only) */}
+      {/* ── PAYROLL RULES (admin) ───────────────────────────────────────────── */}
       {activeTab === "payroll" && user.role === "admin" && (
         <div className="grid gap-5 md:grid-cols-2">
           <Card className="p-6">
             <h3 className="font-semibold mb-4">Guyana 2026 Payroll Configuration</h3>
-            <div className="space-y-4">
-              <div className="text-xs text-muted-foreground bg-blue-50 border border-blue-200 rounded p-3">
-                These values reflect the current Guyana 2026 statutory requirements. Changes require a system update.
-              </div>
-              <table className="w-full text-sm">
-                <tbody className="divide-y divide-border">
-                  {[
-                    ["Employee NIS Rate", `${(PAYROLL_CONSTANTS.NIS_EMP_RATE * 100).toFixed(1)}%`],
-                    ["Employer NIS Rate", `${(PAYROLL_CONSTANTS.NIS_ER_RATE * 100).toFixed(1)}%`],
-                    ["NIS Earnings Ceiling", `GYD ${PAYROLL_CONSTANTS.NIS_CEILING_MONTHLY.toLocaleString()}/month`],
-                    ["Personal Allowance", `GYD ${PAYROLL_CONSTANTS.PERSONAL_ALLOWANCE.toLocaleString()}/month`],
-                    ["PAYE Rate", `${(PAYROLL_CONSTANTS.PAYE_RATE * 100).toFixed(0)}%`],
-                    ["Overtime Multiplier", `${PAYROLL_CONSTANTS.OT_MULTIPLIER}x`],
-                    ["Working Hours/Month", `${PAYROLL_CONSTANTS.WORKING_HOURS_PER_MONTH}h`],
-                  ].map(([label, value]) => (
-                    <tr key={label}>
-                      <td className="py-2 text-muted-foreground">{label}</td>
-                      <td className="py-2 text-right font-semibold">{value}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded p-3 mb-4">
+              Current statutory values for Guyana 2026. Updates require a system release.
             </div>
+            <table className="w-full text-sm">
+              <tbody className="divide-y divide-border">
+                {[
+                  ["Employee NIS Rate", `${(PAYROLL_CONSTANTS.NIS_EMP_RATE * 100).toFixed(1)}%`],
+                  ["Employer NIS Rate", `${(PAYROLL_CONSTANTS.NIS_ER_RATE * 100).toFixed(1)}%`],
+                  ["NIS Earnings Ceiling", `GYD ${PAYROLL_CONSTANTS.NIS_CEILING_MONTHLY.toLocaleString()}/month`],
+                  ["Personal Allowance (PAYE)", `GYD ${PAYROLL_CONSTANTS.PERSONAL_ALLOWANCE.toLocaleString()}/month`],
+                  ["PAYE Rate", `${(PAYROLL_CONSTANTS.PAYE_RATE * 100).toFixed(0)}%`],
+                  ["Overtime Multiplier", `${PAYROLL_CONSTANTS.OT_MULTIPLIER}×`],
+                  ["Standard Working Hours", `${PAYROLL_CONSTANTS.WORKING_HOURS_PER_MONTH}h/month`],
+                ].map(([label, value]) => (
+                  <tr key={label}><td className="py-2.5 text-muted-foreground">{label}</td><td className="py-2.5 text-right font-semibold">{value}</td></tr>
+                ))}
+              </tbody>
+            </table>
           </Card>
           <Card className="p-6">
             <h3 className="font-semibold mb-4">Pay Categories</h3>
-            <div className="space-y-3 text-sm">
-              {[
-                { name: "Time", desc: "Hourly rate × hours worked. OT at 1.5x for hours > 8/day." },
-                { name: "Fixed", desc: "Monthly salary. Eligible for OT calculated at salary ÷ 176h × 1.5x." },
-                { name: "Executive", desc: "Monthly salary. OT typically excluded unless configured." },
-              ].map(({ name, desc }) => (
-                <div key={name} className="p-3 border border-border rounded-md">
-                  <Badge variant="outline" className="mb-1.5">{name}</Badge>
-                  <p className="text-muted-foreground text-xs">{desc}</p>
-                </div>
-              ))}
-            </div>
+            {[
+              { name: "Time", desc: "Hourly rate × hours. OT = hours beyond 8/day at 1.5×." },
+              { name: "Fixed", desc: "Monthly salary. OT eligible: (salary ÷ 176h) × OT hrs × 1.5×." },
+              { name: "Executive", desc: "Monthly salary. OT typically excluded by policy." },
+            ].map(({ name, desc }) => (
+              <div key={name} className="mb-3 p-3 border border-border rounded-md">
+                <Badge variant="outline" className="mb-1.5">{name}</Badge>
+                <p className="text-xs text-muted-foreground">{desc}</p>
+              </div>
+            ))}
           </Card>
         </div>
       )}
 
-      {/* GEOFENCE TAB (Admin only) */}
+      {/* ── GEOFENCES (admin) ──────────────────────────────────────────────── */}
       {activeTab === "geofence" && user.role === "admin" && (
-        <Card className="p-6">
-          <h3 className="font-semibold mb-1">Work Zone Geofences</h3>
-          <p className="text-xs text-muted-foreground mb-5">These are the GPS coordinates and radius for each authorized work location. Employees must be within the radius to clock in.</p>
-          <div className="grid gap-3 md:grid-cols-2">
-            {Object.entries(GEOFENCES).map(([name, { lat, lng, radius }]) => (
-              <div key={name} className="border border-border rounded-md p-4" data-testid={`geofence-${name}`}>
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center gap-2">
-                    <MapPin className="w-4 h-4 text-primary" />
-                    <span className="font-semibold text-sm">{name}</span>
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="font-semibold">Work Zone Geofences</h3>
+              <p className="text-xs text-muted-foreground mt-0.5">Define GPS zones where employees are permitted to clock in.</p>
+            </div>
+            <Button onClick={openCreate} data-testid="button-add-geofence">
+              <Plus className="w-4 h-4 mr-2" /> Add Zone
+            </Button>
+          </div>
+
+          {loadingFences ? (
+            <div className="text-center py-8 text-muted-foreground text-sm">Loading...</div>
+          ) : !geofences || geofences.length === 0 ? (
+            <div className="text-center py-12 border-2 border-dashed border-border rounded-md text-muted-foreground text-sm">
+              No geofence zones configured yet.
+            </div>
+          ) : (
+            <div className="grid gap-3 md:grid-cols-2">
+              {geofences.map((g) => (
+                <Card key={g.id} className={`p-4 ${!g.active ? "opacity-60" : ""}`} data-testid={`geofence-card-${g.id}`}>
+                  <div className="flex items-start justify-between gap-2 mb-2">
+                    <div className="flex items-center gap-2">
+                      <div className={`p-1.5 rounded ${g.active ? "bg-green-100" : "bg-muted"}`}>
+                        <MapPin className={`w-4 h-4 ${g.active ? "text-green-600" : "text-muted-foreground"}`} />
+                      </div>
+                      <div>
+                        <p className="font-semibold text-sm">{g.name}</p>
+                        {g.description && <p className="text-xs text-muted-foreground">{g.description}</p>}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <Badge variant={g.active ? "default" : "secondary"} className="text-xs">
+                        {g.active ? "Active" : "Inactive"}
+                      </Badge>
+                    </div>
                   </div>
-                  <Badge variant="secondary" className="text-xs">{radius}m radius</Badge>
+
+                  <div className="text-xs text-muted-foreground font-mono mb-3 space-y-0.5">
+                    <p>Lat: {g.lat.toFixed(6)} · Lng: {g.lng.toFixed(6)}</p>
+                    <p>Radius: <strong className="text-foreground">{g.radius}m</strong></p>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <a
+                      href={`https://maps.google.com/?q=${g.lat},${g.lng}&z=17`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs text-primary flex items-center gap-1 hover:underline"
+                    >
+                      <ExternalLink className="w-3 h-3" /> Maps
+                    </a>
+                    <div className="ml-auto flex items-center gap-1.5">
+                      <button
+                        onClick={() => handleToggleActive(g)}
+                        className="text-muted-foreground hover:text-foreground transition-colors"
+                        title={g.active ? "Deactivate zone" : "Activate zone"}
+                        data-testid={`button-toggle-${g.id}`}
+                      >
+                        {g.active ? <ToggleRight className="w-5 h-5 text-green-500" /> : <ToggleLeft className="w-5 h-5" />}
+                      </button>
+                      <button
+                        onClick={() => openEdit(g)}
+                        className="text-muted-foreground hover:text-primary transition-colors p-1"
+                        data-testid={`button-edit-${g.id}`}
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => setDeleteConfirm(g)}
+                        className="text-muted-foreground hover:text-destructive transition-colors p-1"
+                        data-testid={`button-delete-${g.id}`}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                </Card>
+              ))}
+            </div>
+          )}
+
+          {/* Help text */}
+          <Card className="p-4 bg-muted/30">
+            <p className="text-xs text-muted-foreground">
+              <strong>How to get GPS coordinates:</strong> Open{" "}
+              <a href="https://maps.google.com" target="_blank" rel="noopener noreferrer" className="text-primary underline">Google Maps</a>,
+              right-click on the location, and copy the coordinates. Paste the latitude and longitude here.
+              Set the radius to match the size of the work area (e.g. 50m for a building, 200m for a compound).
+            </p>
+          </Card>
+        </div>
+      )}
+
+      {/* ── Geofence Create/Edit Modal ───────────────────────────────────────── */}
+      <Dialog open={!!fenceModal} onOpenChange={() => setFenceModal(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{fenceModal?.mode === "create" ? "Add New Work Zone" : "Edit Work Zone"}</DialogTitle>
+          </DialogHeader>
+          {fenceModal && (
+            <div className="space-y-4 mt-2">
+              <div className="space-y-1.5">
+                <Label>Zone Name <span className="text-destructive">*</span></Label>
+                <Input
+                  value={fenceModal.data.name}
+                  onChange={(e) => setFenceModal({ ...fenceModal, data: { ...fenceModal.data, name: e.target.value } })}
+                  placeholder="e.g. HEAD OFFICE, WAREHOUSE A"
+                  data-testid="input-fence-name"
+                  disabled={fenceModal.mode === "edit"}
+                />
+                {fenceModal.mode === "edit" && (
+                  <p className="text-xs text-muted-foreground">Zone names cannot be changed after creation (employees reference them).</p>
+                )}
+              </div>
+              <div className="space-y-1.5">
+                <Label>Description</Label>
+                <Input
+                  value={fenceModal.data.description}
+                  onChange={(e) => setFenceModal({ ...fenceModal, data: { ...fenceModal.data, description: e.target.value } })}
+                  placeholder="e.g. Main office building, Georgetown"
+                  data-testid="input-fence-desc"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label>Latitude <span className="text-destructive">*</span></Label>
+                  <Input
+                    type="number"
+                    step="any"
+                    value={fenceModal.data.lat}
+                    onChange={(e) => setFenceModal({ ...fenceModal, data: { ...fenceModal.data, lat: e.target.value } })}
+                    placeholder="6.813348"
+                    data-testid="input-fence-lat"
+                  />
                 </div>
-                <p className="text-xs text-muted-foreground font-mono">
-                  {lat.toFixed(6)}, {lng.toFixed(6)}
-                </p>
-                <div className="mt-2">
-                  <a
-                    href={`https://maps.google.com/?q=${lat},${lng}&z=16`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-xs text-primary underline"
-                  >
-                    View on Google Maps
-                  </a>
+                <div className="space-y-1.5">
+                  <Label>Longitude <span className="text-destructive">*</span></Label>
+                  <Input
+                    type="number"
+                    step="any"
+                    value={fenceModal.data.lng}
+                    onChange={(e) => setFenceModal({ ...fenceModal, data: { ...fenceModal.data, lng: e.target.value } })}
+                    placeholder="-58.147854"
+                    data-testid="input-fence-lng"
+                  />
                 </div>
               </div>
-            ))}
+              <div className="space-y-1.5">
+                <Label>Radius (metres) <span className="text-destructive">*</span></Label>
+                <Input
+                  type="number"
+                  min={10}
+                  max={5000}
+                  value={fenceModal.data.radius}
+                  onChange={(e) => setFenceModal({ ...fenceModal, data: { ...fenceModal.data, radius: e.target.value } })}
+                  placeholder="150"
+                  data-testid="input-fence-radius"
+                />
+                <p className="text-xs text-muted-foreground">Recommended: 50–150m for a building, 200–500m for a compound.</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="fence-active"
+                  checked={fenceModal.data.active}
+                  onChange={(e) => setFenceModal({ ...fenceModal, data: { ...fenceModal.data, active: e.target.checked } })}
+                  data-testid="checkbox-fence-active"
+                />
+                <Label htmlFor="fence-active" className="cursor-pointer">Zone is active (employees can clock in here)</Label>
+              </div>
+              <div className="flex gap-2 justify-end pt-2 border-t border-border">
+                <Button variant="outline" onClick={() => setFenceModal(null)}>Cancel</Button>
+                <Button onClick={handleFenceSave} disabled={creating || updating} data-testid="button-save-fence">
+                  {creating || updating ? "Saving..." : fenceModal.mode === "create" ? "Create Zone" : "Save Changes"}
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Delete Confirm Modal ─────────────────────────────────────────────── */}
+      <Dialog open={!!deleteConfirm} onOpenChange={() => setDeleteConfirm(null)}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader><DialogTitle>Delete Zone</DialogTitle></DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Are you sure you want to delete the <strong>{deleteConfirm?.name}</strong> zone?
+            Employees assigned to this zone will no longer be able to clock in here.
+          </p>
+          <div className="flex gap-2 justify-end mt-3">
+            <Button variant="outline" onClick={() => setDeleteConfirm(null)}>Cancel</Button>
+            <Button variant="destructive" onClick={handleDelete} data-testid="button-confirm-delete-fence">Delete</Button>
           </div>
-        </Card>
-      )}
+        </DialogContent>
+      </Dialog>
     </Layout>
   );
 }
