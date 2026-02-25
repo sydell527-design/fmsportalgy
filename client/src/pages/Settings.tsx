@@ -11,8 +11,9 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   Shield, Building2, UserCircle, KeyRound, MapPin, DollarSign,
-  Plus, Pencil, Trash2, ToggleLeft, ToggleRight, ExternalLink,
+  Plus, Pencil, Trash2, ToggleLeft, ToggleRight, Map,
 } from "lucide-react";
+import GeofenceMapModal from "@/components/GeofenceMapModal";
 import { useToast } from "@/hooks/use-toast";
 import { PAYROLL_CONSTANTS } from "@/lib/payroll";
 import type { Geofence } from "@shared/schema";
@@ -30,6 +31,9 @@ export default function Settings() {
 
   const [pw, setPw] = useState({ current: "", next: "", confirm: "" });
   const [activeTab, setActiveTab] = useState<"profile" | "password" | "payroll" | "geofence">("profile");
+
+  // Geofence map preview
+  const [mapZone, setMapZone] = useState<Geofence | null>(null);
 
   // Geofence modal state
   const [fenceModal, setFenceModal] = useState<{ mode: "create" | "edit"; data: typeof EMPTY_FENCE & { id?: number } } | null>(null);
@@ -289,14 +293,13 @@ export default function Settings() {
                   </div>
 
                   <div className="flex items-center gap-2">
-                    <a
-                      href={`https://maps.google.com/?q=${g.lat},${g.lng}&z=17`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-xs text-primary flex items-center gap-1 hover:underline"
+                    <button
+                      onClick={() => setMapZone(g)}
+                      className="text-xs text-primary flex items-center gap-1 hover:underline font-medium"
+                      data-testid={`button-map-${g.id}`}
                     >
-                      <ExternalLink className="w-3 h-3" /> Maps
-                    </a>
+                      <Map className="w-3 h-3" /> View Map
+                    </button>
                     <div className="ml-auto flex items-center gap-1.5">
                       <button
                         onClick={() => handleToggleActive(g)}
@@ -426,6 +429,15 @@ export default function Settings() {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* ── Geofence Map Preview ─────────────────────────────────────────────── */}
+      {mapZone && (
+        <GeofenceMapModal
+          zone={mapZone}
+          allZones={geofences ?? []}
+          onClose={() => setMapZone(null)}
+        />
+      )}
 
       {/* ── Delete Confirm Modal ─────────────────────────────────────────────── */}
       <Dialog open={!!deleteConfirm} onOpenChange={() => setDeleteConfirm(null)}>
