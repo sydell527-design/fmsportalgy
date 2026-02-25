@@ -23,7 +23,30 @@ export const users = pgTable("users", {
   joined: text("joined"),
   geo: jsonb("geo").$type<string[]>(),
   av: text("av"),
+  payConfig: jsonb("pay_config").$type<PayConfig>(),
 });
+
+export interface PayConfig {
+  frequency: "weekly" | "biweekly" | "monthly";
+  otMultiplier: number;
+  phMultiplier: number;
+  housingAllowance: number;
+  transportAllowance: number;
+  mealAllowance: number;
+  uniformAllowance: number;
+  riskAllowance: number;
+  shiftAllowance: number;
+  otherAllowances: Array<{ name: string; amount: number }>;
+  nisExempt: boolean;
+  taxExempt: boolean;
+  healthSurchargeExempt: boolean;
+  healthSurchargeRate: "full" | "half";
+  creditUnion: number;
+  loanRepayment: number;
+  advancesRecovery: number;
+  unionDues: number;
+  otherDeductions: Array<{ name: string; amount: number }>;
+}
 
 export const timesheets = pgTable("timesheets", {
   id: serial("id").primaryKey(),
