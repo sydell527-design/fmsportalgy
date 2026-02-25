@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { Layout } from "@/components/Layout";
 import { ClockInOut } from "@/components/ClockInOut";
@@ -15,8 +15,9 @@ import { Label } from "@/components/ui/label";
 import {
   Users, Clock, CheckCircle2, AlertTriangle, FileText,
   TrendingUp, BarChart2, Calendar, PenLine, XCircle, UserCheck,
+  MapPin, Timer, Radio,
 } from "lucide-react";
-import { format } from "date-fns";
+import { format, differenceInMinutes, parse } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import type { Timesheet } from "@shared/schema";
 
@@ -295,6 +296,9 @@ export default function Dashboard() {
               <StatCard icon={BarChart2} label="Disputes Pending" value={disputesPending} color={disputesPending > 0 ? "text-red-500" : undefined} />
             </div>
 
+            {/* ── Live Personnel Board ──────────────────────────────── */}
+            <LivePersonnelBoard timesheets={timesheets ?? []} users={users ?? []} today={today} />
+
             <Card className="p-5">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="font-semibold">Pending Approvals Queue</h3>
@@ -398,5 +402,206 @@ function StatCard({ icon: Icon, label, value, color }: { icon: any; label: strin
         </div>
       </div>
     </Card>
+  );
+}
+
+function elapsedStr(ci: string): string {
+  const now = new Date();
+  const today = format(now, "yyyy-MM-dd");
+  const start = parse(`${today} ${ci}`, "yyyy-MM-dd HH:mm", new Date());
+  const mins = Math.max(0, differenceInMinutes(now, start));
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+}
+
+function LivePersonnelBoard({
+  timesheets,
+  users,
+  today,
+}: {
+  timesheets: Timesheet[];
+  users: any[];
+  today: string;
+}) {
+  const [locFilter, setLocFilter] = useState("ALL");
+  const [, setTick] = useState(0);
+
+  // Refresh elapsed times every 60 seconds
+  useEffect(() => {
+    const id = setInterval(() => setTick((t) => t + 1), 60_000);
+    return () => clearInterval(id);
+  }, []);
+
+  // All active (clocked in, not yet out) across every zone for today
+  const active = timesheets.filter((ts) => ts.date === today && ts.ci && !ts.co);
+
+  // Unique zones among active records — sorted alphabetically
+  const zones = Array.from(new Set(active.map((ts) => ts.zone ?? "Unknown"))).sort();
+
+  const displayed = locFilter === "ALL" ? active : active.filter((ts) => (ts.zone ?? "Unknown") === locFilter);
+
+  // Group displayed by zone for the "All" view
+  const grouped: Record<string, Timesheet[]> = {};
+  for (const ts of displayed) {
+    const z = ts.zone ?? "Unknown";
+    if (!grouped[z]) grouped[z] = [];
+    grouped[z].push(ts);
+  }
+
+  const empName = (eid: string) => users.find((u) => u.userId === eid)?.name ?? eid;
+  const empPos = (eid: string) => users.find((u) => u.userId === eid)?.pos ?? "";
+  const empAv = (eid: string) => {
+    const av = users.find((u) => u.userId === eid)?.av;
+    return av ?? eid.slice(0, 2).toUpperCase();
+  };
+
+  return (
+    <Card className="p-5" data-testid="live-personnel-board">
+      {/* Header */}
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+        <div className="flex items-center gap-2">
+          <span className="relative flex h-2.5 w-2.5">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-500 opacity-75" />
+            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-green-500" />
+          </span>
+          <h3 className="font-semibold">Live Personnel</h3>
+          <Badge variant="secondary" className="text-xs">{active.length} on duty</Badge>
+        </div>
+        <div className="flex items-center gap-1 text-xs text-muted-foreground">
+          <Radio className="w-3 h-3" />
+          <span>Updates every 60s</span>
+        </div>
+      </div>
+
+      {/* Location filter tabs */}
+      <div className="flex flex-wrap gap-1.5 mb-5">
+        <button
+          onClick={() => setLocFilter("ALL")}
+          className={`px-3 py-1.5 rounded-md text-xs font-medium border transition-colors ${
+            locFilter === "ALL"
+              ? "bg-primary text-primary-foreground border-primary"
+              : "bg-background text-muted-foreground border-border hover:border-primary/50 hover:text-foreground"
+          }`}
+          data-testid="filter-all-locations"
+        >
+          All Locations
+          <span className="ml-1.5 bg-white/20 rounded px-1">{active.length}</span>
+        </button>
+        {zones.map((z) => {
+          const cnt = active.filter((ts) => (ts.zone ?? "Unknown") === z).length;
+          return (
+            <button
+              key={z}
+              onClick={() => setLocFilter(z)}
+              className={`px-3 py-1.5 rounded-md text-xs font-medium border transition-colors ${
+                locFilter === z
+                  ? "bg-primary text-primary-foreground border-primary"
+                  : "bg-background text-muted-foreground border-border hover:border-primary/50 hover:text-foreground"
+              }`}
+              data-testid={`filter-location-${z}`}
+            >
+              <MapPin className="inline w-3 h-3 mr-1 -mt-0.5" />
+              {z}
+              <span className={`ml-1.5 rounded px-1 ${locFilter === z ? "bg-white/20" : "bg-muted"}`}>{cnt}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Empty state */}
+      {active.length === 0 && (
+        <div className="text-center py-12 border-2 border-dashed border-border rounded-md text-muted-foreground">
+          <Timer className="w-8 h-8 mx-auto mb-2 opacity-30" />
+          <p className="text-sm">No one is currently clocked in.</p>
+        </div>
+      )}
+
+      {/* Cards */}
+      {active.length > 0 && (
+        locFilter === "ALL" ? (
+          // Grouped by zone
+          <div className="space-y-5">
+            {Object.entries(grouped).map(([zone, records]) => (
+              <div key={zone}>
+                <div className="flex items-center gap-2 mb-2">
+                  <MapPin className="w-3.5 h-3.5 text-primary" />
+                  <span className="text-xs font-semibold text-primary uppercase tracking-wide">{zone}</span>
+                  <span className="text-xs text-muted-foreground">— {records.length} on duty</span>
+                </div>
+                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                  {records.map((ts) => (
+                    <PersonnelCard key={ts.id} ts={ts} name={empName(ts.eid)} pos={empPos(ts.eid)} av={empAv(ts.eid)} />
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          // Single zone flat list
+          displayed.length === 0 ? (
+            <div className="text-center py-8 border-2 border-dashed border-border rounded-md text-muted-foreground text-sm">
+              No one clocked in at {locFilter} right now.
+            </div>
+          ) : (
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              {displayed.map((ts) => (
+                <PersonnelCard key={ts.id} ts={ts} name={empName(ts.eid)} pos={empPos(ts.eid)} av={empAv(ts.eid)} />
+              ))}
+            </div>
+          )
+        )
+      )}
+    </Card>
+  );
+}
+
+function PersonnelCard({ ts, name, pos, av }: { ts: Timesheet; name: string; pos: string; av: string }) {
+  return (
+    <div
+      className="flex items-start gap-3 p-3 rounded-md border border-border bg-muted/20 hover:bg-muted/40 transition-colors"
+      data-testid={`personnel-card-${ts.id}`}
+    >
+      {/* Avatar */}
+      <div className="w-9 h-9 rounded-full bg-green-100 dark:bg-green-900 flex items-center justify-center text-green-700 dark:text-green-300 font-bold text-sm shrink-0">
+        {av}
+      </div>
+
+      {/* Info */}
+      <div className="flex-1 min-w-0">
+        <p className="font-semibold text-sm leading-tight truncate">{name}</p>
+        {pos && <p className="text-xs text-muted-foreground truncate">{pos}</p>}
+
+        <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5">
+          {/* Zone */}
+          {ts.zone && (
+            <span className="text-xs text-muted-foreground flex items-center gap-0.5">
+              <MapPin className="w-3 h-3" /> {ts.zone}
+            </span>
+          )}
+          {/* Post */}
+          {ts.post && (
+            <span className="text-xs font-medium text-primary bg-primary/10 rounded px-1.5 py-0.5">
+              {ts.post}
+            </span>
+          )}
+        </div>
+
+        <div className="mt-1.5 flex items-center gap-2 flex-wrap">
+          <span className="text-xs text-muted-foreground flex items-center gap-0.5">
+            <Clock className="w-3 h-3" /> In: <strong className="ml-0.5 text-foreground">{ts.ci}</strong>
+          </span>
+          <span className="text-xs text-green-600 dark:text-green-400 font-medium flex items-center gap-0.5">
+            <Timer className="w-3 h-3" /> {elapsedStr(ts.ci!)}
+          </span>
+        </div>
+      </div>
+
+      {/* Live indicator */}
+      <span className="relative flex h-2 w-2 mt-1 shrink-0">
+        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
+        <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500" />
+      </span>
+    </div>
   );
 }
