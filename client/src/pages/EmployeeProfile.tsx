@@ -279,7 +279,7 @@ export default function EmployeeProfile() {
             {[
               { label: "Employee ID", value: emp.userId, mono: true },
               { label: "Joined",      value: emp.joined ?? "—" },
-              { label: "Pay Frequency", value: pc.frequency ?? "monthly", cap: true },
+              { label: "Pay Frequency", value: (pc.frequency === "weekly" ? "Weekly" : "Bi-monthly"), cap: false },
               { label: "Approver 1",  value: emp.fa ?? "—" },
               { label: "Approver 2",  value: emp.sa ?? "—" },
             ].map(({ label, value, mono, cap }) => (
@@ -437,7 +437,7 @@ export default function EmployeeProfile() {
                 <div className="space-y-2">
                   {[
                     ["Category", emp.cat],
-                    ["Frequency", pc.frequency ?? "monthly"],
+                    ["Frequency", pc.frequency === "weekly" ? "Weekly" : "Bi-monthly"],
                     emp.cat === "Time"
                       ? ["Hourly Rate", `GYD ${emp.hourlyRate ?? 0}/hr`]
                       : ["Monthly Salary", fmt(emp.salary)],

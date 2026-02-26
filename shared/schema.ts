@@ -28,7 +28,7 @@ export const users = pgTable("users", {
 });
 
 export interface PayConfig {
-  frequency: "weekly" | "biweekly" | "monthly";
+  frequency: "weekly" | "bimonthly";
   otMultiplier: number;
   phMultiplier: number;
   housingAllowance: number;

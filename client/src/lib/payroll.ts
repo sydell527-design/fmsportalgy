@@ -107,8 +107,8 @@ export function calcPayroll(
   const otHours      = approvedTs.reduce((s, ts) => s + (ts.ot ?? 0), 0);
 
   // ── Pay frequency — periods per calendar month ────────────────────────────
-  const freq = pc.frequency ?? "monthly";
-  const ppm  = freq === "biweekly" ? 26 / 12 : freq === "weekly" ? 52 / 12 : 1;
+  const freq = pc.frequency ?? "bimonthly";
+  const ppm  = freq === "weekly" ? 52 / 12 : 2;   // bimonthly = 2 periods/month
 
   // ── Earnings ──────────────────────────────────────────────────────────────
   const otMultiplier = pc.otMultiplier ?? C.OT_MULTIPLIER_DEFAULT;

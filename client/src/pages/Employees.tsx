@@ -30,7 +30,7 @@ function getInitials(name: string) {
 }
 
 const DEFAULT_PAY_CONFIG: PayConfig = {
-  frequency: "monthly",
+  frequency: "bimonthly",
   otMultiplier: 1.5,
   phMultiplier: 2.0,
   housingAllowance: 0,
@@ -519,15 +519,15 @@ const GY_HEALTH_SURCHARGE_FULL = C.HEALTH_SURCHARGE_FULL;
 const GY_HEALTH_SURCHARGE_HALF = C.HEALTH_SURCHARGE_HALF;
 
 // Periods per calendar month for each frequency
-const FREQ_PPM: Record<string, number> = { monthly: 1, biweekly: 26 / 12, weekly: 52 / 12 };
+const FREQ_PPM: Record<string, number> = { bimonthly: 2, weekly: 52 / 12 };
 // Standard working hours per pay period
-const FREQ_HRS: Record<string, number> = { monthly: 173.33, biweekly: 80, weekly: 40 };
+const FREQ_HRS: Record<string, number> = { bimonthly: 86.67, weekly: 40 };
 // Human-readable period label
-const FREQ_LABEL: Record<string, string> = { monthly: "mo", biweekly: "bi-wk", weekly: "wk" };
+const FREQ_LABEL: Record<string, string> = { bimonthly: "bi-mo", weekly: "wk" };
 
 function gyCalc(hourlyRate: number, salary: number, cat: string, pc: PayConfig | null | undefined) {
   const safePC = pc ?? ({} as PayConfig);
-  const freq  = safePC.frequency ?? "monthly";
+  const freq  = safePC.frequency ?? "bimonthly";
   const ppm   = FREQ_PPM[freq]   ?? 1;       // periods per month
   const hrs   = FREQ_HRS[freq]   ?? 173.33;  // hours per period
   const label = FREQ_LABEL[freq] ?? "mo";
@@ -808,7 +808,7 @@ export function EmployeeFormDialog({
                     </div>
                     <div className="space-y-1.5">
                       <Label>Pay Frequency</Label>
-                      {sel(pc.frequency, (v) => setPc({ frequency: v as any }), [["weekly","Weekly"],["biweekly","Bi-weekly"],["monthly","Monthly"]], "select-pay-frequency")}
+                      {sel(pc.frequency, (v) => setPc({ frequency: v as any }), [["bimonthly","Bi-monthly"],["weekly","Weekly"]], "select-pay-frequency")}
                     </div>
                   </div>
 
@@ -819,56 +819,53 @@ export function EmployeeFormDialog({
                       <p className="text-xs text-muted-foreground">≈ {fmt(calc.gross)}/{calc.label} · {fmt(calc.gross * calc.ppm)}/mo</p>
                       <div className="mt-3 pt-3 border-t border-border/50 space-y-1.5">
                         <Label className="text-xs font-medium text-muted-foreground">
-                          Calculate from {pc.frequency === "biweekly" ? "bi-weekly" : pc.frequency === "weekly" ? "weekly" : "monthly"} salary
+                          Calculate from {pc.frequency === "weekly" ? "weekly" : "bi-monthly"} salary
                         </Label>
                         <div className="flex gap-2 items-center">
                           <Input
                             type="number"
                             min={0}
-                            placeholder={`Enter ${pc.frequency === "biweekly" ? "bi-weekly" : pc.frequency === "weekly" ? "weekly" : "monthly"} amount…`}
+                            placeholder={`Enter ${pc.frequency === "weekly" ? "weekly" : "bi-monthly"} amount…`}
                             value={salaryCalcInput}
                             onChange={(e) => {
                               setSalaryCalcInput(e.target.value);
                               const amount = Number(e.target.value);
-                              const hrs = pc.frequency === "biweekly" ? 80 : pc.frequency === "weekly" ? 40 : 173.33;
+                              const hrs = pc.frequency === "weekly" ? 40 : 86.67;
                               if (amount > 0) setFormData((prev) => ({ ...prev, hourlyRate: Math.round((amount / hrs) * 100) / 100 }));
                             }}
                             data-testid="input-salary-calc"
                           />
                           <span className="text-xs text-muted-foreground whitespace-nowrap shrink-0">
-                            {pc.frequency === "biweekly" ? "bi-wk" : pc.frequency === "weekly" ? "wk" : "mo"}
+                            {pc.frequency === "weekly" ? "wk" : "bi-mo"}
                           </span>
                         </div>
                         {salaryCalcInput && Number(salaryCalcInput) > 0 && (
                           <p className="text-xs text-emerald-600 font-medium">
-                            → GYD {(Number(salaryCalcInput) / (pc.frequency === "biweekly" ? 80 : pc.frequency === "weekly" ? 40 : 173.33)).toFixed(2)}/hr
+                            → GYD {(Number(salaryCalcInput) / (pc.frequency === "weekly" ? 40 : 86.67)).toFixed(2)}/hr
                           </p>
                         )}
                       </div>
                     </>) : (<>
                       <Label>
-                        {pc.frequency === "biweekly" ? "Bi-weekly" : pc.frequency === "weekly" ? "Weekly" : "Monthly"} Salary (GYD)
+                        {pc.frequency === "weekly" ? "Weekly" : "Bi-monthly"} Salary (GYD)
                       </Label>
                       <Input
                         type="number"
                         min={0}
-                        placeholder={`Enter ${pc.frequency === "biweekly" ? "bi-weekly" : pc.frequency === "weekly" ? "weekly" : "monthly"} amount…`}
+                        placeholder={`Enter ${pc.frequency === "weekly" ? "weekly" : "bi-monthly"} amount…`}
                         value={salaryCalcInput || (formData.salary > 0 ? String(
-                          pc.frequency === "biweekly" ? Math.round(formData.salary / 2.1665)
-                          : pc.frequency === "weekly" ? Math.round(formData.salary / 4.333)
-                          : formData.salary
+                          pc.frequency === "weekly" ? Math.round(formData.salary / (52 / 12))
+                          : Math.round(formData.salary / 2)
                         ) : "")}
                         onChange={(e) => {
                           setSalaryCalcInput(e.target.value);
                           const amount = Number(e.target.value);
-                          const monthly = pc.frequency === "biweekly" ? Math.round(amount * 2.1665)
-                            : pc.frequency === "weekly" ? Math.round(amount * 4.333)
-                            : amount;
+                          const monthly = pc.frequency === "weekly" ? Math.round(amount * (52 / 12)) : Math.round(amount * 2);
                           setFormData((prev) => ({ ...prev, salary: monthly }));
                         }}
                         data-testid="input-employee-salary"
                       />
-                      {pc.frequency !== "monthly" && formData.salary > 0 && (
+                      {formData.salary > 0 && (
                         <p className="text-xs text-muted-foreground">≈ {fmt(formData.salary)}/mo</p>
                       )}
                     </>)}
