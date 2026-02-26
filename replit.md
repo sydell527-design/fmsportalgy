@@ -101,6 +101,11 @@ server/
 
 ## Change Log
 
+### 2026-02-26 — Hourly rate calculator divisor fix
+- **Bug**: For bi-monthly Time employees, the "Calculate from salary" helper divided the entered amount by **86.67** (bi-monthly hours) instead of **173.33** (monthly hours). Anyone entering the known monthly salary (e.g. GYD 311,994/mo) got back double the correct hourly rate (GYD 3,600/hr instead of GYD 1,800/hr).
+- **Fix**: Changed the bi-monthly calculator to accept **monthly salary** as input and divide by **173.33 hours/month** (WORKING_HOURS_PER_MONTH). Label changed from "bi-monthly salary" → "monthly salary", unit suffix changed from "bi-mo" → "mo", placeholder updated. Weekly frequency unchanged (still weekly ÷ 40 = hourly rate).
+- File: `client/src/pages/Employees.tsx` — salary calculator onChange and preview label (lines 824–849)
+
 ### 2026-02-26 — Hourly rate stale closure fix
 - **Bug**: Typing directly into the Hourly Rate field in Add/Edit Employee dialog had no effect (or partially lost other edits). Root cause: all `setFormData({ ...formData, field: value })` calls captured a stale snapshot of `formData` from the render closure. Any `setPc()` update that ran between renders (frequency change, exemption toggle, etc.) used functional form and updated state correctly, but the next `{ ...formData, ... }` call spread the OLD snapshot, clobbering the payConfig update and making the field appear frozen.
 - **Fix**: Converted every `setFormData({ ...formData, ... })` in `Employees.tsx` to `setFormData((prev) => ({ ...prev, ... }))` functional form — Employee ID, Role, Department, Position, Phone, Email, Join Date, Status, 1st/2nd Sign-off, Mobility, Pay Category, and Hourly Rate inputs.
