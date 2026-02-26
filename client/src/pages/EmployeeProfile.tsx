@@ -57,7 +57,7 @@ function isQualifyingChild(child: EmployeeChild) {
 function computePayroll(emp: UserType, children: EmployeeChild[]) {
   const pc: PayConfig = emp.payConfig ?? {} as PayConfig;
   const basic = emp.cat === "Time"
-    ? (emp.hourlyRate ?? 0) * 173.33
+    ? (emp.hourlyRate ?? 0) * 160
     : (emp.salary ?? 0);
   const allowances =
     (pc.housingAllowance ?? 0) + (pc.transportAllowance ?? 0) + (pc.mealAllowance ?? 0) +
@@ -362,7 +362,7 @@ export default function EmployeeProfile() {
                     <span className="font-semibold text-sm">Hours This Month</span>
                   </div>
                   <div className="space-y-3">
-                    <Bar label="Regular" sub={`${totalReg.toFixed(1)}h / 173.3h`} value={totalReg} max={173.33} color="bg-blue-500" />
+                    <Bar label="Regular" sub={`${totalReg.toFixed(1)}h / 160h`} value={totalReg} max={160} color="bg-blue-500" />
                     <Bar label="Overtime" sub={`${totalOt.toFixed(1)}h`} value={totalOt} max={40} color="bg-amber-500" />
                   </div>
                 </Card>

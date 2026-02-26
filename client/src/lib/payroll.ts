@@ -23,7 +23,7 @@ export const PAYROLL_CONSTANTS = {
   HEALTH_SURCHARGE_HALF: 600,      // GYD/month — casual/part-time workers
 
   // Hours
-  WORKING_HOURS_PER_MONTH: 173.33, // 40h/wk × 4.333wk/mo
+  WORKING_HOURS_PER_MONTH: 160,    // 80h/bi-monthly period × 2 periods/month
   OT_MULTIPLIER_DEFAULT: 1.5,
   PH_MULTIPLIER_DEFAULT: 2.0,
 };

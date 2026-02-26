@@ -521,7 +521,7 @@ const GY_HEALTH_SURCHARGE_HALF = C.HEALTH_SURCHARGE_HALF;
 // Periods per calendar month for each frequency
 const FREQ_PPM: Record<string, number> = { bimonthly: 2, weekly: 52 / 12 };
 // Standard working hours per pay period
-const FREQ_HRS: Record<string, number> = { bimonthly: 86.67, weekly: 40 };
+const FREQ_HRS: Record<string, number> = { bimonthly: 80, weekly: 40 };
 // Human-readable period label
 const FREQ_LABEL: Record<string, string> = { bimonthly: "bi-mo", weekly: "wk" };
 
@@ -529,7 +529,7 @@ function gyCalc(hourlyRate: number, salary: number, cat: string, pc: PayConfig |
   const safePC = pc ?? ({} as PayConfig);
   const freq  = safePC.frequency ?? "bimonthly";
   const ppm   = FREQ_PPM[freq]   ?? 1;       // periods per month
-  const hrs   = FREQ_HRS[freq]   ?? 173.33;  // hours per period
+  const hrs   = FREQ_HRS[freq]   ?? 160;     // hours per period
   const label = FREQ_LABEL[freq] ?? "mo";
 
   // Per-period basic pay
@@ -830,7 +830,7 @@ export function EmployeeFormDialog({
                             onChange={(e) => {
                               setSalaryCalcInput(e.target.value);
                               const amount = Number(e.target.value);
-                              const divisor = pc.frequency === "weekly" ? 40 : 173.33;
+                              const divisor = pc.frequency === "weekly" ? 40 : 160;
                               if (amount > 0) setFormData((prev) => ({ ...prev, hourlyRate: Math.round((amount / divisor) * 100) / 100 }));
                             }}
                             data-testid="input-salary-calc"
@@ -841,7 +841,7 @@ export function EmployeeFormDialog({
                         </div>
                         {salaryCalcInput && Number(salaryCalcInput) > 0 && (
                           <p className="text-xs text-emerald-600 font-medium">
-                            → GYD {(Number(salaryCalcInput) / (pc.frequency === "weekly" ? 40 : 173.33)).toFixed(2)}/hr
+                            → GYD {(Number(salaryCalcInput) / (pc.frequency === "weekly" ? 40 : 160)).toFixed(2)}/hr
                           </p>
                         )}
                       </div>
