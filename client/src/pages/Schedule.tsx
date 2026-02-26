@@ -876,31 +876,31 @@ export default function SchedulePage() {
           )}
         </div>
 
-        {/* ── Controls row ─────────────────────────────────────────────────── */}
-        <div className="flex flex-col gap-3">
-          {/* View mode */}
-          <div className="flex items-center gap-2 flex-wrap">
-            <button className={modeBtnCls("week")}       onClick={() => switchMode("week")}       data-testid="button-view-week">Week</button>
-            <button className={modeBtnCls("fortnight")}  onClick={() => switchMode("fortnight")}  data-testid="button-view-fortnight">Fortnight</button>
-            <button className={modeBtnCls("month")}      onClick={() => switchMode("month")}      data-testid="button-view-month">Month</button>
-          </div>
-
-          {/* Navigation + search */}
-          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
-            <div className="flex items-center gap-2">
-              <Button variant="outline" size="icon" onClick={() => setAnchor((a) => advance(a, viewMode, -1))} data-testid="button-prev-period">
-                <ChevronLeft className="w-4 h-4" />
-              </Button>
-              <span className="text-sm font-medium min-w-[190px] text-center">{label}</span>
-              <Button variant="outline" size="icon" onClick={() => setAnchor((a) => advance(a, viewMode, 1))} data-testid="button-next-period">
-                <ChevronRight className="w-4 h-4" />
-              </Button>
-              <Button variant="ghost" size="sm" onClick={() => setAnchor(todayAnchor(viewMode))} data-testid="button-today">
-                Today
-              </Button>
+        {/* ── Controls row (admins/supervisors only) ───────────────────────── */}
+        {isPrivileged && (
+          <div className="flex flex-col gap-3">
+            {/* View mode */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <button className={modeBtnCls("week")}       onClick={() => switchMode("week")}       data-testid="button-view-week">Week</button>
+              <button className={modeBtnCls("fortnight")}  onClick={() => switchMode("fortnight")}  data-testid="button-view-fortnight">Fortnight</button>
+              <button className={modeBtnCls("month")}      onClick={() => switchMode("month")}      data-testid="button-view-month">Month</button>
             </div>
 
-            {isPrivileged && (
+            {/* Navigation + search */}
+            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="icon" onClick={() => setAnchor((a) => advance(a, viewMode, -1))} data-testid="button-prev-period">
+                  <ChevronLeft className="w-4 h-4" />
+                </Button>
+                <span className="text-sm font-medium min-w-[190px] text-center">{label}</span>
+                <Button variant="outline" size="icon" onClick={() => setAnchor((a) => advance(a, viewMode, 1))} data-testid="button-next-period">
+                  <ChevronRight className="w-4 h-4" />
+                </Button>
+                <Button variant="ghost" size="sm" onClick={() => setAnchor(todayAnchor(viewMode))} data-testid="button-today">
+                  Today
+                </Button>
+              </div>
+
               <div className="relative sm:ml-auto">
                 <Search className="absolute left-2.5 top-2.5 w-4 h-4 text-muted-foreground pointer-events-none" />
                 <Input
@@ -911,9 +911,9 @@ export default function SchedulePage() {
                   data-testid="input-grid-search"
                 />
               </div>
-            )}
+            </div>
           </div>
-        </div>
+        )}
 
         {/* ── Desktop grid ─────────────────────────────────────────────────── */}
         <div className="hidden lg:block overflow-x-auto">
