@@ -45,6 +45,8 @@ interface EmpRow {
   eid: string;
   name: string;
   pos: string;
+  callSign: string;
+  location: string;
   cells: Record<string, string>; // date → shift code ("7-3","3-11",…,"Off","","custom")
   customTimes: Record<string, { start: string; end: string }>; // for custom entries
 }
@@ -263,9 +265,6 @@ export function RosterBuilder({ open, onClose, employees, onSaved }: Props) {
   const [dateFrom, setDateFrom] = useState(initPeriod.from);
   const [dateTo,   setDateTo]   = useState(initPeriod.to);
 
-  const [location,  setLocation]  = useState("");
-  const [client,    setClient]    = useState<ClientAgency | "">("");
-  const [armed,     setArmed]     = useState<ArmedStatus>("Unarmed");
   const [rows,      setRows]      = useState<EmpRow[]>([]);
   const [saving,    setSaving]    = useState(false);
 
@@ -292,9 +291,6 @@ export function RosterBuilder({ open, onClose, employees, onSaved }: Props) {
       setActivePeriod(init.p);
       setDateFrom(init.from);
       setDateTo(init.to);
-      setLocation("");
-      setClient("");
-      setArmed("Unarmed");
       setRows([]);
     }
   }, [open]);
@@ -311,7 +307,11 @@ export function RosterBuilder({ open, onClose, employees, onSaved }: Props) {
   );
 
   function addEmployee(emp: typeof employees[0]) {
-    setRows((prev) => [...prev, { eid: emp.userId, name: emp.name, pos: emp.pos, cells: {}, customTimes: {} }]);
+    setRows((prev) => [...prev, { eid: emp.userId, name: emp.name, pos: emp.pos, callSign: emp.userId, location: "", cells: {}, customTimes: {} }]);
+  }
+
+  function updateRowField(eid: string, field: "callSign" | "location", value: string) {
+    setRows((prev) => prev.map((r) => r.eid === eid ? { ...r, [field]: value } : r));
   }
 
   function removeEmployee(eid: string) {
@@ -365,9 +365,9 @@ export function RosterBuilder({ open, onClose, employees, onSaved }: Props) {
           date:       dateStr,
           shiftStart: times.start,
           shiftEnd:   times.end,
-          armed,
-          location:   location || null,
-          client:     client   || null,
+          armed:      "Unarmed",
+          location:   row.location || null,
+          client:     null,
           notes:      null,
           createdBy:  user?.userId ?? "",
         });
@@ -533,54 +533,6 @@ export function RosterBuilder({ open, onClose, employees, onSaved }: Props) {
               </div>
             )}
 
-            <div className="border-t pt-3 space-y-3">
-              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Apply to All</p>
-
-              <div className="space-y-1">
-                <Label className="text-xs">Armed Status</Label>
-                <div className="flex gap-1.5">
-                  {(["Unarmed", "Armed"] as ArmedStatus[]).map((a) => (
-                    <button key={a} type="button" onClick={() => setArmed(a)}
-                      className={`flex-1 py-1 rounded border text-xs font-medium transition-colors flex items-center justify-center gap-1 ${
-                        armed === a
-                          ? a === "Armed" ? "bg-red-600 text-white border-red-600" : "bg-blue-600 text-white border-blue-600"
-                          : "bg-background border-input hover:bg-muted"
-                      }`}
-                      data-testid={`button-roster-armed-${a.toLowerCase()}`}
-                    >
-                      {a === "Armed" ? <Shield className="w-3 h-3" /> : <ShieldOff className="w-3 h-3" />}
-                      {a}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="space-y-1">
-                <Label className="text-xs flex items-center gap-1"><MapPin className="w-3 h-3" />Location</Label>
-                <select
-                  className="flex h-8 w-full rounded-md border border-input bg-background px-2 py-1 text-xs"
-                  value={location}
-                  onChange={(e) => setLocation(e.target.value)}
-                  data-testid="select-roster-location"
-                >
-                  <option value="">— Select location —</option>
-                  {FMS_LOCATIONS.map((l) => <option key={l} value={l}>{l}</option>)}
-                </select>
-              </div>
-
-              <div className="space-y-1">
-                <Label className="text-xs">Client / Agency</Label>
-                <select
-                  className="flex h-8 w-full rounded-md border border-input bg-background px-2 py-1 text-xs"
-                  value={client}
-                  onChange={(e) => setClient(e.target.value as ClientAgency | "")}
-                  data-testid="select-roster-client"
-                >
-                  <option value="">— Select client —</option>
-                  {CLIENT_AGENCIES.map((c) => <option key={c} value={c}>{c}</option>)}
-                </select>
-              </div>
-            </div>
           </div>
         </aside>
 
@@ -598,12 +550,20 @@ export function RosterBuilder({ open, onClose, employees, onSaved }: Props) {
             <table className="border-collapse text-sm w-full">
               <thead>
                 <tr>
+                  {/* Call Sign header */}
+                  <th className="text-left py-2 px-2 font-medium text-muted-foreground text-xs uppercase tracking-wide w-20 sticky left-0 bg-background z-10 border-b border-r">
+                    Call Sign
+                  </th>
+                  {/* Locations header */}
+                  <th className="text-left py-2 px-2 font-medium text-muted-foreground text-xs uppercase tracking-wide w-32 sticky left-20 bg-background z-10 border-b border-r">
+                    Location
+                  </th>
                   {/* Employee header */}
-                  <th className="text-left py-2 px-3 font-medium text-muted-foreground text-xs uppercase tracking-wide w-40 sticky left-0 bg-background z-10 border-b">
+                  <th className="text-left py-2 px-3 font-medium text-muted-foreground text-xs uppercase tracking-wide w-40 sticky left-52 bg-background z-10 border-b border-r">
                     Employee
                   </th>
                   {/* Quick fill header */}
-                  <th className="py-2 px-1 font-medium text-muted-foreground text-xs uppercase tracking-wide w-24 sticky left-40 bg-background z-10 border-b">
+                  <th className="py-2 px-1 font-medium text-muted-foreground text-xs uppercase tracking-wide w-24 sticky left-[368px] bg-background z-10 border-b border-r">
                     Fill Row
                   </th>
                   {/* Date columns */}
@@ -625,14 +585,39 @@ export function RosterBuilder({ open, onClose, employees, onSaved }: Props) {
               <tbody>
                 {rows.map((row, ri) => (
                   <tr key={row.eid} className="border-t border-border/40 hover:bg-muted/10 group">
+                    {/* Call Sign cell */}
+                    <td className="py-1 px-1 align-middle sticky left-0 bg-background group-hover:bg-muted/10 z-10 border-r w-20">
+                      <input
+                        type="text"
+                        value={row.callSign}
+                        onChange={(e) => updateRowField(row.eid, "callSign", e.target.value)}
+                        className="w-full text-xs border rounded px-1.5 py-1 bg-background font-mono font-medium"
+                        placeholder="ID"
+                        data-testid={`input-callsign-${row.eid}`}
+                      />
+                    </td>
+
+                    {/* Location cell */}
+                    <td className="py-1 px-1 align-middle sticky left-20 bg-background group-hover:bg-muted/10 z-10 border-r w-32">
+                      <select
+                        value={row.location}
+                        onChange={(e) => updateRowField(row.eid, "location", e.target.value)}
+                        className="w-full text-xs border rounded px-1 py-1 bg-background h-7"
+                        data-testid={`select-location-${row.eid}`}
+                      >
+                        <option value="">— loc —</option>
+                        {FMS_LOCATIONS.map((l) => <option key={l} value={l}>{l}</option>)}
+                      </select>
+                    </td>
+
                     {/* Employee name cell */}
-                    <td className="py-1.5 px-3 align-middle sticky left-0 bg-background group-hover:bg-muted/10 z-10 border-r">
+                    <td className="py-1.5 px-3 align-middle sticky left-52 bg-background group-hover:bg-muted/10 z-10 border-r w-40">
                       <div className="font-medium text-sm truncate max-w-[140px]">{row.name}</div>
                       <div className="text-[10px] text-muted-foreground truncate max-w-[140px]">{row.pos}</div>
                     </td>
 
                     {/* Quick fill buttons */}
-                    <td className="py-1 px-1 align-middle sticky left-40 bg-background group-hover:bg-muted/10 z-10 border-r">
+                    <td className="py-1 px-1 align-middle sticky left-[368px] bg-background group-hover:bg-muted/10 z-10 border-r">
                       <div className="flex flex-col gap-0.5">
                         <select
                           className="text-[10px] border rounded px-1 py-0.5 bg-background h-6"
