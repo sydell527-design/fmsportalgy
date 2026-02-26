@@ -160,6 +160,10 @@ export default function Timesheets() {
   // Employee timesheet drawer (General tab)
   const [viewEmpId, setViewEmpId] = useState<string | null>(null);
 
+  // Bulk-delete all records for an employee from the General tab
+  const [deleteEmpId, setDeleteEmpId] = useState<string | null>(null);
+  const [deleteEmpPending, setDeleteEmpPending] = useState(false);
+
   // Filters
   const [generalSearch, setGeneralSearch] = useState("");
   const [generalStatus, setGeneralStatus] = useState("all");
@@ -824,8 +828,20 @@ export default function Timesheets() {
                         </div>
                       </div>
 
-                      {/* Chevron */}
-                      <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
+                      {/* Actions */}
+                      <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="w-7 h-7 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                          onClick={(e) => { e.stopPropagation(); setDeleteEmpId(eid); }}
+                          data-testid={`button-delete-emp-records-${eid}`}
+                          title="Delete all records for this employee"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </Button>
+                        <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                      </div>
                     </div>
                   </Card>
                 );
@@ -1282,6 +1298,57 @@ export default function Timesheets() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* ── Delete Employee Records Confirmation ─────────────────────────── */}
+      {(() => {
+        const emp = deleteEmpId ? empData(deleteEmpId) : null;
+        const empRecords = deleteEmpId ? teamTs.filter(t => t.eid === deleteEmpId) : [];
+        const handleDeleteAll = async () => {
+          if (!deleteEmpId) return;
+          setDeleteEmpPending(true);
+          for (const ts of empRecords) {
+            try { await deleteTimesheet(ts.id); } catch { /* skip */ }
+          }
+          setDeleteEmpPending(false);
+          setDeleteEmpId(null);
+          toast({ title: `${empRecords.length} record${empRecords.length !== 1 ? "s" : ""} deleted for ${emp?.name ?? deleteEmpId}` });
+        };
+        return (
+          <Dialog open={!!deleteEmpId} onOpenChange={(o) => { if (!o && !deleteEmpPending) setDeleteEmpId(null); }}>
+            <DialogContent className="sm:max-w-sm">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <Trash2 className="w-5 h-5 text-destructive" />
+                  Delete All Records
+                </DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4 mt-1">
+                <p className="text-sm text-muted-foreground">
+                  This will permanently delete all <strong>{empRecords.length} timesheet record{empRecords.length !== 1 ? "s" : ""}</strong> for{" "}
+                  <strong>{emp?.name ?? deleteEmpId}</strong>. This cannot be undone.
+                </p>
+                <div className="flex gap-2 justify-end">
+                  <Button variant="outline" onClick={() => setDeleteEmpId(null)} disabled={deleteEmpPending}>
+                    Cancel
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    onClick={handleDeleteAll}
+                    disabled={deleteEmpPending}
+                    data-testid="button-confirm-delete-emp-records"
+                  >
+                    {deleteEmpPending ? (
+                      <span className="flex items-center gap-1.5"><Loader2 className="w-4 h-4 animate-spin" /> Deleting…</span>
+                    ) : (
+                      <span className="flex items-center gap-1.5"><Trash2 className="w-4 h-4" /> Delete {empRecords.length} Record{empRecords.length !== 1 ? "s" : ""}</span>
+                    )}
+                  </Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+        );
+      })()}
 
       {/* ── Employee Timesheets Dialog (General tab grouped view) ─────────── */}
       {(() => {
