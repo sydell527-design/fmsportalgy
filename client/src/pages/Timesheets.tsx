@@ -15,6 +15,7 @@ import {
   Clock, MapPin, PenLine, AlertTriangle, CheckCircle2,
   XCircle, ChevronDown, ChevronUp, Lock, ShieldCheck, Edit2, CalendarDays, ChevronLeft, ChevronRight,
   Trash2, Upload, FileSpreadsheet, CheckCircle, XCircle as XCircleIcon, Info, PenSquare, Loader2,
+  Search, Filter,
 } from "lucide-react";
 import { format, startOfMonth, endOfMonth, subMonths, addMonths } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
@@ -140,6 +141,11 @@ export default function Timesheets() {
 
   // Employee timesheet drawer (General tab)
   const [viewEmpId, setViewEmpId] = useState<string | null>(null);
+
+  // Filters
+  const [generalSearch, setGeneralSearch] = useState("");
+  const [generalStatus, setGeneralStatus] = useState("all");
+  const [mineStatus, setMineStatus] = useState("all");
 
   const parseExcelFile = useCallback((file: File) => {
     const reader = new FileReader();
@@ -574,6 +580,58 @@ export default function Timesheets() {
         </div>
       )}
 
+      {/* ── Filter toolbar ────────────────────────────────────────────────── */}
+      {tsTab === "general" && hasTeamView && (
+        <div className="flex flex-wrap items-center gap-2 mb-1">
+          {/* Search */}
+          <div className="relative flex-1 min-w-[180px] max-w-xs">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
+            <Input
+              placeholder="Search employee…"
+              value={generalSearch}
+              onChange={(e) => setGeneralSearch(e.target.value)}
+              className="pl-8 h-8 text-xs"
+              data-testid="input-general-search"
+            />
+          </div>
+          {/* Status pills */}
+          {(["all","pending","approved","rejected","disputed"] as const).map((s) => (
+            <button
+              key={s}
+              onClick={() => setGeneralStatus(s)}
+              className={`text-xs px-3 py-1 rounded-full border transition-colors ${
+                generalStatus === s
+                  ? "bg-primary text-primary-foreground border-primary"
+                  : "border-border text-muted-foreground hover:border-primary hover:text-primary bg-background"
+              }`}
+              data-testid={`filter-general-${s}`}
+            >
+              {s === "all" ? "All" : s.charAt(0).toUpperCase() + s.slice(1)}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {tsTab === "mine" && (
+        <div className="flex flex-wrap items-center gap-2 mb-1">
+          <Filter className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+          {(["all","pending","approved","rejected"] as const).map((s) => (
+            <button
+              key={s}
+              onClick={() => setMineStatus(s)}
+              className={`text-xs px-3 py-1 rounded-full border transition-colors ${
+                mineStatus === s
+                  ? "bg-primary text-primary-foreground border-primary"
+                  : "border-border text-muted-foreground hover:border-primary hover:text-primary bg-background"
+              }`}
+              data-testid={`filter-mine-${s}`}
+            >
+              {s === "all" ? "All" : s.charAt(0).toUpperCase() + s.slice(1)}
+            </button>
+          ))}
+        </div>
+      )}
+
       {isLoading ? (
         <div className="text-center py-12 text-muted-foreground text-sm">Loading...</div>
       ) : (tsTab === "general" && hasTeamView ? teamTs.length === 0 : displayTs.length === 0) ? (
@@ -584,12 +642,33 @@ export default function Timesheets() {
         /* ── Grouped employee view (General tab) ─────────────────────────── */
         <div className="space-y-2">
           {(() => {
+            const empMatchesStatus = (records: Timesheet[]) => {
+              if (generalStatus === "all") return true;
+              if (generalStatus === "pending")  return records.some(r => r.status === "pending_first_approval" || r.status === "pending_second_approval");
+              if (generalStatus === "approved") return records.some(r => r.status === "approved");
+              if (generalStatus === "rejected") return records.some(r => r.status === "rejected");
+              if (generalStatus === "disputed") return records.some(r => r.disputed);
+              return true;
+            };
+            const searchLower = generalSearch.trim().toLowerCase();
             const byEmp = teamTs.reduce<Record<string, Timesheet[]>>((acc, ts) => {
               if (!acc[ts.eid]) acc[ts.eid] = [];
               acc[ts.eid].push(ts);
               return acc;
             }, {});
-            return Object.entries(byEmp)
+            const filtered = Object.entries(byEmp).filter(([eid, records]) => {
+              const emp = empData(eid);
+              if (searchLower && !(emp?.name ?? eid).toLowerCase().includes(searchLower)) return false;
+              return empMatchesStatus(records);
+            });
+            if (filtered.length === 0) {
+              return (
+                <div className="text-center py-12 text-muted-foreground text-sm border-2 border-dashed border-border rounded-md">
+                  No employees match the current filters.
+                </div>
+              );
+            }
+            return filtered
               .sort(([, a], [, b]) => {
                 const pA = a.filter(t => canAdminSign(t)).length;
                 const pB = b.filter(t => canAdminSign(t)).length;
@@ -667,7 +746,22 @@ export default function Timesheets() {
         </div>
       ) : (
         <div className="space-y-3">
-          {displayTs.map((ts) => {
+          {(mineStatus === "all" ? displayTs : displayTs.filter(ts => {
+            if (mineStatus === "pending")  return ts.status === "pending_employee" || ts.status === "pending_first_approval" || ts.status === "pending_second_approval";
+            if (mineStatus === "approved") return ts.status === "approved";
+            if (mineStatus === "rejected") return ts.status === "rejected";
+            return true;
+          })).length === 0 ? (
+            <div className="text-center py-12 text-muted-foreground text-sm border-2 border-dashed border-border rounded-md">
+              No records match the selected filter.
+            </div>
+          ) : null}
+          {(mineStatus === "all" ? displayTs : displayTs.filter(ts => {
+            if (mineStatus === "pending")  return ts.status === "pending_employee" || ts.status === "pending_first_approval" || ts.status === "pending_second_approval";
+            if (mineStatus === "approved") return ts.status === "approved";
+            if (mineStatus === "rejected") return ts.status === "rejected";
+            return true;
+          })).map((ts) => {
             const expanded    = expandedId === ts.id;
             const inProgress  = isInProgress(ts);
             const shiftActive = isShiftInProgress(ts);
