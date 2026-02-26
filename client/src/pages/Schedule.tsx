@@ -1335,8 +1335,8 @@ export default function SchedulePage() {
 
         </div>
 
-        {/* ── Summary card ─────────────────────────────────────────────────── */}
-        {visibleSchedules.length > 0 && (
+        {/* ── Summary card (admins/supervisors only) ────────────────────────── */}
+        {isPrivileged && visibleSchedules.length > 0 && (
           <Card className="p-4">
             <h3 className="text-sm font-semibold mb-2 flex items-center gap-1.5">
               <CalendarDays className="w-4 h-4 text-primary" />
