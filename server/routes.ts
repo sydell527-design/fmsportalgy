@@ -239,6 +239,16 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       res.status(500).json({ message: "Server error" });
     }
   });
+  app.post("/api/schedules/bulk", async (req, res) => {
+    try {
+      const rows = z.array(insertScheduleSchema).parse(req.body);
+      const created = await Promise.all(rows.map((r) => storage.createSchedule(r)));
+      res.status(201).json(created);
+    } catch (err) {
+      if (err instanceof z.ZodError) return res.status(400).json({ message: err.errors[0].message });
+      res.status(500).json({ message: "Server error" });
+    }
+  });
   app.put("/api/schedules/:id", async (req, res) => {
     try {
       const input = insertScheduleSchema.partial().parse(req.body);
