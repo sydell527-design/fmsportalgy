@@ -14,7 +14,7 @@ import {
   Plus, Edit2, Copy, CheckCircle, User, KeyRound,
   Trash2, RotateCcw, AlertTriangle, Search, UserCircle,
   CreditCard, ShieldCheck, Banknote, PlusCircle, X,
-  TrendingDown, TrendingUp, DollarSign, Info,
+  TrendingDown, TrendingUp, DollarSign, Info, Baby,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import type { User as UserType, PayConfig } from "@shared/schema";
@@ -845,6 +845,30 @@ function EmployeeFormDialog({
 
             {/* ══ TAB 3: DEDUCTIONS & COMPLIANCE ══════════════════════════ */}
             {tab === "deductions" && (
+              <div className="space-y-5">
+
+              {/* Child allowance callout */}
+              <div className="rounded-md border border-pink-200 bg-pink-50 px-4 py-3 flex items-start gap-3">
+                <Baby className="w-4 h-4 text-pink-600 shrink-0 mt-0.5" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-pink-800">Child Allowance Tax Deduction (Guyana 2026)</p>
+                  <p className="text-xs text-pink-700 mt-0.5">
+                    GYD 10,000/month per qualifying child is deducted from chargeable income before PAYE is calculated.
+                    Children and dependents are managed on the <strong>employee's profile page</strong>.
+                  </p>
+                </div>
+                {user && (
+                  <Link
+                    href={`/employees/${user.userId}?tab=children`}
+                    onClick={onClose}
+                    className="shrink-0 text-xs font-semibold text-pink-700 underline underline-offset-2 hover:text-pink-900 whitespace-nowrap"
+                    data-testid="link-manage-children"
+                  >
+                    Manage Children →
+                  </Link>
+                )}
+              </div>
+
               <div className="grid grid-cols-2 gap-6">
                 {/* Left: Statutory */}
                 <div className="space-y-3">
@@ -976,6 +1000,7 @@ function EmployeeFormDialog({
                     </p>
                   </div>
                 </div>
+              </div>
               </div>
             )}
           </div>
