@@ -1277,8 +1277,8 @@ export default function SchedulePage() {
                         : "bg-background"
                       }`}
                     >
-                      {/* Day number */}
-                      <div className={`text-[11px] font-semibold leading-none mb-1 ${
+                      {/* Day number — fixed h-5 keeps all cells the same height */}
+                      <div className={`h-5 flex items-center text-[11px] font-semibold leading-none mb-1 ${
                         isToday   ? "text-primary"
                         : !inMonth || !inPeriod ? "text-muted-foreground"
                         : isWkend ? "text-muted-foreground/70"
