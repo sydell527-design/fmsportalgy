@@ -55,8 +55,9 @@ export default function Schedule() {
   const { toast }     = useToast();
   const qc            = useQueryClient();
 
-  const isPrivileged  = user?.role === "admin" || user?.role === "manager";
-  const isEmployee    = user?.role === "employee";
+  const isSupervisor  = (user?.pos ?? "").toLowerCase().includes("supervisor");
+  const isPrivileged  = user?.role === "admin" || user?.role === "manager" || isSupervisor;
+  const isEmployee    = !isPrivileged;
 
   // Week navigation — starts on Monday
   const [weekStart, setWeekStart] = useState<Date>(() =>
