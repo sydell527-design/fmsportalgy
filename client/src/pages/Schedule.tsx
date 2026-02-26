@@ -1294,14 +1294,14 @@ export default function SchedulePage() {
                       {dayShifts.map((s) => (
                         <div
                           key={s.id}
-                          className={`w-full rounded text-center text-white text-[7px] font-semibold py-0.5 mb-0.5 leading-tight ${
+                          className={`w-full rounded text-center text-white text-[7px] font-medium py-0.5 mb-0.5 leading-tight tabular-nums px-0.5 ${
                             s.armed === "Armed" ? "bg-red-500" : "bg-blue-500"
                           }`}
                           data-testid={`emp-shift-${s.id}`}
                         >
-                          <div>{fmt12(s.shiftStart)}</div>
-                          <div className="opacity-70">to</div>
-                          <div className="opacity-80">{fmt12(s.shiftEnd)}</div>
+                          <div className="font-semibold">{fmt12(s.shiftStart)}</div>
+                          <div className="opacity-60 text-[5px] tracking-widest">────</div>
+                          <div className="font-semibold">{fmt12(s.shiftEnd)}</div>
                         </div>
                       ))}
                     </div>
