@@ -57,6 +57,7 @@ const EMPTY_FORM = {
   status: "active", fpc: true,
   joined: new Date().toISOString().split("T")[0],
   geo: ["HEAD OFFICE"] as string[], av: "",
+  mobility: "fixed",
   payConfig: { ...DEFAULT_PAY_CONFIG } as PayConfig,
 };
 
@@ -713,7 +714,7 @@ export function EmployeeFormDialog({
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-3 gap-4">
                   <div className="space-y-1.5">
                     <Label>1st Sign-off Position</Label>
                     <Input value={formData.fa ?? ""} onChange={(e) => setFormData({ ...formData, fa: e.target.value })} placeholder="e.g. Shift Supervisor" list="positions-list" data-testid="input-employee-fa" />
@@ -721,6 +722,15 @@ export function EmployeeFormDialog({
                   <div className="space-y-1.5">
                     <Label>2nd Sign-off Position</Label>
                     <Input value={formData.sa ?? ""} onChange={(e) => setFormData({ ...formData, sa: e.target.value })} placeholder="e.g. Junior General Manager" list="positions-list" data-testid="input-employee-sa" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Work Mobility</Label>
+                    {sel((formData as any).mobility ?? "fixed", (v) => setFormData({ ...formData, mobility: v } as any), [
+                      ["fixed", "Fixed (stays in zone)"],
+                      ["mobile", "Mobile (may leave zone)"],
+                      ["remote", "Remote (offsite work)"],
+                    ], "select-employee-mobility")}
+                    <p className="text-[11px] text-muted-foreground leading-tight">Controls clock-out zone enforcement</p>
                   </div>
                 </div>
 

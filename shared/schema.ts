@@ -23,6 +23,7 @@ export const users = pgTable("users", {
   joined: text("joined"),
   geo: jsonb("geo").$type<string[]>(),
   av: text("av"),
+  mobility: text("mobility").notNull().default("fixed"),
   payConfig: jsonb("pay_config").$type<PayConfig>(),
 });
 

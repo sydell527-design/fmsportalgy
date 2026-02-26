@@ -3,6 +3,7 @@ import { Layout } from "@/components/Layout";
 import { useTimesheets, useUpdateTimesheet } from "@/hooks/use-timesheets";
 import { useUsers } from "@/hooks/use-users";
 import { useAuth } from "@/hooks/use-auth";
+import { useGeofences } from "@/hooks/use-geofences";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -17,6 +18,15 @@ import {
 import { format, startOfMonth, endOfMonth, subMonths, addMonths } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import type { Timesheet } from "@shared/schema";
+
+function haversineMetres(lat1: number, lng1: number, lat2: number, lng2: number) {
+  const R = 6371000;
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
 
 function calcHours(ci: string, co: string, brkMins: number) {
   const [ih, im] = ci.split(":").map(Number);
@@ -65,7 +75,17 @@ export default function Timesheets() {
 
   const { data: timesheets, isLoading } = useTimesheets({ startDate: monthStart, endDate: monthEnd });
   const { data: users } = useUsers();
+  const { data: geofences } = useGeofences();
   const { mutateAsync: updateTimesheet } = useUpdateTimesheet();
+
+  // Detect zone mismatch: returns metres if gOut is outside the clock-in zone
+  const getZoneMismatch = (ts: Timesheet): number | null => {
+    if (!ts.gOut || !ts.zone || !geofences) return null;
+    const fence = geofences.find((g) => g.name === ts.zone);
+    if (!fence) return null;
+    const dist = haversineMetres(ts.gOut.lat, ts.gOut.lng, fence.lat, fence.lng);
+    return dist > fence.radius ? Math.round(dist) : null;
+  };
   const { toast } = useToast();
 
   const [expandedId, setExpandedId] = useState<number | null>(null);
@@ -364,8 +384,17 @@ export default function Timesheets() {
                       <span className="flex items-center gap-1"><Clock className="w-3 h-3" /> Out: <strong className="text-foreground">{ts.co ?? "--"}</strong></span>
                       <span>Reg: <strong className="text-foreground">{ts.reg}h</strong></span>
                       {(ts.ot ?? 0) > 0 && <span>OT: <strong className="text-amber-600">{ts.ot}h</strong></span>}
-                      {ts.zone && <span className="flex items-center gap-1"><MapPin className="w-3 h-3" /> {ts.zone}{ts.post ? ` · Post ${ts.post}` : ""}</span>}
+                      {ts.zone && <span className="flex items-center gap-1"><MapPin className="w-3 h-3" /> {ts.zone}{ts.post ? ` · ${ts.post}` : ""}</span>}
                       {ts.edited && <span className="text-amber-500 font-medium">Edited</span>}
+                      {(() => {
+                        const mismatch = getZoneMismatch(ts);
+                        if (!mismatch) return null;
+                        return (
+                          <span className="flex items-center gap-1 text-orange-600 font-medium" title={`Clocked out ${mismatch}m from ${ts.zone} zone`}>
+                            <AlertTriangle className="w-3 h-3" /> Clocked out {mismatch}m outside zone
+                          </span>
+                        );
+                      })()}
                     </div>
                   </div>
 
@@ -496,6 +525,27 @@ export default function Timesheets() {
                       <SigBlock sig={ts.f1Sig} label={`② 1st Approver (${emp?.fa ?? "—"})`} />
                       <SigBlock sig={ts.f2Sig} label={`③ 2nd Approver (${emp?.sa ?? "—"})`} />
                     </div>
+
+                    {(() => {
+                      const mismatch = getZoneMismatch(ts);
+                      if (!mismatch) return null;
+                      const empMobility = (users ?? []).find((u) => u.userId === ts.eid) as any;
+                      const mob: string = empMobility?.mobility ?? "fixed";
+                      return (
+                        <div className="p-3 rounded border border-orange-200 bg-orange-50 text-xs text-orange-800">
+                          <p className="font-semibold mb-1 flex items-center gap-1.5">
+                            <AlertTriangle className="w-3.5 h-3.5" /> Zone Mismatch Detected
+                          </p>
+                          <p>
+                            Clock-out location was <strong>{mismatch}m</strong> outside the <strong>{ts.zone}</strong> geofence boundary.
+                            {mob === "fixed"
+                              ? " This employee is classified as Fixed — they should not have left their assigned zone."
+                              : ` This employee is classified as ${mob.charAt(0).toUpperCase() + mob.slice(1)} — leaving the zone is permitted but has been logged.`
+                            }
+                          </p>
+                        </div>
+                      );
+                    })()}
 
                     {ts.disputed && ts.disputeNote && (
                       <div className="p-3 rounded border border-orange-200 bg-orange-50 text-xs text-orange-800">
