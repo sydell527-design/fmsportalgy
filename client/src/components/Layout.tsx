@@ -4,7 +4,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import {
   LayoutDashboard, Clock, CalendarClock, Users, Settings,
-  LogOut, Building2, DollarSign, BarChart2, ScrollText, Menu, X, UserCircle,
+  LogOut, Building2, DollarSign, BarChart2, ScrollText, Menu, X, UserCircle, CalendarDays,
 } from "lucide-react";
 import { ForcePasswordChange } from "./ForcePasswordChange";
 
@@ -23,6 +23,7 @@ export function Layout({ children }: LayoutProps) {
     { href: "/",                                  label: "Dashboard",  icon: LayoutDashboard, roles: ["employee", "manager", "admin"] },
     { href: "/timesheets",                        label: "Timesheets", icon: Clock,            roles: ["employee", "manager", "admin"] },
     { href: "/requests",                          label: "Requests",   icon: CalendarClock,    roles: ["employee", "manager", "admin"] },
+    { href: "/schedule",                          label: "Schedule",   icon: CalendarDays,     roles: ["employee", "manager", "admin"] },
     { href: `/employee/${user.userId}`,           label: "My Profile", icon: UserCircle,       roles: ["employee"] },
     { href: "/payroll",                           label: "Payroll",    icon: DollarSign,       roles: ["manager", "admin"] },
     { href: "/reports",                           label: "Reports",    icon: BarChart2,        roles: ["manager", "admin"] },

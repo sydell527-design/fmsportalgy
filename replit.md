@@ -101,6 +101,19 @@ server/
 
 ## Change Log
 
+### 2026-02-26 — Schedule page added
+- New page at `/schedule` — visible to all roles; admin/manager can create/edit/delete; employees see their own schedule read-only
+- **Desktop**: week grid — rows = employees, columns = Mon–Sun; Armed shifts = red cells, Unarmed = blue; click "+" in any cell to add; click an existing shift to edit
+- **Mobile/tablet**: day-by-day card list with same add/edit/delete actions
+- **Week navigation**: ← prev / → next / "Today" resets to current week
+- **Employee filter**: admin/manager can view "All employees" or filter to one person
+- **Add/Edit dialog**: Employee (admin only), Date, Shift Start, Shift End, Armed/Unarmed toggle buttons, Location (full FMS_LOCATIONS list), Client/Agency, Notes
+- **Delete with confirmation dialog** — separate confirm step before removing
+- **Week summary card**: total shifts, armed count, unarmed count, unique employees
+- **Auto-invalidation**: all schedule queries refreshed after create/update/delete
+- Nav entry added for all roles (Dashboard → Timesheets → Requests → **Schedule** → …)
+- Backend routes (`GET/POST/PUT/DELETE /api/schedules`) and storage layer were already complete
+
 ### 2026-02-26 — Clock-in full automation from FMS formula doc
 - **Armed/Unarmed toggle buttons** — two clearly styled buttons (blue = Unarmed, red = Armed) on every clock-in; value saved to `timesheets.armed`
 - **Day Status dropdown** — On Day / Off Day / Sick / Absent / Holiday / Annual Leave; saved to `timesheets.dayStatus`
