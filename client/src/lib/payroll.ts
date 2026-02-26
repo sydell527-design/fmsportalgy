@@ -1,88 +1,198 @@
-import type { User, Timesheet } from "@shared/schema";
+import type { User, Timesheet, EmployeeChild, PayConfig } from "@shared/schema";
+import { differenceInYears, parseISO } from "date-fns";
 
-// Guyana 2026 Payroll Constants
+// ── Guyana 2026 Statutory Constants ─────────────────────────────────────────
 export const PAYROLL_CONSTANTS = {
-  NIS_EMP_RATE: 0.056,
-  NIS_ER_RATE: 0.084,
-  NIS_CEILING_MONTHLY: 280000,
-  PAYE_RATE: 0.28,
-  PERSONAL_ALLOWANCE: 100000,
-  OT_MULTIPLIER: 1.5,
-  WORKING_HOURS_PER_MONTH: 176,
+  // NIS (National Insurance Scheme)
+  NIS_EMP_RATE: 0.056,             // 5.6% employee contribution
+  NIS_ER_RATE: 0.084,              // 8.4% employer contribution
+  NIS_CEILING_MONTHLY: 280_000,    // GYD/month maximum insurable earnings
+
+  // Income Tax (PAYE) — progressive rates
+  PERSONAL_ALLOWANCE: 100_000,     // GYD/month personal allowance
+  CHILD_ALLOWANCE: 10_000,         // GYD/month per qualifying child
+  TAX_LOWER_RATE: 0.28,            // 28% on first GYD 200,000 chargeable/month
+  TAX_LOWER_LIMIT: 200_000,        // GYD/month — 28% bracket ceiling (= GYD 2.4M/year)
+  TAX_UPPER_RATE: 0.40,            // 40% on chargeable income above GYD 200,000/month
+
+  // Health Surcharge
+  HEALTH_SURCHARGE_FULL: 1_200,    // GYD/month — employed persons
+  HEALTH_SURCHARGE_HALF: 600,      // GYD/month — casual/part-time workers
+
+  // Hours
+  WORKING_HOURS_PER_MONTH: 173.33, // 40h/wk × 4.333wk/mo
+  OT_MULTIPLIER_DEFAULT: 1.5,
+  PH_MULTIPLIER_DEFAULT: 2.0,
 };
+
+const C = PAYROLL_CONSTANTS;
+
+// A qualifying child reduces chargeable income:
+//   — under 18 years old, OR
+//   — 18–25 years old and currently in full-time education (child.school = true)
+function isQualifyingChild(child: EmployeeChild): boolean {
+  if (!child.active) return false;
+  const age = differenceInYears(new Date(), parseISO(child.dob));
+  if (age < 18) return true;
+  if (age <= 25 && child.school) return true;
+  return false;
+}
 
 export interface PayrollResult {
   employee: User;
   period: string;
+
+  // Hours
   regularHours: number;
   otHours: number;
-  regularPay: number;
+
+  // Earnings
+  basicPay: number;
   otPay: number;
-  grossPay: number;
-  employeeNIS: number;
-  employerNIS: number;
-  paye: number;
+  allowances: number;        // sum of all payConfig allowances
+  grossPay: number;          // basicPay + otPay + allowances
+
+  // Statutory deductions
+  employeeNIS: number;       // 5.6% capped at NIS ceiling
+  employerNIS: number;       // 8.4% capped at NIS ceiling (employer cost, not deducted from employee)
+  healthSurcharge: number;   // 1,200 full / 600 half / 0 if exempt
+  qualifyingChildren: number;
+  childAllowance: number;    // qualifyingChildren × 10,000
+  chargeableIncome: number;  // grossPay − employeeNIS − personalAllowance − childAllowance
+  paye: number;              // progressive 28%/40%
+
+  // Voluntary deductions
+  creditUnion: number;
+  loanRepayment: number;
+  advancesRecovery: number;
+  unionDues: number;
+  otherDeductions: number;
+  totalVoluntary: number;
+
+  // Totals
+  totalDeductions: number;
   netPay: number;
+
+  // Timesheet counts
   approvedTimesheets: number;
   pendingTimesheets: number;
   totalTimesheets: number;
 }
 
-export function calcPayroll(employee: User, timesheets: Timesheet[], period: string): PayrollResult {
-  const C = PAYROLL_CONSTANTS;
+export function calcPayroll(
+  employee: User,
+  timesheets: Timesheet[],
+  period: string,
+  allChildren: EmployeeChild[] = [],
+): PayrollResult {
+  const pc: PayConfig = employee.payConfig ?? ({} as PayConfig);
 
-  // Only approved timesheets for this employee in the given period (YYYY-MM)
+  // ── Timesheets ─────────────────────────────────────────────────────────────
   const periodTs = timesheets.filter(
     (ts) => ts.eid === employee.userId && ts.date?.startsWith(period)
   );
   const approvedTs = periodTs.filter((ts) => ts.status === "approved");
   const approvedTimesheets = approvedTs.length;
   const pendingTimesheets = periodTs.filter(
-    (ts) => ts.status === "pending_first_approval" || ts.status === "pending_second_approval" || ts.status === "pending_employee"
+    (ts) => ts.status === "pending_first_approval" ||
+            ts.status === "pending_second_approval" ||
+            ts.status === "pending_employee"
   ).length;
 
-  // Only approved records count toward pay
   const regularHours = approvedTs.reduce((s, ts) => s + (ts.reg ?? 0), 0);
-  const otHours = approvedTs.reduce((s, ts) => s + (ts.ot ?? 0), 0);
+  const otHours      = approvedTs.reduce((s, ts) => s + (ts.ot ?? 0), 0);
 
-  let regularPay = 0;
+  // ── Earnings ──────────────────────────────────────────────────────────────
+  const otMultiplier = pc.otMultiplier ?? C.OT_MULTIPLIER_DEFAULT;
+  let basicPay = 0;
   let otPay = 0;
-  let grossPay = 0;
 
   if (employee.cat === "Time") {
     const rate = employee.hourlyRate ?? 0;
-    regularPay = regularHours * rate;
-    otPay = otHours * rate * C.OT_MULTIPLIER;
-    grossPay = regularPay + otPay;
+    basicPay = regularHours * rate;
+    otPay    = otHours * rate * otMultiplier;
   } else {
-    // Fixed / Executive — monthly salary regardless of hours logged
-    grossPay = employee.salary ?? 0;
-    regularPay = grossPay;
+    // Salaried: full monthly salary regardless of hours; OT adds on top
+    basicPay = employee.salary ?? 0;
     if (otHours > 0) {
-      const hourlyEquivalent = grossPay / C.WORKING_HOURS_PER_MONTH;
-      otPay = otHours * hourlyEquivalent * C.OT_MULTIPLIER;
-      grossPay += otPay;
+      const hourlyEquiv = basicPay / C.WORKING_HOURS_PER_MONTH;
+      otPay = otHours * hourlyEquiv * otMultiplier;
     }
   }
 
-  const nisBase = Math.min(grossPay, C.NIS_CEILING_MONTHLY);
-  const employeeNIS = Math.round(nisBase * C.NIS_EMP_RATE);
-  const employerNIS = Math.round(nisBase * C.NIS_ER_RATE);
-  const taxable = Math.max(0, grossPay - employeeNIS - C.PERSONAL_ALLOWANCE);
-  const paye = Math.round(taxable * C.PAYE_RATE);
-  const netPay = Math.round(grossPay - employeeNIS - paye);
+  const allowances =
+    (pc.housingAllowance   ?? 0) +
+    (pc.transportAllowance ?? 0) +
+    (pc.mealAllowance      ?? 0) +
+    (pc.uniformAllowance   ?? 0) +
+    (pc.riskAllowance      ?? 0) +
+    (pc.shiftAllowance     ?? 0) +
+    (pc.otherAllowances    ?? []).reduce((s, x) => s + x.amount, 0);
+
+  const grossPay = basicPay + otPay + allowances;
+
+  // ── NIS ───────────────────────────────────────────────────────────────────
+  const nisBase    = Math.min(grossPay, C.NIS_CEILING_MONTHLY);
+  const employeeNIS = pc.nisExempt ? 0 : Math.round(nisBase * C.NIS_EMP_RATE);
+  const employerNIS = pc.nisExempt ? 0 : Math.round(nisBase * C.NIS_ER_RATE);
+
+  // ── Health Surcharge ──────────────────────────────────────────────────────
+  const healthSurcharge = pc.healthSurchargeExempt ? 0
+    : pc.healthSurchargeRate === "half"
+      ? C.HEALTH_SURCHARGE_HALF
+      : C.HEALTH_SURCHARGE_FULL;
+
+  // ── PAYE (Income Tax) — progressive ───────────────────────────────────────
+  const empChildren       = allChildren.filter((ch) => ch.eid === employee.userId);
+  const qualifyingChildren = empChildren.filter(isQualifyingChild).length;
+  const childAllowance    = qualifyingChildren * C.CHILD_ALLOWANCE;
+
+  const chargeableIncome = pc.taxExempt ? 0
+    : Math.max(0, grossPay - employeeNIS - C.PERSONAL_ALLOWANCE - childAllowance);
+
+  const paye = pc.taxExempt ? 0
+    : chargeableIncome <= C.TAX_LOWER_LIMIT
+      ? Math.round(chargeableIncome * C.TAX_LOWER_RATE)
+      : Math.round(
+          C.TAX_LOWER_LIMIT * C.TAX_LOWER_RATE +
+          (chargeableIncome - C.TAX_LOWER_LIMIT) * C.TAX_UPPER_RATE
+        );
+
+  // ── Voluntary Deductions ──────────────────────────────────────────────────
+  const creditUnion      = pc.creditUnion      ?? 0;
+  const loanRepayment    = pc.loanRepayment    ?? 0;
+  const advancesRecovery = pc.advancesRecovery ?? 0;
+  const unionDues        = pc.unionDues        ?? 0;
+  const otherDeductions  = (pc.otherDeductions ?? []).reduce((s, x) => s + x.amount, 0);
+  const totalVoluntary   = creditUnion + loanRepayment + advancesRecovery + unionDues + otherDeductions;
+
+  // ── Net Pay ───────────────────────────────────────────────────────────────
+  const totalDeductions = employeeNIS + healthSurcharge + paye + totalVoluntary;
+  const netPay          = Math.round(grossPay - totalDeductions);
 
   return {
     employee,
     period,
     regularHours,
     otHours,
-    regularPay: Math.round(regularPay),
-    otPay: Math.round(otPay),
-    grossPay: Math.round(grossPay),
+    basicPay:     Math.round(basicPay),
+    otPay:        Math.round(otPay),
+    allowances:   Math.round(allowances),
+    grossPay:     Math.round(grossPay),
     employeeNIS,
     employerNIS,
+    healthSurcharge,
+    qualifyingChildren,
+    childAllowance,
+    chargeableIncome: Math.round(chargeableIncome),
     paye,
+    creditUnion,
+    loanRepayment,
+    advancesRecovery,
+    unionDues,
+    otherDeductions:  Math.round(otherDeductions),
+    totalVoluntary:   Math.round(totalVoluntary),
+    totalDeductions:  Math.round(totalDeductions),
     netPay,
     approvedTimesheets,
     pendingTimesheets,
@@ -91,26 +201,19 @@ export function calcPayroll(employee: User, timesheets: Timesheet[], period: str
 }
 
 export function formatGYD(amount: number): string {
-  return `GYD ${amount.toLocaleString("en-GY", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+  return `GYD ${Math.round(amount).toLocaleString("en-GY", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
 }
 
 export function generateQuickBooksCSV(results: PayrollResult[]): string {
   const headers = [
-    "Employee Name",
-    "Employee ID",
-    "Department",
-    "Position",
-    "Pay Category",
-    "Period",
-    "Regular Hours",
-    "OT Hours",
-    "Regular Pay (GYD)",
-    "OT Pay (GYD)",
-    "Gross Pay (GYD)",
-    "Employee NIS (GYD)",
-    "PAYE (GYD)",
-    "Net Pay (GYD)",
-    "Employer NIS (GYD)",
+    "Employee Name", "Employee ID", "Department", "Position", "Pay Category",
+    "Period", "Regular Hours", "OT Hours",
+    "Basic Pay (GYD)", "OT Pay (GYD)", "Allowances (GYD)", "Gross Pay (GYD)",
+    "Employee NIS (GYD)", "Health Surcharge (GYD)", "Qualifying Children",
+    "Child Allowance (GYD)", "Chargeable Income (GYD)", "PAYE (GYD)",
+    "Credit Union (GYD)", "Loan Repayment (GYD)", "Advances Recovery (GYD)",
+    "Union Dues (GYD)", "Other Deductions (GYD)",
+    "Total Deductions (GYD)", "Net Pay (GYD)", "Employer NIS (GYD)",
   ];
 
   const rows = results.map((r) => [
@@ -122,11 +225,22 @@ export function generateQuickBooksCSV(results: PayrollResult[]): string {
     r.period,
     r.regularHours.toFixed(2),
     r.otHours.toFixed(2),
-    r.regularPay.toFixed(2),
+    r.basicPay.toFixed(2),
     r.otPay.toFixed(2),
+    r.allowances.toFixed(2),
     r.grossPay.toFixed(2),
     r.employeeNIS.toFixed(2),
+    r.healthSurcharge.toFixed(2),
+    String(r.qualifyingChildren),
+    r.childAllowance.toFixed(2),
+    r.chargeableIncome.toFixed(2),
     r.paye.toFixed(2),
+    r.creditUnion.toFixed(2),
+    r.loanRepayment.toFixed(2),
+    r.advancesRecovery.toFixed(2),
+    r.unionDues.toFixed(2),
+    r.otherDeductions.toFixed(2),
+    r.totalDeductions.toFixed(2),
     r.netPay.toFixed(2),
     r.employerNIS.toFixed(2),
   ]);

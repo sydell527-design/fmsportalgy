@@ -46,6 +46,7 @@ export interface IStorage {
   updateGeofence(id: number, updates: Partial<InsertGeofence>): Promise<Geofence>;
   deleteGeofence(id: number): Promise<void>;
 
+  getAllChildren(): Promise<EmployeeChild[]>;
   getChildrenByEid(eid: string): Promise<EmployeeChild[]>;
   createChild(child: InsertEmployeeChild): Promise<EmployeeChild>;
   updateChild(id: number, updates: Partial<InsertEmployeeChild>): Promise<EmployeeChild>;
@@ -173,6 +174,9 @@ export class DatabaseStorage implements IStorage {
     await db.delete(geofences).where(eq(geofences.id, id));
   }
 
+  async getAllChildren() {
+    return db.select().from(employeeChildren);
+  }
   async getChildrenByEid(eid: string) {
     return db.select().from(employeeChildren).where(eq(employeeChildren.eid, eid));
   }

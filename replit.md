@@ -11,7 +11,7 @@ Role-based workforce management system with GPS geofenced attendance, three-stag
 - Month-by-month navigation in Timesheets page (← →)
 - Fully responsive layout: desktop sidebar, tablet/phone bottom navigation bar + hamburger menu
 - Changelog page at `/changelog` (admin only)
-- Payroll engine: NIS 5.6%/8.4%, PAYE 28%, GYD 100k allowance, 1.5× OT, QuickBooks CSV export
+- Payroll engine: Full Guyana 2026 compliance — NIS 5.6%/8.4% (cap GYD 280k), progressive PAYE 28%/40% (threshold GYD 200k/mo chargeable), Health Surcharge GYD 1,200 full/600 casual, Personal Allowance GYD 100k/mo, Child Allowance GYD 10k/child/mo (qualifying children from employee profiles), all six allowance types + voluntary deductions, NIS/tax/health exemption flags, QuickBooks CSV export with full breakdown
 - Admin bulk timesheet upload via Excel/CSV (flexible column mapping, preview with employee match status)
 - Admin delete individual timesheets from General Timesheet tab (with confirmation)
 

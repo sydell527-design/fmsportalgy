@@ -157,6 +157,10 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
 
   // ── EMPLOYEE CHILDREN ─────────────────────────────────────────────────────
+  app.get("/api/children", async (_req, res) => {
+    try { res.json(await storage.getAllChildren()); }
+    catch { res.status(500).json({ message: "Server error" }); }
+  });
   app.get("/api/employees/:eid/children", async (req, res) => {
     try { res.json(await storage.getChildrenByEid(req.params.eid)); }
     catch { res.status(500).json({ message: "Server error" }); }

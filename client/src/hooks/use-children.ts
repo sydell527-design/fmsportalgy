@@ -6,6 +6,18 @@ async function parseError(res: Response): Promise<string> {
   catch { return `${res.status} ${res.statusText}`; }
 }
 
+export function useAllChildren() {
+  return useQuery<EmployeeChild[]>({
+    queryKey: ["/api/children"],
+    queryFn: async () => {
+      const res = await fetch("/api/children");
+      if (!res.ok) throw new Error(await parseError(res));
+      return res.json();
+    },
+    staleTime: 0,
+  });
+}
+
 export function useChildren(eid: string) {
   return useQuery<EmployeeChild[]>({
     queryKey: ["/api/employees", eid, "children"],

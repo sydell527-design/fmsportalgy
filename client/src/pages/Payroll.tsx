@@ -2,23 +2,49 @@ import { useState } from "react";
 import { Layout } from "@/components/Layout";
 import { useUsers } from "@/hooks/use-users";
 import { useTimesheets } from "@/hooks/use-timesheets";
+import { useAllChildren } from "@/hooks/use-children";
 import { useAuth } from "@/hooks/use-auth";
 import { Redirect } from "wouter";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Download, FileText, TrendingUp, Users, DollarSign, Building2 } from "lucide-react";
+import { Download, FileText, TrendingUp, DollarSign, Building2, ShieldCheck } from "lucide-react";
 import { calcPayroll, formatGYD, generateQuickBooksCSV, downloadCSV, PAYROLL_CONSTANTS } from "@/lib/payroll";
 import { format, subMonths } from "date-fns";
 import type { PayrollResult } from "@/lib/payroll";
 
 const C = PAYROLL_CONSTANTS;
 
+function Row({ label, value, sub, red, bold, indent }: {
+  label: string; value: string; sub?: string; red?: boolean; bold?: boolean; indent?: boolean;
+}) {
+  return (
+    <div className={`flex justify-between items-baseline ${indent ? "pl-3" : ""}`}>
+      <span className={`${bold ? "font-semibold" : "text-muted-foreground"} ${indent ? "text-xs" : "text-sm"}`}>
+        {label}{sub && <span className="text-xs text-muted-foreground ml-1">{sub}</span>}
+      </span>
+      <span className={`text-sm font-mono ${red ? "text-red-600" : bold ? "font-semibold" : ""}`}>{value}</span>
+    </div>
+  );
+}
+
+function Divider({ label }: { label?: string }) {
+  if (label) return (
+    <div className="flex items-center gap-2 py-1">
+      <div className="h-px flex-1 bg-border" />
+      <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{label}</span>
+      <div className="h-px flex-1 bg-border" />
+    </div>
+  );
+  return <div className="h-px bg-border my-1" />;
+}
+
 export default function Payroll() {
   const { user } = useAuth();
   const { data: users } = useUsers();
   const { data: timesheets } = useTimesheets();
+  const { data: allChildren = [] } = useAllChildren();
 
   const [period, setPeriod] = useState(format(new Date(), "yyyy-MM"));
   const [selectedResult, setSelectedResult] = useState<PayrollResult | null>(null);
@@ -26,27 +52,26 @@ export default function Payroll() {
   if (user?.role === "employee") return <Redirect to="/" />;
 
   const activeEmployees = (users ?? []).filter((u) => u.status === "active" && u.role !== "admin");
-  const allResults = activeEmployees.map((emp) => calcPayroll(emp, timesheets ?? [], period));
-  // Only show employees who have at least one approved timesheet in the selected period
+  const allResults = activeEmployees.map((emp) => calcPayroll(emp, timesheets ?? [], period, allChildren));
   const results = allResults.filter((r) => r.approvedTimesheets > 0);
 
   const totals = results.reduce(
     (acc, r) => ({
       gross: acc.gross + r.grossPay,
       nis: acc.nis + r.employeeNIS,
+      health: acc.health + r.healthSurcharge,
       paye: acc.paye + r.paye,
+      voluntary: acc.voluntary + r.totalVoluntary,
       net: acc.net + r.netPay,
       employerNIS: acc.employerNIS + r.employerNIS,
     }),
-    { gross: 0, nis: 0, paye: 0, net: 0, employerNIS: 0 }
+    { gross: 0, nis: 0, health: 0, paye: 0, voluntary: 0, net: 0, employerNIS: 0 }
   );
 
   const handleExport = () => {
-    const csv = generateQuickBooksCSV(results);
-    downloadCSV(csv, `FMS_Payroll_${period}.csv`);
+    downloadCSV(generateQuickBooksCSV(results), `FMS_Payroll_${period}.csv`);
   };
 
-  // Generate month options (last 12 months)
   const monthOptions = Array.from({ length: 12 }, (_, i) => {
     const d = subMonths(new Date(), i);
     return { value: format(d, "yyyy-MM"), label: format(d, "MMMM yyyy") };
@@ -57,7 +82,7 @@ export default function Payroll() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-5">
         <div>
           <h1 className="text-2xl font-bold">Payroll</h1>
-          <p className="text-muted-foreground text-sm mt-0.5">Guyana 2026 compliant payroll calculations</p>
+          <p className="text-muted-foreground text-sm mt-0.5">Guyana 2026 compliant — approved timesheets only</p>
         </div>
         <div className="flex items-center gap-3">
           <select
@@ -94,10 +119,10 @@ export default function Payroll() {
         </Card>
         <Card className="p-4">
           <div className="flex items-center gap-2 mb-1">
-            <FileText className="w-4 h-4 text-primary" />
-            <span className="text-xs text-muted-foreground font-medium">NIS Deductions</span>
+            <ShieldCheck className="w-4 h-4 text-primary" />
+            <span className="text-xs text-muted-foreground font-medium">NIS + Health</span>
           </div>
-          <p className="text-xl font-bold" data-testid="stat-total-nis">{formatGYD(totals.nis)}</p>
+          <p className="text-xl font-bold" data-testid="stat-total-nis">{formatGYD(totals.nis + totals.health)}</p>
         </Card>
         <Card className="p-4">
           <div className="flex items-center gap-2 mb-1">
@@ -115,20 +140,21 @@ export default function Payroll() {
             <thead className="bg-muted/40 text-muted-foreground font-medium border-b border-border">
               <tr>
                 <th className="px-5 py-3">Employee</th>
-                <th className="px-5 py-3">Category</th>
-                <th className="px-5 py-3 text-right">Hours (Reg + OT)</th>
+                <th className="px-5 py-3">Cat</th>
+                <th className="px-5 py-3 text-right">Hrs (Reg+OT)</th>
                 <th className="px-5 py-3 text-right">Gross Pay</th>
-                <th className="px-5 py-3 text-right">NIS (Emp)</th>
+                <th className="px-5 py-3 text-right">NIS</th>
+                <th className="px-5 py-3 text-right">Health</th>
                 <th className="px-5 py-3 text-right">PAYE</th>
                 <th className="px-5 py-3 text-right">Net Pay</th>
-                <th className="px-5 py-3 text-center">Timesheets</th>
+                <th className="px-5 py-3 text-center">Sheets</th>
                 <th className="px-5 py-3"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
               {results.length === 0 && (
                 <tr>
-                  <td colSpan={9} className="px-5 py-10 text-center text-muted-foreground text-sm">
+                  <td colSpan={10} className="px-5 py-10 text-center text-muted-foreground text-sm">
                     No approved timesheet records found for this period.
                   </td>
                 </tr>
@@ -150,19 +176,18 @@ export default function Payroll() {
                     <Badge variant="outline" className="text-xs">{r.employee.cat}</Badge>
                   </td>
                   <td className="px-5 py-4 text-right font-mono text-sm">
-                    {r.regularHours.toFixed(1)} + <span className="text-amber-600">{r.otHours.toFixed(1)}</span>
+                    {r.regularHours.toFixed(1)}+<span className="text-amber-600">{r.otHours.toFixed(1)}</span>
                   </td>
                   <td className="px-5 py-4 text-right font-semibold">{formatGYD(r.grossPay)}</td>
-                  <td className="px-5 py-4 text-right text-muted-foreground">{formatGYD(r.employeeNIS)}</td>
-                  <td className="px-5 py-4 text-right text-muted-foreground">{formatGYD(r.paye)}</td>
+                  <td className="px-5 py-4 text-right text-muted-foreground text-xs">{formatGYD(r.employeeNIS)}</td>
+                  <td className="px-5 py-4 text-right text-muted-foreground text-xs">{formatGYD(r.healthSurcharge)}</td>
+                  <td className="px-5 py-4 text-right text-muted-foreground text-xs">{formatGYD(r.paye)}</td>
                   <td className="px-5 py-4 text-right font-bold text-green-600">{formatGYD(r.netPay)}</td>
                   <td className="px-5 py-4 text-center">
                     <div className="flex flex-col items-center gap-0.5">
-                      {r.approvedTimesheets > 0 && (
-                        <Badge variant="default" className="text-xs">{r.approvedTimesheets} approved</Badge>
-                      )}
+                      <Badge variant="default" className="text-xs">{r.approvedTimesheets} ✓</Badge>
                       {r.pendingTimesheets > 0 && (
-                        <Badge variant="outline" className="text-xs text-yellow-700 border-yellow-300 bg-yellow-50">{r.pendingTimesheets} pending</Badge>
+                        <Badge variant="outline" className="text-xs text-yellow-700 border-yellow-300 bg-yellow-50">{r.pendingTimesheets} pend</Badge>
                       )}
                     </div>
                   </td>
@@ -174,148 +199,161 @@ export default function Payroll() {
                 </tr>
               ))}
             </tbody>
-            <tfoot className="bg-muted/20 border-t border-border font-semibold">
-              <tr>
-                <td className="px-5 py-3" colSpan={3}>Totals</td>
-                <td className="px-5 py-3 text-right">{formatGYD(totals.gross)}</td>
-                <td className="px-5 py-3 text-right">{formatGYD(totals.nis)}</td>
-                <td className="px-5 py-3 text-right">{formatGYD(totals.paye)}</td>
-                <td className="px-5 py-3 text-right text-green-600">{formatGYD(totals.net)}</td>
-                <td colSpan={2} />
-              </tr>
-            </tfoot>
+            {results.length > 0 && (
+              <tfoot className="bg-muted/20 border-t border-border font-semibold text-sm">
+                <tr>
+                  <td className="px-5 py-3" colSpan={3}>Totals</td>
+                  <td className="px-5 py-3 text-right">{formatGYD(totals.gross)}</td>
+                  <td className="px-5 py-3 text-right text-xs">{formatGYD(totals.nis)}</td>
+                  <td className="px-5 py-3 text-right text-xs">{formatGYD(totals.health)}</td>
+                  <td className="px-5 py-3 text-right text-xs">{formatGYD(totals.paye)}</td>
+                  <td className="px-5 py-3 text-right text-green-600">{formatGYD(totals.net)}</td>
+                  <td colSpan={2} />
+                </tr>
+              </tfoot>
+            )}
           </table>
         </div>
       </Card>
 
-      {/* Tax Info */}
+      {/* Guyana 2026 Statutory Reference */}
       <Card className="p-5 mt-4">
-        <h3 className="font-semibold text-sm mb-3">Guyana 2026 Payroll Rules Applied</h3>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+        <h3 className="font-semibold text-sm mb-3">Guyana 2026 Statutory Framework</h3>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-3 text-sm">
           <div>
             <p className="text-muted-foreground text-xs">Employee NIS Rate</p>
-            <p className="font-semibold">{(C.NIS_EMP_RATE * 100).toFixed(1)}%</p>
+            <p className="font-semibold">{(C.NIS_EMP_RATE * 100).toFixed(1)}% of insurable earnings</p>
           </div>
           <div>
             <p className="text-muted-foreground text-xs">Employer NIS Rate</p>
-            <p className="font-semibold">{(C.NIS_ER_RATE * 100).toFixed(1)}%</p>
+            <p className="font-semibold">{(C.NIS_ER_RATE * 100).toFixed(1)}% of insurable earnings</p>
           </div>
           <div>
-            <p className="text-muted-foreground text-xs">NIS Earnings Ceiling</p>
-            <p className="font-semibold">{formatGYD(C.NIS_CEILING_MONTHLY)}/mo</p>
+            <p className="text-muted-foreground text-xs">NIS Insurable Earnings Ceiling</p>
+            <p className="font-semibold">{formatGYD(C.NIS_CEILING_MONTHLY)}/month</p>
+          </div>
+          <div>
+            <p className="text-muted-foreground text-xs">Health Surcharge</p>
+            <p className="font-semibold">{formatGYD(C.HEALTH_SURCHARGE_FULL)} full · {formatGYD(C.HEALTH_SURCHARGE_HALF)} casual/mo</p>
           </div>
           <div>
             <p className="text-muted-foreground text-xs">Personal Allowance</p>
-            <p className="font-semibold">{formatGYD(C.PERSONAL_ALLOWANCE)}/mo</p>
+            <p className="font-semibold">{formatGYD(C.PERSONAL_ALLOWANCE)}/month</p>
           </div>
           <div>
-            <p className="text-muted-foreground text-xs">PAYE Rate</p>
-            <p className="font-semibold">{(C.PAYE_RATE * 100).toFixed(0)}%</p>
+            <p className="text-muted-foreground text-xs">Child Allowance</p>
+            <p className="font-semibold">{formatGYD(C.CHILD_ALLOWANCE)}/child/month</p>
           </div>
           <div>
-            <p className="text-muted-foreground text-xs">Overtime Multiplier</p>
-            <p className="font-semibold">{C.OT_MULTIPLIER}x</p>
+            <p className="text-muted-foreground text-xs">Income Tax (PAYE) — Progressive</p>
+            <p className="font-semibold">28% up to {formatGYD(C.TAX_LOWER_LIMIT)}/mo chargeable</p>
+            <p className="font-semibold">40% above {formatGYD(C.TAX_LOWER_LIMIT)}/mo chargeable</p>
           </div>
           <div>
-            <p className="text-muted-foreground text-xs">Working Hours/Month</p>
-            <p className="font-semibold">{C.WORKING_HOURS_PER_MONTH}h</p>
+            <p className="text-muted-foreground text-xs">Standard OT / PH Multipliers</p>
+            <p className="font-semibold">{C.OT_MULTIPLIER_DEFAULT}× OT · {C.PH_MULTIPLIER_DEFAULT}× Public Holiday</p>
           </div>
         </div>
       </Card>
 
-      {/* Payslip Modal */}
+      {/* Payslip Modal — full Guyana 2026 breakdown */}
       <Dialog open={!!selectedResult} onOpenChange={() => setSelectedResult(null)}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Payslip — {selectedResult?.period}</DialogTitle>
           </DialogHeader>
-          {selectedResult && (
-            <div className="space-y-4 mt-2" data-testid="payslip-modal">
-              <div className="flex items-center gap-3 p-4 bg-primary text-primary-foreground rounded-md">
-                <div className="w-12 h-12 rounded-full bg-primary-foreground/20 flex items-center justify-center font-bold text-lg">
-                  {selectedResult.employee.av}
+          {selectedResult && (() => {
+            const r = selectedResult;
+            const pc = r.employee.payConfig;
+            return (
+              <div className="space-y-3 mt-1 text-sm" data-testid="payslip-modal">
+                {/* Header */}
+                <div className="flex items-center gap-3 p-4 bg-primary text-primary-foreground rounded-md">
+                  <div className="w-11 h-11 rounded-full bg-primary-foreground/20 flex items-center justify-center font-bold text-lg shrink-0">
+                    {r.employee.av}
+                  </div>
+                  <div>
+                    <p className="font-bold text-base leading-tight">{r.employee.name}</p>
+                    <p className="text-primary-foreground/80 text-sm">{r.employee.pos} · {r.employee.dept}</p>
+                    <p className="text-primary-foreground/60 text-xs font-mono">{r.employee.userId} · {r.period}</p>
+                  </div>
                 </div>
-                <div>
-                  <p className="font-bold text-lg leading-tight">{selectedResult.employee.name}</p>
-                  <p className="text-primary-foreground/80 text-sm">{selectedResult.employee.pos} · {selectedResult.employee.dept}</p>
-                  <p className="text-primary-foreground/60 text-xs font-mono">{selectedResult.employee.userId}</p>
-                </div>
-              </div>
 
-              <div className="space-y-2 text-sm">
-                <div className="flex justify-between border-b border-border pb-2">
-                  <span className="text-muted-foreground">Pay Period</span>
-                  <span className="font-medium">{selectedResult.period}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Timesheets</span>
-                  <span className="flex gap-1 items-center">
-                    {selectedResult.approvedTimesheets > 0 && (
-                      <Badge variant="default" className="text-xs">{selectedResult.approvedTimesheets} approved</Badge>
-                    )}
-                    {selectedResult.pendingTimesheets > 0 && (
-                      <Badge variant="outline" className="text-xs text-yellow-700 border-yellow-300 bg-yellow-50">{selectedResult.pendingTimesheets} pending</Badge>
-                    )}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Regular Hours</span>
-                  <span>{selectedResult.regularHours.toFixed(2)}h</span>
-                </div>
-                {selectedResult.otHours > 0 && (
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Overtime Hours (1.5x)</span>
-                    <span className="text-amber-600">{selectedResult.otHours.toFixed(2)}h</span>
-                  </div>
-                )}
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Regular Pay</span>
-                  <span>{formatGYD(selectedResult.regularPay)}</span>
-                </div>
-                {selectedResult.otPay > 0 && (
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Overtime Pay</span>
-                    <span className="text-amber-600">{formatGYD(selectedResult.otPay)}</span>
-                  </div>
-                )}
-                <div className="flex justify-between font-semibold border-t border-border pt-2">
+                {/* Hours */}
+                <Divider label="Hours" />
+                <Row label="Regular Hours" value={`${r.regularHours.toFixed(2)}h`} />
+                {r.otHours > 0 && <Row label={`OT Hours (${pc?.otMultiplier ?? 1.5}×)`} value={`${r.otHours.toFixed(2)}h`} />}
+                <Row label="Approved Timesheets" value={String(r.approvedTimesheets)} />
+
+                {/* Earnings */}
+                <Divider label="Earnings" />
+                <Row label="Basic / Regular Pay" value={formatGYD(r.basicPay)} />
+                {r.otPay > 0 && <Row label="Overtime Pay" value={formatGYD(r.otPay)} />}
+                {r.allowances > 0 && <>
+                  <Row label="Allowances" value={formatGYD(r.allowances)} />
+                  {(pc?.housingAllowance ?? 0) > 0   && <Row label="Housing Allowance"    value={formatGYD(pc!.housingAllowance)}   indent />}
+                  {(pc?.transportAllowance ?? 0) > 0 && <Row label="Transport Allowance"  value={formatGYD(pc!.transportAllowance)} indent />}
+                  {(pc?.mealAllowance ?? 0) > 0      && <Row label="Meal Allowance"        value={formatGYD(pc!.mealAllowance)}      indent />}
+                  {(pc?.uniformAllowance ?? 0) > 0   && <Row label="Uniform Allowance"     value={formatGYD(pc!.uniformAllowance)}   indent />}
+                  {(pc?.riskAllowance ?? 0) > 0      && <Row label="Risk Allowance"         value={formatGYD(pc!.riskAllowance)}      indent />}
+                  {(pc?.shiftAllowance ?? 0) > 0     && <Row label="Shift Allowance"        value={formatGYD(pc!.shiftAllowance)}     indent />}
+                  {(pc?.otherAllowances ?? []).map((a, i) => (
+                    <Row key={i} label={a.name} value={formatGYD(a.amount)} indent />
+                  ))}
+                </>}
+                <div className="flex justify-between font-semibold bg-muted/30 rounded px-2 py-1">
                   <span>Gross Pay</span>
-                  <span>{formatGYD(selectedResult.grossPay)}</span>
+                  <span>{formatGYD(r.grossPay)}</span>
                 </div>
-                <div className="flex justify-between text-red-600">
-                  <span>Employee NIS (5.6%)</span>
-                  <span>- {formatGYD(selectedResult.employeeNIS)}</span>
-                </div>
-                <div className="flex justify-between text-red-600">
-                  <span>PAYE (28%)</span>
-                  <span>- {formatGYD(selectedResult.paye)}</span>
-                </div>
-                <div className="flex justify-between font-bold text-lg border-t-2 border-border pt-3">
-                  <span>Net Pay</span>
-                  <span className="text-green-600">{formatGYD(selectedResult.netPay)}</span>
-                </div>
-                <div className="flex justify-between text-muted-foreground text-xs border-t border-border pt-2">
-                  <span>Employer NIS Contribution (8.4%)</span>
-                  <span>{formatGYD(selectedResult.employerNIS)}</span>
-                </div>
-              </div>
 
-              <div className="flex gap-2 justify-end">
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    const r = selectedResult;
-                    const csv = generateQuickBooksCSV([r]);
-                    downloadCSV(csv, `Payslip_${r.employee.userId}_${r.period}.csv`);
-                  }}
-                  data-testid="button-download-payslip"
-                >
-                  <Download className="w-4 h-4 mr-1.5" /> Download CSV
-                </Button>
-                <Button onClick={() => setSelectedResult(null)}>Close</Button>
+                {/* Statutory Deductions */}
+                <Divider label="Statutory Deductions" />
+                <Row label={`Employee NIS (${(C.NIS_EMP_RATE * 100).toFixed(1)}%${pc?.nisExempt ? " — EXEMPT" : ""})`}
+                     sub={`ceiling ${formatGYD(C.NIS_CEILING_MONTHLY)}/mo`}
+                     value={pc?.nisExempt ? "GYD 0" : `- ${formatGYD(r.employeeNIS)}`} red={!pc?.nisExempt} />
+                <Row label={`Health Surcharge${pc?.healthSurchargeExempt ? " — EXEMPT" : ` (${pc?.healthSurchargeRate ?? "full"})`}`}
+                     value={pc?.healthSurchargeExempt ? "GYD 0" : `- ${formatGYD(r.healthSurcharge)}`} red={!pc?.healthSurchargeExempt} />
+                <Row label="Personal Allowance" value={`- ${formatGYD(C.PERSONAL_ALLOWANCE)}`} />
+                {r.qualifyingChildren > 0 && (
+                  <Row label={`Child Allowance (${r.qualifyingChildren} qualifying child${r.qualifyingChildren > 1 ? "ren" : ""})`}
+                       value={`- ${formatGYD(r.childAllowance)}`} />
+                )}
+                <Row label="Chargeable Income" value={formatGYD(r.chargeableIncome)} bold />
+                <Row label={`PAYE${pc?.taxExempt ? " — EXEMPT" : r.chargeableIncome > C.TAX_LOWER_LIMIT ? " (28% / 40% progressive)" : " (28%)"}`}
+                     value={pc?.taxExempt ? "GYD 0" : `- ${formatGYD(r.paye)}`} red={!pc?.taxExempt} />
+
+                {/* Voluntary Deductions */}
+                {r.totalVoluntary > 0 && <>
+                  <Divider label="Voluntary Deductions" />
+                  {r.creditUnion > 0      && <Row label="Credit Union"       value={`- ${formatGYD(r.creditUnion)}`}      red />}
+                  {r.loanRepayment > 0    && <Row label="Loan Repayment"     value={`- ${formatGYD(r.loanRepayment)}`}    red />}
+                  {r.advancesRecovery > 0 && <Row label="Advances Recovery"  value={`- ${formatGYD(r.advancesRecovery)}`} red />}
+                  {r.unionDues > 0        && <Row label="Union Dues"         value={`- ${formatGYD(r.unionDues)}`}        red />}
+                  {(pc?.otherDeductions ?? []).map((d, i) => (
+                    <Row key={i} label={d.name} value={`- ${formatGYD(d.amount)}`} red />
+                  ))}
+                </>}
+
+                {/* Net Pay */}
+                <Divider />
+                <div className="flex justify-between items-center bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800 rounded px-3 py-2">
+                  <span className="font-bold text-base">Net Pay</span>
+                  <span className="font-bold text-xl text-green-600">{formatGYD(r.netPay)}</span>
+                </div>
+                <Row label={`Employer NIS (${(C.NIS_ER_RATE * 100).toFixed(1)}%) — not deducted from employee`}
+                     value={formatGYD(r.employerNIS)} />
+
+                {/* Actions */}
+                <div className="flex gap-2 justify-end pt-1">
+                  <Button variant="outline" onClick={() => { downloadCSV(generateQuickBooksCSV([r]), `Payslip_${r.employee.userId}_${r.period}.csv`); }}
+                          data-testid="button-download-payslip">
+                    <Download className="w-4 h-4 mr-1.5" /> Download CSV
+                  </Button>
+                  <Button onClick={() => setSelectedResult(null)}>Close</Button>
+                </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
         </DialogContent>
       </Dialog>
     </Layout>
