@@ -102,7 +102,23 @@ export default function Timesheets() {
   }
   const [bulkRows, setBulkRows] = useState<BulkRow[]>([]);
   const [bulkFileName, setBulkFileName] = useState("");
+  const [bulkDupMode, setBulkDupMode] = useState<"skip" | "update">("skip");
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const findDuplicateTs = (row: BulkRow): Timesheet | null => {
+    const allUsers = users ?? [];
+    const found = allUsers.find(u =>
+      u.name.toLowerCase() === row.empName.toLowerCase() ||
+      u.userId.toLowerCase() === row.empName.toLowerCase()
+    );
+    if (!found || !row.ci) return null;
+    return teamTs.find(t =>
+      t.eid === found.userId &&
+      t.date === row.date &&
+      t.ci === row.ci &&
+      (row.co ? t.co === row.co : true)
+    ) ?? null;
+  };
 
   // Detect zone mismatch: returns metres if gOut is outside the clock-in zone
   const getZoneMismatch = (ts: Timesheet): number | null => {
@@ -240,6 +256,8 @@ export default function Timesheets() {
     const allUsers = users ?? [];
     const records: InsertTimesheet[] = [];
     let unmatchedCount = 0;
+    let skippedDups = 0;
+    let updatedDups = 0;
     let seq = 0;
     for (const row of bulkRows) {
       if (row.error) continue;
@@ -249,6 +267,28 @@ export default function Timesheets() {
         u.userId.toLowerCase() === empSearch
       );
       if (!found) { unmatchedCount++; continue; }
+
+      const existing = findDuplicateTs(row);
+      if (existing) {
+        if (bulkDupMode === "skip") { skippedDups++; continue; }
+        // Update mode: patch the existing record's mutable fields
+        try {
+          const hours = row.ci && row.co ? calcHours(row.ci, row.co, row.brk) : { reg: existing.reg ?? 0, ot: existing.ot ?? 0 };
+          await updateTimesheet({
+            id: existing.id,
+            brk: row.brk,
+            zone: row.zone ?? existing.zone ?? undefined,
+            post: row.post ?? existing.post ?? undefined,
+            notes: row.notes ?? existing.notes ?? undefined,
+            reg: hours.reg,
+            ot: hours.ot,
+            edited: true,
+          });
+          updatedDups++;
+        } catch { /* individual update failure — skip */ }
+        continue;
+      }
+
       const hours = row.ci && row.co ? calcHours(row.ci, row.co, row.brk) : { reg: 0, ot: 0 };
       seq++;
       records.push({
@@ -275,13 +315,19 @@ export default function Timesheets() {
         hist: [],
       });
     }
-    if (records.length === 0) {
-      toast({ title: "No valid records to upload", description: unmatchedCount > 0 ? `${unmatchedCount} employees not matched.` : "Fix row errors first.", variant: "destructive" });
-      return;
-    }
+
     try {
-      await bulkCreate(records);
-      toast({ title: `${records.length} timesheets uploaded`, description: unmatchedCount > 0 ? `${unmatchedCount} rows skipped (employee not found).` : undefined });
+      if (records.length > 0) await bulkCreate(records);
+      const parts: string[] = [];
+      if (records.length > 0)  parts.push(`${records.length} new timesheet${records.length !== 1 ? "s" : ""} created`);
+      if (updatedDups > 0)     parts.push(`${updatedDups} updated`);
+      if (skippedDups > 0)     parts.push(`${skippedDups} duplicate${skippedDups !== 1 ? "s" : ""} skipped`);
+      if (unmatchedCount > 0)  parts.push(`${unmatchedCount} employee${unmatchedCount !== 1 ? "s" : ""} not found`);
+      if (parts.length === 0) {
+        toast({ title: "Nothing to process", description: "All rows were duplicates or had errors.", variant: "destructive" });
+        return;
+      }
+      toast({ title: "Upload complete", description: parts.join(" · ") });
       setBulkOpen(false);
       setBulkRows([]);
       setBulkFileName("");
@@ -1511,26 +1557,54 @@ export default function Timesheets() {
             {/* Preview table */}
             {bulkRows.length > 0 && (
               <div>
-                <div className="flex items-center justify-between mb-2">
+                {/* Summary + duplicate mode toggle */}
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
                   <p className="text-sm font-medium">
                     {bulkRows.length} row{bulkRows.length !== 1 ? "s" : ""} parsed
                     {" — "}
                     <span className="text-green-700">
                       {bulkRows.filter((r) => {
                         if (r.error) return false;
-                        const allUsers = users ?? [];
-                        return allUsers.some((u) => u.name.toLowerCase() === r.empName.toLowerCase() || u.userId.toLowerCase() === r.empName.toLowerCase());
-                      }).length} ready
+                        const u = users ?? [];
+                        const matched = u.some(x => x.name.toLowerCase() === r.empName.toLowerCase() || x.userId.toLowerCase() === r.empName.toLowerCase());
+                        if (!matched) return false;
+                        return !findDuplicateTs(r);
+                      }).length} new
                     </span>
+                    {(() => {
+                      const dupCount = bulkRows.filter(r => {
+                        if (r.error) return false;
+                        const u = users ?? [];
+                        if (!u.some(x => x.name.toLowerCase() === r.empName.toLowerCase() || x.userId.toLowerCase() === r.empName.toLowerCase())) return false;
+                        return !!findDuplicateTs(r);
+                      }).length;
+                      return dupCount > 0 ? (
+                        <span className="text-amber-600"> · {dupCount} duplicate{dupCount !== 1 ? "s" : ""}</span>
+                      ) : null;
+                    })()}
                     {" · "}
                     <span className="text-red-600">
                       {bulkRows.filter((r) => {
                         if (r.error) return true;
-                        const allUsers = users ?? [];
-                        return !allUsers.some((u) => u.name.toLowerCase() === r.empName.toLowerCase() || u.userId.toLowerCase() === r.empName.toLowerCase());
+                        const u = users ?? [];
+                        return !u.some(x => x.name.toLowerCase() === r.empName.toLowerCase() || x.userId.toLowerCase() === r.empName.toLowerCase());
                       }).length} issues
                     </span>
                   </p>
+                  {/* Duplicate handling toggle */}
+                  <div className="flex items-center gap-1 text-xs border border-border rounded overflow-hidden">
+                    <span className="px-2 py-1 text-muted-foreground bg-muted/40 border-r border-border">On duplicate:</span>
+                    <button
+                      className={`px-3 py-1 transition-colors ${bulkDupMode === "skip" ? "bg-primary text-primary-foreground" : "hover:bg-muted/60 text-muted-foreground"}`}
+                      onClick={() => setBulkDupMode("skip")}
+                      data-testid="dup-mode-skip"
+                    >Skip</button>
+                    <button
+                      className={`px-3 py-1 transition-colors ${bulkDupMode === "update" ? "bg-primary text-primary-foreground" : "hover:bg-muted/60 text-muted-foreground"}`}
+                      onClick={() => setBulkDupMode("update")}
+                      data-testid="dup-mode-update"
+                    >Update</button>
+                  </div>
                 </div>
                 <div className="rounded-md border border-border overflow-auto max-h-72">
                   <table className="w-full text-xs">
@@ -1550,11 +1624,18 @@ export default function Timesheets() {
                     </thead>
                     <tbody className="divide-y divide-border">
                       {bulkRows.map((row) => {
-                        const allUsers = users ?? [];
-                        const matched = !row.error && allUsers.some((u) => u.name.toLowerCase() === row.empName.toLowerCase() || u.userId.toLowerCase() === row.empName.toLowerCase());
+                        const allU = users ?? [];
+                        const matched = !row.error && allU.some((u) => u.name.toLowerCase() === row.empName.toLowerCase() || u.userId.toLowerCase() === row.empName.toLowerCase());
+                        const dup = matched ? findDuplicateTs(row) : null;
                         const hasIssue = !!row.error || !matched;
+                        const isDup = !!dup;
+                        const rowBg = hasIssue
+                          ? "bg-red-50 dark:bg-red-900/10"
+                          : isDup
+                            ? "bg-amber-50 dark:bg-amber-900/10"
+                            : "";
                         return (
-                          <tr key={row.rowNum} className={hasIssue ? "bg-red-50 dark:bg-red-900/10" : ""}>
+                          <tr key={row.rowNum} className={rowBg}>
                             <td className="px-3 py-1.5 text-muted-foreground">{row.rowNum}</td>
                             <td className="px-3 py-1.5">
                               {row.error ? (
@@ -1562,13 +1643,18 @@ export default function Timesheets() {
                                   <XCircleIcon className="w-3.5 h-3.5" />
                                   <span>{row.error}</span>
                                 </span>
-                              ) : matched ? (
-                                <span className="flex items-center gap-1 text-green-700">
-                                  <CheckCircle className="w-3.5 h-3.5" /> Ready
+                              ) : !matched ? (
+                                <span className="flex items-center gap-1 text-red-600">
+                                  <AlertTriangle className="w-3.5 h-3.5" /> Employee not found
+                                </span>
+                              ) : isDup ? (
+                                <span className="flex items-center gap-1 text-amber-600">
+                                  <Info className="w-3.5 h-3.5" />
+                                  {bulkDupMode === "update" ? "Will update" : "Duplicate — skip"}
                                 </span>
                               ) : (
-                                <span className="flex items-center gap-1 text-amber-600">
-                                  <AlertTriangle className="w-3.5 h-3.5" /> Employee not found
+                                <span className="flex items-center gap-1 text-green-700">
+                                  <CheckCircle className="w-3.5 h-3.5" /> New
                                 </span>
                               )}
                             </td>
