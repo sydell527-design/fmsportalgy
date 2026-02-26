@@ -14,7 +14,7 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   Clock, MapPin, PenLine, AlertTriangle, CheckCircle2,
   XCircle, ChevronDown, ChevronUp, Lock, ShieldCheck, Edit2, CalendarDays, ChevronLeft, ChevronRight,
-  Trash2, Upload, FileSpreadsheet, CheckCircle, XCircle as XCircleIcon, Info,
+  Trash2, Upload, FileSpreadsheet, CheckCircle, XCircle as XCircleIcon, Info, PenSquare, Loader2,
 } from "lucide-react";
 import { format, startOfMonth, endOfMonth, subMonths, addMonths } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
@@ -132,6 +132,11 @@ export default function Timesheets() {
   // Admin override edit modal
   const [adminEditModal, setAdminEditModal] = useState<Timesheet | null>(null);
   const [adminForm, setAdminForm] = useState({ ci: "", co: "", brk: "30", notes: "", reason: "" });
+
+  // Sign All modal
+  const [signAllOpen, setSignAllOpen] = useState(false);
+  const [signAllName, setSignAllName] = useState("");
+  const [signAllPending, setSignAllPending] = useState(false);
 
   const parseExcelFile = useCallback((file: File) => {
     const reader = new FileReader();
@@ -442,6 +447,36 @@ export default function Timesheets() {
     } catch { toast({ title: "Failed to raise dispute", variant: "destructive" }); }
   };
 
+  const submitSignAll = async () => {
+    if (!signAllName.trim()) return;
+    const signable = teamTs.filter((ts) => canAdminSign(ts));
+    if (signable.length === 0) return;
+    setSignAllPending(true);
+    const sigObj = { name: signAllName.trim(), time: format(new Date(), "yyyy-MM-dd HH:mm"), ip: "web" };
+    let signed = 0;
+    let failed = 0;
+    for (const ts of signable) {
+      const isFirst = ts.status === "pending_first_approval";
+      try {
+        await updateTimesheet({
+          id: ts.id,
+          ...(isFirst
+            ? { f1Sig: sigObj, status: "pending_second_approval" }
+            : { f2Sig: sigObj, status: "approved" }),
+        });
+        signed++;
+      } catch { failed++; }
+    }
+    setSignAllPending(false);
+    setSignAllOpen(false);
+    setSignAllName("");
+    if (failed === 0) {
+      toast({ title: `${signed} timesheet${signed !== 1 ? "s" : ""} approved` });
+    } else {
+      toast({ title: `${signed} approved, ${failed} failed`, variant: "destructive" });
+    }
+  };
+
   return (
     <Layout>
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
@@ -504,20 +539,35 @@ export default function Timesheets() {
             )}
           </button>
 
-          {/* Admin-only bulk upload — shown when on General tab */}
-          {isFullAccess && tsTab === "general" && (
-            <div className="ml-auto pb-1">
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => { setBulkRows([]); setBulkFileName(""); setBulkOpen(true); }}
-                data-testid="button-bulk-upload"
-              >
-                <Upload className="w-3.5 h-3.5 mr-1.5" />
-                Bulk Upload
-              </Button>
-            </div>
-          )}
+          {/* Admin-only toolbar — shown when on General tab */}
+          {isFullAccess && tsTab === "general" && (() => {
+            const signableCount = teamTs.filter((ts) => canAdminSign(ts)).length;
+            return (
+              <div className="ml-auto pb-1 flex items-center gap-2">
+                {signableCount > 0 && (
+                  <Button
+                    size="sm"
+                    variant="default"
+                    onClick={() => { setSignAllName(user.name); setSignAllOpen(true); }}
+                    data-testid="button-sign-all"
+                  >
+                    <PenSquare className="w-3.5 h-3.5 mr-1.5" />
+                    Sign All
+                    <span className="ml-1.5 bg-white/20 text-white text-xs rounded-full px-1.5 py-0">{signableCount}</span>
+                  </Button>
+                )}
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => { setBulkRows([]); setBulkFileName(""); setBulkOpen(true); }}
+                  data-testid="button-bulk-upload"
+                >
+                  <Upload className="w-3.5 h-3.5 mr-1.5" />
+                  Bulk Upload
+                </Button>
+              </div>
+            );
+          })()}
         </div>
       )}
 
@@ -957,6 +1007,63 @@ export default function Timesheets() {
               <Button variant="outline" onClick={() => setDisputeModal(null)}>Cancel</Button>
               <Button variant="destructive" onClick={submitDispute} disabled={!disputeData.reason || !disputeData.sigName.trim()} data-testid="button-submit-dispute">
                 <AlertTriangle className="w-4 h-4 mr-1.5" /> Submit Dispute
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Sign All Dialog ───────────────────────────────────────────────── */}
+      <Dialog open={signAllOpen} onOpenChange={(o) => { if (!o && !signAllPending) { setSignAllOpen(false); setSignAllName(""); } }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <PenSquare className="w-5 h-5 text-primary" />
+              Sign All Pending Timesheets
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 mt-2">
+            <div className="rounded-md border border-border bg-muted/30 p-4 text-sm space-y-1">
+              <p>
+                <span className="text-muted-foreground">Timesheets to approve:</span>{" "}
+                <strong>{teamTs.filter((ts) => canAdminSign(ts)).length}</strong>
+              </p>
+              <p className="text-xs text-muted-foreground mt-1">
+                Each timesheet awaiting your signature will be advanced one stage. Timesheets at 1st sign-off will move to 2nd, and those at 2nd will be fully approved.
+              </p>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Your Full Name (typed signature)</Label>
+              <Input
+                value={signAllName}
+                onChange={(e) => setSignAllName(e.target.value)}
+                placeholder="Type your full name"
+                disabled={signAllPending}
+                data-testid="input-sign-all-name"
+                onKeyDown={(e) => { if (e.key === "Enter" && signAllName.trim()) submitSignAll(); }}
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              By signing, you approve all eligible timesheets. Timestamp: {format(new Date(), "yyyy-MM-dd HH:mm")}
+            </p>
+            <div className="flex gap-2 justify-end">
+              <Button variant="outline" onClick={() => { setSignAllOpen(false); setSignAllName(""); }} disabled={signAllPending}>
+                Cancel
+              </Button>
+              <Button
+                onClick={submitSignAll}
+                disabled={!signAllName.trim() || signAllPending}
+                data-testid="button-confirm-sign-all"
+              >
+                {signAllPending ? (
+                  <span className="flex items-center gap-1.5">
+                    <Loader2 className="w-4 h-4 animate-spin" /> Signing…
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-1.5">
+                    <CheckCircle2 className="w-4 h-4" /> Approve All
+                  </span>
+                )}
               </Button>
             </div>
           </div>
