@@ -3,18 +3,6 @@
 ## Overview
 Role-based workforce management system with GPS geofenced attendance, three-stage electronic signature approval (Employee → Shift Supervisor → General Manager), Guyana 2026 compliant payroll, QuickBooks export, multi-tab reports, and a full changelog.
 
-## Key Features (v1.7.0)
-- GPS geofenced clock in/out — multiple shifts per day supported
-- Three-stage e-signature approval chain with lock enforcement
-- Shift Supervisor portal with Active Officers real-time view
-- Server-side date filtering on timesheets — handles years of historical data
-- Month-by-month navigation in Timesheets page (← →)
-- Fully responsive layout: desktop sidebar, tablet/phone bottom navigation bar + hamburger menu
-- Changelog page at `/changelog` (admin only)
-- Payroll engine: Full Guyana 2026 compliance — NIS 5.6%/8.4% (cap GYD 280k), progressive PAYE 28%/40% (threshold GYD 200k/mo chargeable), Health Surcharge GYD 1,200 full/600 casual, Personal Allowance GYD 100k/mo, Child Allowance GYD 10k/child/mo (qualifying children from employee profiles), all six allowance types + voluntary deductions, NIS/tax/health exemption flags, QuickBooks CSV export with full breakdown
-- Admin bulk timesheet upload via Excel/CSV (flexible column mapping, preview with employee match status)
-- Admin delete individual timesheets from General Timesheet tab (with confirmation)
-
 ## Architecture
 - **Frontend**: React + Vite + TypeScript + TailwindCSS + shadcn/ui
 - **Backend**: Express.js + TypeScript
@@ -36,43 +24,32 @@ Role-based workforce management system with GPS geofenced attendance, three-stag
 - **Manager**: All employee access + approve/reject timesheets (position-matched), view Payroll & Reports
 - **Admin**: Full access — employee management, payroll, reports, geofence/payroll config
 
-## Key Features
+## Pay Frequencies (only two options)
+| | Bi-monthly (default) | Weekly |
+|---|---|---|
+| Periods/month | 2 | 4.333 (52÷12) |
+| Hours/period | 86.67 | 40 |
+| Period label | /bi-mo | /wk |
+| NIS ceiling/period | GYD 140,000 | GYD 64,615 |
+| Personal allowance/period | GYD 70,000 | GYD 32,308 |
+| Health surcharge full | GYD 600 | GYD 277 |
+| PAYE 25% bracket up to | GYD 140,000 | GYD 64,615 |
 
-### Time Tracking
-- GPS geofence clock in/out (Haversine distance, 7 zones)
-- Auto-calculates regular + overtime hours on clock out
-- 30-min break deducted, OT = hours > 8/day
+**Stored internally**: salary always as monthly amount; period gross = monthly ÷ ppm
 
-### Dual-Signature Approval Workflow
-Status flow: `pending_employee` → `pending_first_approval` → `pending_second_approval` → `approved`
-- Employee self-signs (typed name + timestamp)
-- 1st approver: matched by `emp.fa === user.pos`
-- 2nd approver: matched by `emp.sa === user.pos`
-- Employees can raise disputes with claimed times before submitting
-
-### Payroll Engine (`client/src/lib/payroll.ts`)
-Guyana 2026 compliant:
-- **Time employees**: `hourlyRate × reg + hourlyRate × ot × 1.5`
-- **Fixed/Executive**: Monthly salary + optional OT = `salary ÷ 176 × ot × 1.5`
-- **Employee NIS**: 5.6% (capped at GYD 280k/month)
-- **Employer NIS**: 8.4%
-- **Personal Allowance**: GYD 100,000/month
-- **PAYE**: 28% on `(gross - NIS - allowance)`
+## Payroll Engine (`client/src/lib/payroll.ts`)
+GRA 2026 compliant — all figures prorated to pay period:
+- **Time employees**: `hourlyRate × reg + hourlyRate × 1.5 × ot`
+- **Fixed/Executive**: `monthlySalary ÷ ppm` per period + optional OT
+- **NIS employee**: 5.6% of period gross (ceiling = NIS_ANNUAL_CAP ÷ 12 ÷ ppm × 12 ... prorated)
+- **NIS employer**: 8.4%
+- **Personal Allowance**: GYD 140k/mo or ⅓ gross (whichever greater), prorated
+- **PAYE**: 25% up to GYD 280k/mo chargeable, 35% above — all prorated
+- **Health Surcharge**: GYD 1,200/mo full, GYD 600/mo reduced — prorated
+- **Child Allowance**: GYD 10k/child/mo (qualifying children ≤ 18 or studying)
 - QuickBooks CSV export
-
-### Pages
-| Route | Roles | Description |
-|-------|-------|-------------|
-| `/` | All | Dashboard with role-specific stats + approval queue |
-| `/timesheets` | All | Full approval workflow, dispute flow, audit chain |
-| `/requests` | All | Leave/OT/Shift Swap/Payroll Dispute requests |
-| `/payroll` | Manager/Admin | Payroll table + payslips + QuickBooks export |
-| `/reports` | Manager/Admin | Time summary, attendance, OT, payroll, audit trail |
-| `/employees` | Admin | Employee directory, create/edit, credential modal |
-| `/settings` | All | Profile, password change; Admin: payroll rules + geofences |
-
-### Geofences (hardcoded, 7 zones)
-HEAD OFFICE, CARICOM, EU, UN, DMC, ARU, CANTEEN — each has GPS coordinates and radius
+- All statutory fields editable with auto-calculated defaults and override hints
+- Null safety: always `pc ?? { ...DEFAULT_PAY_CONFIG }` pattern
 
 ## Seeded Employees
 1. Marcus Webb (1001) — Security Officer, Time, GYD 1800/hr
@@ -83,9 +60,26 @@ HEAD OFFICE, CARICOM, EU, UN, DMC, ARU, CANTEEN — each has GPS coordinates and
 6. Sandra Ali (MGR001) — Operations Manager, Executive, GYD 380k/mo
 7. Shemar Ferguson (ADMIN001) — Junior General Manager, Executive, GYD 520k/mo
 
-## Approval Chain Example
-- Security Officers → Shift Supervisor (Troy Mason, pos="Shift Supervisor") → Junior General Manager (Shemar Ferguson)
-- Office/Logistics → Operations Manager (Sandra Ali) → Junior General Manager
+## Pages
+| Route | Roles | Description |
+|-------|-------|-------------|
+| `/` | All | Dashboard with role-specific stats + approval queue |
+| `/timesheets` | All | Full approval workflow, dispute flow, audit chain |
+| `/requests` | All | Leave/OT/Shift Swap/Payroll Dispute requests |
+| `/payroll` | Manager/Admin | Payroll table + payslips + QuickBooks export |
+| `/reports` | Manager/Admin | Time summary, attendance, OT, payroll, audit trail |
+| `/employees` | Admin | Employee directory, create/edit, credential modal |
+| `/settings` | All | Profile, password change; Admin: payroll rules + geofences |
+
+## Approval Chain
+Status flow: `pending_employee` → `pending_first_approval` → `pending_second_approval` → `approved`
+- Employee self-signs (typed name + timestamp)
+- 1st approver: matched by `emp.fa === user.pos`
+- 2nd approver: matched by `emp.sa === user.pos`
+- Employees can raise disputes with claimed times before submitting
+
+## Geofences (7 zones in DB)
+HEAD OFFICE, CARICOM, EU, UN, DMC, ARU, CANTEEN — each has GPS coordinates and radius
 
 ## File Structure
 ```
@@ -102,3 +96,26 @@ server/
   storage.ts     PostgreSQL storage layer
   index.ts       Entry point
 ```
+
+---
+
+## Change Log
+
+### 2026-02-26 — Hourly rate stale closure fix
+- **Bug**: Typing directly into the Hourly Rate field in Add/Edit Employee dialog had no effect (or partially lost other edits). Root cause: all `setFormData({ ...formData, field: value })` calls captured a stale snapshot of `formData` from the render closure. Any `setPc()` update that ran between renders (frequency change, exemption toggle, etc.) used functional form and updated state correctly, but the next `{ ...formData, ... }` call spread the OLD snapshot, clobbering the payConfig update and making the field appear frozen.
+- **Fix**: Converted every `setFormData({ ...formData, ... })` in `Employees.tsx` to `setFormData((prev) => ({ ...prev, ... }))` functional form — Employee ID, Role, Department, Position, Phone, Email, Join Date, Status, 1st/2nd Sign-off, Mobility, Pay Category, and Hourly Rate inputs.
+- Also converted hourly rate to capture `e.target.value` before the setter: `const v = Number(e.target.value); setFormData((prev) => ({ ...prev, hourlyRate: v }))`.
+
+### 2026-02-26 — Pay frequency reduced to two options only
+- Removed all options except **Bi-monthly** (2×/month, 86.67 hrs, default) and **Weekly** (52/12 per month, 40 hrs)
+- All GRA thresholds (NIS ceiling, personal allowance, PAYE brackets, health surcharge) prorated per pay period using PAYROLL_CONSTANTS from `payroll.ts` as single source of truth
+- Updated `FREQ_PPM`, `FREQ_HRS`, `FREQ_LABEL` tables in Employees.tsx, EmployeeProfile.tsx, Payroll.tsx
+- Default changed to `"bimonthly"` everywhere
+- Display labels changed from raw enum values to "Bi-monthly" / "Weekly" in profile cards
+
+### 2026-02-26 — Deductions & Compliance tab improvements
+- Statutory deduction amounts (NIS, PAYE, health surcharge) hidden until salary/rate entered; shows "Set salary on Pay tab to preview" hint
+- All statutory amounts made editable with auto-calculated defaults and "Auto: GYD X — reset" override hints
+- Health surcharge now has Full/Reduced/Custom radio options
+- Override fields added to PayConfig schema: `nisEmployeeOverride`, `nisEmployerOverride`, `taxOverride`, `healthSurchargeOverride`, `healthSurchargeRate: "custom"`
+- Added null safety guards throughout (`pc ?? DEFAULT_PAY_CONFIG` fallback)

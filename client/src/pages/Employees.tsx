@@ -705,7 +705,7 @@ export function EmployeeFormDialog({
                 <div className="grid grid-cols-3 gap-4">
                   <div className="space-y-1.5">
                     <Label>Employee ID <span className="text-muted-foreground text-xs">(login)</span></Label>
-                    <Input value={formData.userId} onChange={(e) => setFormData({ ...formData, userId: e.target.value, username: e.target.value })} placeholder="e.g. 1006" required disabled={!!user} data-testid="input-employee-id" />
+                    <Input value={formData.userId} onChange={(e) => setFormData((prev) => ({ ...prev, userId: e.target.value, username: e.target.value }))} placeholder="e.g. 1006" required disabled={!!user} data-testid="input-employee-id" />
                   </div>
                   <div className="space-y-1.5">
                     <Label>Full Name</Label>
@@ -713,53 +713,53 @@ export function EmployeeFormDialog({
                   </div>
                   <div className="space-y-1.5">
                     <Label>System Role</Label>
-                    {sel(formData.role, (v) => setFormData({ ...formData, role: v }), [["employee","Employee"],["manager","Manager"],["admin","Admin"]], "select-employee-role")}
+                    {sel(formData.role, (v) => setFormData((prev) => ({ ...prev, role: v })), [["employee","Employee"],["manager","Manager"],["admin","Admin"]], "select-employee-role")}
                   </div>
                 </div>
 
                 <div className="grid grid-cols-3 gap-4">
                   <div className="space-y-1.5">
                     <Label>Department</Label>
-                    <Input value={formData.dept} onChange={(e) => setFormData({ ...formData, dept: e.target.value })} placeholder="e.g. Security" required data-testid="input-employee-dept" />
+                    <Input value={formData.dept} onChange={(e) => setFormData((prev) => ({ ...prev, dept: e.target.value }))} placeholder="e.g. Security" required data-testid="input-employee-dept" />
                   </div>
                   <div className="space-y-1.5">
                     <Label>Position Title</Label>
-                    <Input value={formData.pos} onChange={(e) => setFormData({ ...formData, pos: e.target.value })} placeholder="e.g. Security Officer" list="positions-list" required data-testid="input-employee-pos" />
+                    <Input value={formData.pos} onChange={(e) => setFormData((prev) => ({ ...prev, pos: e.target.value }))} placeholder="e.g. Security Officer" list="positions-list" required data-testid="input-employee-pos" />
                     <datalist id="positions-list">{POSITIONS.map((p) => <option key={p} value={p} />)}</datalist>
                   </div>
                   <div className="space-y-1.5">
                     <Label>Phone</Label>
-                    <Input value={formData.phone} onChange={(e) => setFormData({ ...formData, phone: e.target.value })} placeholder="592-600-XXXX" data-testid="input-employee-phone" />
+                    <Input value={formData.phone} onChange={(e) => setFormData((prev) => ({ ...prev, phone: e.target.value }))} placeholder="592-600-XXXX" data-testid="input-employee-phone" />
                   </div>
                 </div>
 
                 <div className="grid grid-cols-3 gap-4">
                   <div className="space-y-1.5">
                     <Label>Email</Label>
-                    <Input type="email" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} placeholder="name@fms.gy" data-testid="input-employee-email" />
+                    <Input type="email" value={formData.email} onChange={(e) => setFormData((prev) => ({ ...prev, email: e.target.value }))} placeholder="name@fms.gy" data-testid="input-employee-email" />
                   </div>
                   <div className="space-y-1.5">
                     <Label>Join Date</Label>
-                    <Input type="date" value={formData.joined} onChange={(e) => setFormData({ ...formData, joined: e.target.value })} data-testid="input-employee-joined" />
+                    <Input type="date" value={formData.joined} onChange={(e) => setFormData((prev) => ({ ...prev, joined: e.target.value }))} data-testid="input-employee-joined" />
                   </div>
                   <div className="space-y-1.5">
                     <Label>Status</Label>
-                    {sel(formData.status, (v) => setFormData({ ...formData, status: v }), [["active","Active"],["inactive","Inactive"]], "select-employee-status")}
+                    {sel(formData.status, (v) => setFormData((prev) => ({ ...prev, status: v })), [["active","Active"],["inactive","Inactive"]], "select-employee-status")}
                   </div>
                 </div>
 
                 <div className="grid grid-cols-3 gap-4">
                   <div className="space-y-1.5">
                     <Label>1st Sign-off Position</Label>
-                    <Input value={formData.fa ?? ""} onChange={(e) => setFormData({ ...formData, fa: e.target.value })} placeholder="e.g. Shift Supervisor" list="positions-list" data-testid="input-employee-fa" />
+                    <Input value={formData.fa ?? ""} onChange={(e) => setFormData((prev) => ({ ...prev, fa: e.target.value }))} placeholder="e.g. Shift Supervisor" list="positions-list" data-testid="input-employee-fa" />
                   </div>
                   <div className="space-y-1.5">
                     <Label>2nd Sign-off Position</Label>
-                    <Input value={formData.sa ?? ""} onChange={(e) => setFormData({ ...formData, sa: e.target.value })} placeholder="e.g. Junior General Manager" list="positions-list" data-testid="input-employee-sa" />
+                    <Input value={formData.sa ?? ""} onChange={(e) => setFormData((prev) => ({ ...prev, sa: e.target.value }))} placeholder="e.g. Junior General Manager" list="positions-list" data-testid="input-employee-sa" />
                   </div>
                   <div className="space-y-1.5">
                     <Label>Work Mobility</Label>
-                    {sel((formData as any).mobility ?? "fixed", (v) => setFormData({ ...formData, mobility: v } as any), [
+                    {sel((formData as any).mobility ?? "fixed", (v) => setFormData((prev) => ({ ...prev, mobility: v } as any)), [
                       ["fixed", "Fixed (stays in zone)"],
                       ["mobile", "Mobile (may leave zone)"],
                       ["remote", "Remote (offsite work)"],
@@ -804,7 +804,7 @@ export function EmployeeFormDialog({
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-1.5">
                       <Label>Pay Category</Label>
-                      {sel(formData.cat, (v) => setFormData({ ...formData, cat: v }), [["Time","Time (Hourly)"],["Fixed","Fixed (Salary)"],["Executive","Executive"]], "select-employee-cat")}
+                      {sel(formData.cat, (v) => setFormData((prev) => ({ ...prev, cat: v })), [["Time","Time (Hourly)"],["Fixed","Fixed (Salary)"],["Executive","Executive"]], "select-employee-cat")}
                     </div>
                     <div className="space-y-1.5">
                       <Label>Pay Frequency</Label>
@@ -815,7 +815,7 @@ export function EmployeeFormDialog({
                   <div className="space-y-1.5">
                     {formData.cat === "Time" ? (<>
                       <Label>Hourly Rate (GYD)</Label>
-                      <Input type="number" min={0} step="0.01" value={formData.hourlyRate} onChange={(e) => { setSalaryCalcInput(""); setFormData({ ...formData, hourlyRate: Number(e.target.value) }); }} data-testid="input-employee-hourly" />
+                      <Input type="number" min={0} step="0.01" value={formData.hourlyRate} onChange={(e) => { const v = Number(e.target.value); setSalaryCalcInput(""); setFormData((prev) => ({ ...prev, hourlyRate: v })); }} data-testid="input-employee-hourly" />
                       <p className="text-xs text-muted-foreground">≈ {fmt(calc.gross)}/{calc.label} · {fmt(calc.gross * calc.ppm)}/mo</p>
                       <div className="mt-3 pt-3 border-t border-border/50 space-y-1.5">
                         <Label className="text-xs font-medium text-muted-foreground">
