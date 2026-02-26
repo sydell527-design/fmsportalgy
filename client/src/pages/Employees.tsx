@@ -941,6 +941,12 @@ export function EmployeeFormDialog({
                     <ShieldCheck className="w-3.5 h-3.5 text-primary" /> Statutory Deductions (Guyana 2026)
                   </p>
 
+                  {calc.gross === 0 && (
+                    <p className="text-xs text-muted-foreground italic px-1">
+                      Set the salary or hourly rate on the Pay tab to preview estimated deductions.
+                    </p>
+                  )}
+
                   {/* NIS */}
                   <div className="rounded-md border border-border bg-muted/30 p-3 space-y-2">
                     <div className="flex items-start justify-between gap-3">
@@ -952,7 +958,7 @@ export function EmployeeFormDialog({
                         <input type="checkbox" checked={pc.nisExempt} onChange={(e) => setPc({ nisExempt: e.target.checked })} data-testid="checkbox-nis-exempt" /> Exempt
                       </label>
                     </div>
-                    {!pc.nisExempt && (
+                    {!pc.nisExempt && calc.gross > 0 && (
                       <div className="grid grid-cols-2 gap-2 text-xs bg-background rounded p-2 border border-border">
                         <div><span className="text-muted-foreground">Employee:</span> <strong className="text-red-600">{fmt(calc.nisEmployee)}/mo</strong></div>
                         <div><span className="text-muted-foreground">Employer:</span> <strong className="text-blue-600">{fmt(calc.nisEmployer)}/mo</strong></div>
@@ -979,7 +985,9 @@ export function EmployeeFormDialog({
                             {r === "full" ? "Full — GYD 1,200" : "Reduced — GYD 600"}
                           </label>
                         ))}
-                        <span className="ml-auto text-xs font-semibold text-red-600">{fmt(calc.healthSurcharge)}/mo</span>
+                        {calc.gross > 0 && (
+                          <span className="ml-auto text-xs font-semibold text-red-600">{fmt(calc.healthSurcharge)}/mo</span>
+                        )}
                       </div>
                     )}
                   </div>
@@ -995,7 +1003,7 @@ export function EmployeeFormDialog({
                         <input type="checkbox" checked={pc.taxExempt} onChange={(e) => setPc({ taxExempt: e.target.checked })} data-testid="checkbox-tax-exempt" /> Exempt
                       </label>
                     </div>
-                    {!pc.taxExempt && (
+                    {!pc.taxExempt && calc.gross > 0 && (
                       <div className="grid grid-cols-2 gap-2 text-xs bg-background rounded p-2 border border-border">
                         <div><span className="text-muted-foreground">Chargeable income:</span> <strong>{fmt(calc.chargeable)}/mo</strong></div>
                         <div><span className="text-muted-foreground">PAYE deduction:</span> <strong className="text-red-600">{fmt(calc.tax)}/mo</strong></div>
