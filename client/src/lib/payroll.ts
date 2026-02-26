@@ -31,17 +31,19 @@ export interface PayrollResult {
 export function calcPayroll(employee: User, timesheets: Timesheet[], period: string): PayrollResult {
   const C = PAYROLL_CONSTANTS;
 
-  // All timesheets for this employee in the given period (YYYY-MM), excluding rejected
+  // Only approved timesheets for this employee in the given period (YYYY-MM)
   const periodTs = timesheets.filter(
-    (ts) => ts.eid === employee.userId && ts.date?.startsWith(period) && ts.status !== "rejected"
+    (ts) => ts.eid === employee.userId && ts.date?.startsWith(period)
   );
+  const approvedTs = periodTs.filter((ts) => ts.status === "approved");
+  const approvedTimesheets = approvedTs.length;
+  const pendingTimesheets = periodTs.filter(
+    (ts) => ts.status === "pending_first_approval" || ts.status === "pending_second_approval" || ts.status === "pending_employee"
+  ).length;
 
-  const approvedTimesheets = periodTs.filter((ts) => ts.status === "approved").length;
-  const pendingTimesheets = periodTs.filter((ts) => ts.status !== "approved").length;
-
-  // Calculate hours from all non-rejected timesheets (pending counts toward payroll estimate)
-  const regularHours = periodTs.reduce((s, ts) => s + (ts.reg ?? 0), 0);
-  const otHours = periodTs.reduce((s, ts) => s + (ts.ot ?? 0), 0);
+  // Only approved records count toward pay
+  const regularHours = approvedTs.reduce((s, ts) => s + (ts.reg ?? 0), 0);
+  const otHours = approvedTs.reduce((s, ts) => s + (ts.ot ?? 0), 0);
 
   let regularPay = 0;
   let otPay = 0;

@@ -27,8 +27,8 @@ export default function Payroll() {
 
   const activeEmployees = (users ?? []).filter((u) => u.status === "active" && u.role !== "admin");
   const allResults = activeEmployees.map((emp) => calcPayroll(emp, timesheets ?? [], period));
-  // Only show employees who have at least one timesheet record in the selected period
-  const results = allResults.filter((r) => r.totalTimesheets > 0);
+  // Only show employees who have at least one approved timesheet in the selected period
+  const results = allResults.filter((r) => r.approvedTimesheets > 0);
 
   const totals = results.reduce(
     (acc, r) => ({
@@ -129,7 +129,7 @@ export default function Payroll() {
               {results.length === 0 && (
                 <tr>
                   <td colSpan={9} className="px-5 py-10 text-center text-muted-foreground text-sm">
-                    No timesheet records found for this period.
+                    No approved timesheet records found for this period.
                   </td>
                 </tr>
               )}
