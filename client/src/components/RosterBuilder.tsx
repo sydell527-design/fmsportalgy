@@ -14,7 +14,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { FMS_LOCATIONS, type ArmedStatus, type CallSign } from "@shared/schema";
+import { FMS_LOCATIONS, CLIENT_AGENCIES, type ArmedStatus, type CallSign } from "@shared/schema";
 
 // ── Shift presets (from actual FMS schedule formats) ──────────────────────────
 interface ShiftPreset {
@@ -49,6 +49,12 @@ interface EmpRow {
   location: string;
   cells: Record<string, string>; // date → shift code ("7-3","3-11",…,"Off","","custom")
   customTimes: Record<string, { start: string; end: string }>; // for custom entries
+}
+
+interface AgencyRoster {
+  agency: string;          // e.g. "CARICOM", "EU"
+  rows: EmpRow[];
+  savedCount?: number;     // shifts saved in last save action (for tab badge)
 }
 
 interface Props {
@@ -103,6 +109,61 @@ function EmpCombo({
               <span className="text-xs text-muted-foreground ml-2">{e.userId}</span>
             </button>
           ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Agency search combobox ────────────────────────────────────────────────────
+function AgencyCombo({ onSelect, existing }: {
+  onSelect: (agency: string) => void;
+  existing: string[];
+}) {
+  const [q, setQ] = useState("");
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const filtered = useMemo(() => {
+    const qLow = q.trim().toLowerCase();
+    return CLIENT_AGENCIES.filter((a) => !qLow || a.toLowerCase().includes(qLow));
+  }, [q]);
+
+  useEffect(() => {
+    const fn = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener("mousedown", fn);
+    return () => document.removeEventListener("mousedown", fn);
+  }, []);
+
+  return (
+    <div ref={ref} className="relative">
+      <div className="relative">
+        <Search className="absolute left-2.5 top-2.5 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
+        <input
+          className="flex h-8 w-full rounded-md border border-input bg-background pl-8 pr-3 py-1 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+          placeholder="Search agency…"
+          value={q}
+          onChange={(e) => { setQ(e.target.value); setOpen(true); }}
+          onFocus={() => setOpen(true)}
+          data-testid="input-roster-agency-search"
+        />
+      </div>
+      {open && filtered.length > 0 && (
+        <div className="absolute z-50 mt-1 w-full rounded-md border bg-background shadow-lg max-h-48 overflow-y-auto">
+          {filtered.map((a) => {
+            const active = existing.includes(a);
+            return (
+              <button
+                key={a}
+                type="button"
+                className="w-full text-left px-3 py-2 text-sm hover:bg-muted flex items-center justify-between"
+                onMouseDown={() => { onSelect(a); setQ(""); setOpen(false); }}
+                data-testid={`roster-agency-${a}`}
+              >
+                <span className="font-medium">{a}</span>
+                {active && <span className="text-[10px] text-primary font-semibold">● Open</span>}
+              </button>
+            );
+          })}
         </div>
       )}
     </div>
@@ -323,7 +384,8 @@ export function RosterBuilder({ open, onClose, employees, onSaved }: Props) {
   const [dateFrom, setDateFrom] = useState(initPeriod.from);
   const [dateTo,   setDateTo]   = useState(initPeriod.to);
 
-  const [rows,      setRows]      = useState<EmpRow[]>([]);
+  const [agencyRosters, setAgencyRosters] = useState<AgencyRoster[]>([]);
+  const [activeAgency,  setActiveAgency]  = useState<string>("");
   const [saving,    setSaving]    = useState(false);
   const [importing, setImporting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -406,7 +468,8 @@ export function RosterBuilder({ open, onClose, employees, onSaved }: Props) {
       setActivePeriod(init.p);
       setDateFrom(init.from);
       setDateTo(init.to);
-      setRows([]);
+      setAgencyRosters([]);
+      setActiveAgency("");
     }
   }, [open]);
 
@@ -415,26 +478,63 @@ export function RosterBuilder({ open, onClose, employees, onSaved }: Props) {
     return eachDayOfInterval({ start: parseISO(dateFrom), end: parseISO(dateTo) });
   }, [dateFrom, dateTo]);
 
-  // Available employees not yet in the roster
+  // Derive the active agency's rows
+  const activeRows = useMemo(
+    () => agencyRosters.find((ar) => ar.agency === activeAgency)?.rows ?? [],
+    [agencyRosters, activeAgency]
+  );
+
+  // Helper — update only the active agency's rows
+  function updateActiveRows(updater: (rows: EmpRow[]) => EmpRow[]) {
+    setAgencyRosters((prev) =>
+      prev.map((ar) => ar.agency === activeAgency ? { ...ar, rows: updater(ar.rows) } : ar)
+    );
+  }
+
+  // Agency management
+  function openAgency(agency: string) {
+    setAgencyRosters((prev) => {
+      if (prev.some((ar) => ar.agency === agency)) return prev;
+      return [...prev, { agency, rows: [] }];
+    });
+    setActiveAgency(agency);
+  }
+
+  function closeAgency(agency: string) {
+    setAgencyRosters((prev) => {
+      const next = prev.filter((ar) => ar.agency !== agency);
+      if (activeAgency === agency) {
+        const idx = prev.findIndex((ar) => ar.agency === agency);
+        const fallback = next[Math.max(0, idx - 1)]?.agency ?? "";
+        setActiveAgency(fallback);
+      }
+      return next;
+    });
+  }
+
+  // Available employees not yet in the CURRENT agency's roster
   const availableEmps = useMemo(
-    () => employees.filter((e) => !rows.some((r) => r.eid === e.userId)),
-    [employees, rows]
+    () => employees.filter((e) => !activeRows.some((r) => r.eid === e.userId)),
+    [employees, activeRows]
   );
 
   function addEmployee(emp: typeof employees[0]) {
-    setRows((prev) => [...prev, { eid: emp.userId, name: emp.name, pos: emp.pos, callSign: emp.userId, location: "", cells: {}, customTimes: {} }]);
+    updateActiveRows((prev) => [
+      ...prev,
+      { eid: emp.userId, name: emp.name, pos: emp.pos, callSign: emp.userId, location: "", cells: {}, customTimes: {} },
+    ]);
   }
 
   function updateRowField(eid: string, field: "callSign" | "location", value: string) {
-    setRows((prev) => prev.map((r) => r.eid === eid ? { ...r, [field]: value } : r));
+    updateActiveRows((prev) => prev.map((r) => r.eid === eid ? { ...r, [field]: value } : r));
   }
 
   function removeEmployee(eid: string) {
-    setRows((prev) => prev.filter((r) => r.eid !== eid));
+    updateActiveRows((prev) => prev.filter((r) => r.eid !== eid));
   }
 
   function updateCell(eid: string, dateStr: string, code: string, custom?: { start: string; end: string }) {
-    setRows((prev) => prev.map((r) => {
+    updateActiveRows((prev) => prev.map((r) => {
       if (r.eid !== eid) return r;
       const cells = { ...r.cells, [dateStr]: code };
       const customTimes = { ...r.customTimes };
@@ -446,7 +546,7 @@ export function RosterBuilder({ open, onClose, employees, onSaved }: Props) {
 
   // Fill an entire row with a preset
   function fillRow(eid: string, code: string) {
-    setRows((prev) => prev.map((r) => {
+    updateActiveRows((prev) => prev.map((r) => {
       if (r.eid !== eid) return r;
       const cells: Record<string, string> = {};
       days.forEach((d) => { cells[format(d, "yyyy-MM-dd")] = code; });
@@ -456,7 +556,7 @@ export function RosterBuilder({ open, onClose, employees, onSaved }: Props) {
 
   // Clear a row
   function clearRow(eid: string) {
-    setRows((prev) => prev.map((r) => r.eid === eid ? { ...r, cells: {}, customTimes: {} } : r));
+    updateActiveRows((prev) => prev.map((r) => r.eid === eid ? { ...r, cells: {}, customTimes: {} } : r));
   }
 
   // Convert shift code → start/end times
@@ -468,13 +568,17 @@ export function RosterBuilder({ open, onClose, employees, onSaved }: Props) {
   }
 
   async function handleSave() {
+    if (!activeAgency) {
+      toast({ title: "No agency selected", description: "Select an agency tab before saving.", variant: "destructive" });
+      return;
+    }
     const toCreate: object[] = [];
-    for (const row of rows) {
+    for (const row of activeRows) {
       for (const day of days) {
         const dateStr = format(day, "yyyy-MM-dd");
         const code = row.cells[dateStr] ?? "";
         const times = codeToTimes(code, row.customTimes[dateStr]);
-        if (!times) continue; // skip Off Duty and empty cells
+        if (!times) continue;
         toCreate.push({
           eid:        row.eid,
           date:       dateStr,
@@ -482,7 +586,7 @@ export function RosterBuilder({ open, onClose, employees, onSaved }: Props) {
           shiftEnd:   times.end,
           armed:      "Unarmed",
           location:   row.location || null,
-          client:     null,
+          client:     activeAgency,
           notes:      null,
           createdBy:  user?.userId ?? "",
         });
@@ -498,9 +602,12 @@ export function RosterBuilder({ open, onClose, employees, onSaved }: Props) {
     try {
       await apiRequest("POST", "/api/schedules/bulk", toCreate);
       qc.invalidateQueries({ queryKey: ["/api/schedules"] });
-      toast({ title: `${toCreate.length} shift${toCreate.length > 1 ? "s" : ""} saved successfully` });
+      // Mark this agency tab as saved
+      setAgencyRosters((prev) =>
+        prev.map((ar) => ar.agency === activeAgency ? { ...ar, savedCount: toCreate.length } : ar)
+      );
+      toast({ title: `${toCreate.length} shift${toCreate.length > 1 ? "s" : ""} saved for ${activeAgency}` });
       onSaved();
-      onClose();
     } catch (err: any) {
       toast({ title: "Save failed", description: err.message, variant: "destructive" });
     } finally {
@@ -508,7 +615,7 @@ export function RosterBuilder({ open, onClose, employees, onSaved }: Props) {
     }
   }
 
-  const totalShifts = rows.reduce((sum, row) =>
+  const totalShifts = activeRows.reduce((sum, row) =>
     sum + Object.values(row.cells).filter((c) => c && c !== "Off").length, 0
   );
 
@@ -634,14 +741,50 @@ export function RosterBuilder({ open, onClose, employees, onSaved }: Props) {
           {totalShifts > 0 && (
             <span className="text-xs text-muted-foreground">{totalShifts} shift{totalShifts > 1 ? "s" : ""} planned</span>
           )}
-          <Button onClick={handleSave} disabled={saving || rows.length === 0} size="sm" data-testid="button-roster-save">
+          <Button onClick={handleSave} disabled={saving || activeRows.length === 0 || !activeAgency} size="sm" data-testid="button-roster-save">
             {saving ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <Save className="w-4 h-4 mr-1" />}
-            Save Roster
+            {activeAgency ? `Save ${activeAgency}` : "Save Roster"}
           </Button>
           <button onClick={onClose} className="p-2 rounded hover:bg-muted transition-colors" data-testid="button-roster-close">
             <X className="w-5 h-5" />
           </button>
         </div>
+      </div>
+
+      {/* ── Agency tab strip (Excel-style sheet tabs) ──────────────────────── */}
+      <div className="flex items-end gap-0 px-4 pt-2 border-b bg-muted/10 shrink-0 overflow-x-auto">
+        {agencyRosters.map((ar) => (
+          <div
+            key={ar.agency}
+            className={`flex items-center gap-1.5 px-4 py-1.5 text-sm font-medium border-t border-l border-r rounded-t-md cursor-pointer select-none transition-colors mr-0.5 ${
+              ar.agency === activeAgency
+                ? "bg-background border-border text-foreground shadow-sm"
+                : "bg-muted/40 border-transparent text-muted-foreground hover:bg-muted"
+            }`}
+            onClick={() => setActiveAgency(ar.agency)}
+            data-testid={`roster-tab-${ar.agency}`}
+          >
+            <span>{ar.agency}</span>
+            {ar.savedCount !== undefined && (
+              <span className="text-[10px] text-emerald-600 font-semibold">✓{ar.savedCount}</span>
+            )}
+            {ar.rows.length > 0 && ar.savedCount === undefined && (
+              <span className="text-[10px] bg-primary/20 text-primary rounded-full px-1.5">{ar.rows.length}</span>
+            )}
+            <button
+              type="button"
+              className="w-3.5 h-3.5 rounded-full hover:bg-muted-foreground/20 flex items-center justify-center ml-0.5"
+              onClick={(e) => { e.stopPropagation(); closeAgency(ar.agency); }}
+              data-testid={`roster-tab-close-${ar.agency}`}
+              title={`Close ${ar.agency}`}
+            >
+              <X className="w-2.5 h-2.5" />
+            </button>
+          </div>
+        ))}
+        {agencyRosters.length === 0 && (
+          <span className="text-xs text-muted-foreground pb-2 italic">No agency open — search below to start</span>
+        )}
       </div>
 
       {/* ── Body ───────────────────────────────────────────────────────────── */}
@@ -650,16 +793,26 @@ export function RosterBuilder({ open, onClose, employees, onSaved }: Props) {
         {/* ── Left sidebar ─────────────────────────────────────────────────── */}
         <aside className="w-64 border-r flex flex-col shrink-0 overflow-y-auto bg-muted/20">
           <div className="p-3 space-y-3">
+            {/* Agency search — above employee search */}
             <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1.5">Add Employee</p>
-              <EmpCombo employees={availableEmps} onAdd={addEmployee} />
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1.5">Agency / Client</p>
+              <AgencyCombo onSelect={openAgency} existing={agencyRosters.map((ar) => ar.agency)} />
             </div>
 
-            {rows.length > 0 && (
+            {/* Employee search — only enabled when an agency is active */}
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1.5">Add Employee</p>
+              {activeAgency
+                ? <EmpCombo employees={availableEmps} onAdd={addEmployee} />
+                : <p className="text-xs text-muted-foreground italic">Select an agency first</p>
+              }
+            </div>
+
+            {activeRows.length > 0 && (
               <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1.5">On Roster ({rows.length})</p>
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1.5">On Roster ({activeRows.length})</p>
                 <div className="space-y-1">
-                  {rows.map((r) => (
+                  {activeRows.map((r) => (
                     <div key={r.eid} className="flex items-center justify-between gap-1 bg-background border rounded px-2 py-1.5">
                       <div className="min-w-0">
                         <p className="text-xs font-medium truncate">{r.name}</p>
@@ -679,12 +832,20 @@ export function RosterBuilder({ open, onClose, employees, onSaved }: Props) {
 
         {/* ── Grid area ────────────────────────────────────────────────────── */}
         <main className="flex-1 overflow-auto p-3">
-          {rows.length === 0 ? (
+          {!activeAgency ? (
             <div className="h-full flex flex-col items-center justify-center text-center text-muted-foreground gap-3">
               <Search className="w-10 h-10 opacity-20" />
               <div>
-                <p className="font-medium">No employees added yet</p>
-                <p className="text-sm">Search and add employees from the left panel to start building the roster</p>
+                <p className="font-medium">No agency selected</p>
+                <p className="text-sm">Search for an agency in the left panel to open a roster sheet</p>
+              </div>
+            </div>
+          ) : activeRows.length === 0 ? (
+            <div className="h-full flex flex-col items-center justify-center text-center text-muted-foreground gap-3">
+              <Search className="w-10 h-10 opacity-20" />
+              <div>
+                <p className="font-semibold">{activeAgency} roster is empty</p>
+                <p className="text-sm">Search and add employees from the left panel</p>
               </div>
             </div>
           ) : (
@@ -724,7 +885,7 @@ export function RosterBuilder({ open, onClose, employees, onSaved }: Props) {
                 </tr>
               </thead>
               <tbody>
-                {rows.map((row, ri) => (
+                {activeRows.map((row, ri) => (
                   <tr key={row.eid} className="border-t border-border/40 hover:bg-muted/10 group">
                     {/* Call Sign cell */}
                     <td className="py-1 px-1 align-middle sticky left-0 bg-background group-hover:bg-muted/10 z-10 border-r w-20">
@@ -803,20 +964,22 @@ export function RosterBuilder({ open, onClose, employees, onSaved }: Props) {
       </div>
 
       {/* ── Bottom status bar ──────────────────────────────────────────────── */}
-      {rows.length > 0 && (
+      {activeRows.length > 0 && (
         <div className="border-t px-4 py-2 text-xs text-muted-foreground flex items-center gap-4 bg-muted/20 shrink-0">
-          <span>{rows.length} employee{rows.length > 1 ? "s" : ""}</span>
+          {activeAgency && <span className="font-semibold text-foreground">{activeAgency}</span>}
+          {activeAgency && <span>·</span>}
+          <span>{activeRows.length} employee{activeRows.length > 1 ? "s" : ""}</span>
           <span>·</span>
           <span>{days.length} days</span>
           <span>·</span>
           <span className="font-medium text-foreground">{totalShifts} shifts planned</span>
           <span>·</span>
           {Object.values(SHIFT_PRESETS).filter(p => p.code !== "Off").map(p => {
-            const cnt = rows.reduce((s, r) => s + Object.values(r.cells).filter(c => c === p.code).length, 0);
+            const cnt = activeRows.reduce((s, r) => s + Object.values(r.cells).filter(c => c === p.code).length, 0);
             return cnt > 0 ? <span key={p.code} className={`${p.text} font-medium`}>{p.label}: {cnt}</span> : null;
           })}
           {(() => {
-            const customCnt = rows.reduce((s, r) => s + Object.values(r.cells).filter(c => c === "custom").length, 0);
+            const customCnt = activeRows.reduce((s, r) => s + Object.values(r.cells).filter(c => c === "custom").length, 0);
             return customCnt > 0 ? <span className="text-amber-700 font-medium">Custom: {customCnt}</span> : null;
           })()}
         </div>

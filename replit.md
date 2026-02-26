@@ -101,6 +101,24 @@ server/
 
 ## Change Log
 
+### 2026-02-26 — Roster Builder: Agency tabs + Call Sign Registry
+**Agency / Client multi-sheet workflow:**
+- Roster Builder now operates per-agency like Excel sheets — each agency gets its own tab
+- **Agency search** (above Employee search in sidebar): type to filter from `CLIENT_AGENCIES` list; selecting opens a new tab or switches to an existing one
+- **Sheet tab strip** between top bar and grid — styled like Excel tabs; active tab has raised border, inactive tabs are muted; badge shows employee count or ✓saved count
+- **Per-agency state**: each tab maintains its own independent list of employees and shift cells; switching tabs instantly restores that agency's grid
+- Save now saves only the **active** agency's shifts, sets `client = activeAgency` on every created shift, and shows "Save CARICOM" / "Save EU" etc. on the button
+- Closing a tab removes its roster from state; closing the active tab auto-switches to the adjacent one
+- Empty state distinguishes: no agency selected / agency selected but no employees added yet
+
+**Call Sign Registry** (also added in this session):
+- `call_signs` DB table: `callSign` (PK), `location`, `note`
+- `GET /api/call-signs` — fetch all; `POST /api/call-signs/import` — upsert batch; `DELETE /api/call-signs/:id`
+- **Import button** in Roster Builder top bar: accepts `.xlsx`/`.xls`/`.csv`; auto-detects headers (call/sign/id → callSign, loc/site/post → location); shows count badge after import
+- **CallSignCombo** per-row input in the grid: fuzzy search over registry, selecting auto-fills Location column for that row
+
+
+
 ### 2026-02-26 — Schedule page added
 - New page at `/schedule` — visible to all roles; admin/manager can create/edit/delete; employees see their own schedule read-only
 - **Desktop**: week grid — rows = employees, columns = Mon–Sun; Armed shifts = red cells, Unarmed = blue; click "+" in any cell to add; click an existing shift to edit
