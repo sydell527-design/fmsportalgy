@@ -992,7 +992,7 @@ export default function Timesheets() {
             </div>
 
             {/* File picker */}
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3">
               <input
                 ref={fileInputRef}
                 type="file"
@@ -1012,6 +1012,48 @@ export default function Timesheets() {
               >
                 <Upload className="w-4 h-4 mr-2" />
                 {bulkFileName ? "Change File" : "Choose File (.xlsx / .csv)"}
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-muted-foreground hover:text-foreground"
+                onClick={() => {
+                  const template = [
+                    {
+                      "Full Name": "Sydell Griffith",
+                      "Date": "2026-02-01",
+                      "Clock In": "08:00",
+                      "Clock Out": "16:00",
+                      "Zone": "HEAD OFFICE",
+                      "Post": "Post 1",
+                      "Break Minutes": 30,
+                      "Notes": "",
+                    },
+                    {
+                      "Full Name": "Shemar Spencer",
+                      "Date": "2026-02-01",
+                      "Clock In": "07:30",
+                      "Clock Out": "15:30",
+                      "Zone": "CARICOM",
+                      "Post": "Neptune P1",
+                      "Break Minutes": 30,
+                      "Notes": "Night shift",
+                    },
+                  ];
+                  const ws = XLSX.utils.json_to_sheet(template);
+                  const colWidths = [
+                    { wch: 22 }, { wch: 12 }, { wch: 10 }, { wch: 11 },
+                    { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 20 },
+                  ];
+                  ws["!cols"] = colWidths;
+                  const wb = XLSX.utils.book_new();
+                  XLSX.utils.book_append_sheet(wb, ws, "Timesheets");
+                  XLSX.writeFile(wb, "fms_timesheet_template.xlsx");
+                }}
+                data-testid="button-download-template"
+              >
+                <FileSpreadsheet className="w-4 h-4 mr-1.5" />
+                Download Template
               </Button>
               {bulkFileName && (
                 <span className="text-sm text-muted-foreground flex items-center gap-1.5">
