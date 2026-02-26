@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { PAYROLL_CONSTANTS } from "@/lib/payroll";
 import { Layout } from "@/components/Layout";
 import { useUsers, useCreateUser, useUpdateUser, useDeleteUser } from "@/hooks/use-users";
 import { useGeofences } from "@/hooks/use-geofences";
@@ -505,16 +506,17 @@ export default function Employees() {
   );
 }
 
-// ── Guyana 2026 Payroll Constants ───────────────────────────────────────────
-const GY_NIS_EMPLOYEE_RATE = 0.056;        // 5.6%
-const GY_NIS_EMPLOYER_RATE = 0.084;        // 8.4%
-const GY_NIS_MAX_INSURABLE = 280_000;      // GYD/month
-const GY_PERSONAL_ALLOWANCE = 100_000;     // GYD/month
-const GY_TAX_LOWER_RATE = 0.28;           // 28% on first $200,000/month chargeable
-const GY_TAX_LOWER_LIMIT = 200_000;       // monthly equivalent of $2.4M/year
-const GY_TAX_UPPER_RATE = 0.40;           // 40% above $200,000/month chargeable
-const GY_HEALTH_SURCHARGE_FULL = 1_200;   // GYD/month
-const GY_HEALTH_SURCHARGE_HALF = 600;     // GYD/month (casual/part-time)
+// ── Guyana 2026 Payroll Constants (single source of truth from payroll.ts) ──
+const C = PAYROLL_CONSTANTS;
+const GY_NIS_EMPLOYEE_RATE    = C.NIS_EMP_RATE;
+const GY_NIS_EMPLOYER_RATE    = C.NIS_ER_RATE;
+const GY_NIS_MAX_INSURABLE    = C.NIS_CEILING_MONTHLY;
+const GY_PERSONAL_ALLOWANCE   = C.PERSONAL_ALLOWANCE;
+const GY_TAX_LOWER_RATE       = C.TAX_LOWER_RATE;
+const GY_TAX_LOWER_LIMIT      = C.TAX_LOWER_LIMIT;
+const GY_TAX_UPPER_RATE       = C.TAX_UPPER_RATE;
+const GY_HEALTH_SURCHARGE_FULL = C.HEALTH_SURCHARGE_FULL;
+const GY_HEALTH_SURCHARGE_HALF = C.HEALTH_SURCHARGE_HALF;
 
 function gyCalc(basic: number, cat: string, pc: PayConfig) {
   const monthlyBasic = cat === "Time"
@@ -530,8 +532,9 @@ function gyCalc(basic: number, cat: string, pc: PayConfig) {
   const nisEmployer = pc.nisExempt ? 0 : Math.round(nisBase * GY_NIS_EMPLOYER_RATE);
   const healthSurcharge = pc.healthSurchargeExempt ? 0
     : pc.healthSurchargeRate === "half" ? GY_HEALTH_SURCHARGE_HALF : GY_HEALTH_SURCHARGE_FULL;
+  const personalAllow = Math.max(GY_PERSONAL_ALLOWANCE, Math.round(gross / 3));
   const chargeable = pc.taxExempt ? 0
-    : Math.max(0, gross - nisEmployee - GY_PERSONAL_ALLOWANCE);
+    : Math.max(0, gross - nisEmployee - personalAllow);
   const tax = pc.taxExempt ? 0
     : chargeable <= GY_TAX_LOWER_LIMIT
       ? Math.round(chargeable * GY_TAX_LOWER_RATE)
@@ -934,7 +937,7 @@ export function EmployeeFormDialog({
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <p className="font-medium text-sm">Income Tax (PAYE)</p>
-                        <p className="text-xs text-muted-foreground">Personal allowance {fmt(GY_PERSONAL_ALLOWANCE)}/mo · 28% / 40%</p>
+                        <p className="text-xs text-muted-foreground">Personal allowance {fmt(GY_PERSONAL_ALLOWANCE)}/mo or ⅓ gross · {(GY_TAX_LOWER_RATE*100).toFixed(0)}% / {(GY_TAX_UPPER_RATE*100).toFixed(0)}%</p>
                       </div>
                       <label className="flex items-center gap-1.5 text-xs cursor-pointer shrink-0 mt-0.5">
                         <input type="checkbox" checked={pc.taxExempt} onChange={(e) => setPc({ taxExempt: e.target.checked })} data-testid="checkbox-tax-exempt" /> Exempt

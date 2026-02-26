@@ -26,18 +26,19 @@ import { useToast } from "@/hooks/use-toast";
 import type { User as UserType, EmployeeChild, EmployeeLoan, PayConfig, Schedule, InsertSchedule } from "@shared/schema";
 import { FMS_LOCATIONS, ARMED_STATUSES, CLIENT_AGENCIES } from "@shared/schema";
 import { detectShift, fmt12, SHIFT_TEMPLATES } from "@/lib/shifts";
+import { PAYROLL_CONSTANTS } from "@/lib/payroll";
 
-// ── Guyana 2026 constants ─────────────────────────────────────────────────
-const GY_NIS_EMP   = 0.056;
-const GY_NIS_EMP_MAX   = 280_000;
-const GY_NIS_EMP_RATE  = 0.084;
-const GY_PERSONAL_ALLOW = 100_000;
-const GY_CHILD_ALLOW   = 10_000;
-const GY_TAX1_LIMIT    = 200_000;
-const GY_TAX1 = 0.28;
-const GY_TAX2 = 0.40;
-const GY_HEALTH_FULL   = 1_200;
-const GY_HEALTH_HALF   = 600;
+// ── Guyana 2026 constants (single source of truth from payroll.ts) ─────────
+const GY_NIS_EMP       = PAYROLL_CONSTANTS.NIS_EMP_RATE;
+const GY_NIS_EMP_MAX   = PAYROLL_CONSTANTS.NIS_CEILING_MONTHLY;
+const GY_NIS_EMP_RATE  = PAYROLL_CONSTANTS.NIS_ER_RATE;
+const GY_PERSONAL_ALLOW = PAYROLL_CONSTANTS.PERSONAL_ALLOWANCE;
+const GY_CHILD_ALLOW   = PAYROLL_CONSTANTS.CHILD_ALLOWANCE;
+const GY_TAX1_LIMIT    = PAYROLL_CONSTANTS.TAX_LOWER_LIMIT;
+const GY_TAX1          = PAYROLL_CONSTANTS.TAX_LOWER_RATE;
+const GY_TAX2          = PAYROLL_CONSTANTS.TAX_UPPER_RATE;
+const GY_HEALTH_FULL   = PAYROLL_CONSTANTS.HEALTH_SURCHARGE_FULL;
+const GY_HEALTH_HALF   = PAYROLL_CONSTANTS.HEALTH_SURCHARGE_HALF;
 
 function today() { return format(new Date(), "yyyy-MM-dd"); }
 function childAge(dob: string)       { return differenceInYears(new Date(), parseISO(dob)); }
@@ -68,10 +69,11 @@ function computePayroll(emp: UserType, children: EmployeeChild[]) {
   const nisEmployer = pc.nisExempt ? 0 : Math.round(nisBase * GY_NIS_EMP_RATE);
   const health      = pc.healthSurchargeExempt ? 0
     : pc.healthSurchargeRate === "half" ? GY_HEALTH_HALF : GY_HEALTH_FULL;
-  const qualifying  = children.filter(isQualifyingChild).length;
-  const childDeduct = qualifying * GY_CHILD_ALLOW;
-  const chargeable  = pc.taxExempt ? 0
-    : Math.max(0, gross - nisEmp - GY_PERSONAL_ALLOW - childDeduct);
+  const qualifying    = children.filter(isQualifyingChild).length;
+  const childDeduct   = qualifying * GY_CHILD_ALLOW;
+  const personalAllow = Math.max(GY_PERSONAL_ALLOW, Math.round(gross / 3));
+  const chargeable    = pc.taxExempt ? 0
+    : Math.max(0, gross - nisEmp - personalAllow - childDeduct);
   const paye = pc.taxExempt ? 0
     : chargeable <= GY_TAX1_LIMIT
       ? Math.round(chargeable * GY_TAX1)
@@ -81,7 +83,7 @@ function computePayroll(emp: UserType, children: EmployeeChild[]) {
     (pc.advancesRecovery ?? 0) + (pc.unionDues ?? 0) +
     (pc.otherDeductions ?? []).reduce((s, x) => s + x.amount, 0);
   const net = gross - statutory - voluntary;
-  return { basic, allowances, gross, nisEmp, nisEmployer, health, paye, chargeable, statutory, voluntary, net, qualifying, childDeduct };
+  return { basic, allowances, gross, nisEmp, nisEmployer, health, paye, chargeable, personalAllow, statutory, voluntary, net, qualifying, childDeduct };
 }
 
 function fmt(n: number) {
@@ -520,7 +522,7 @@ export default function EmployeeProfile() {
                   <Bar label={`Health Surcharge${pc.healthSurchargeExempt ? " — EXEMPT" : ` (${pc.healthSurchargeRate ?? "full"})`}`} sub={fmt(pay.health) + "/mo"} value={pay.health} max={pay.gross || 1} color="bg-teal-500" />
                   <div className="space-y-2">
                     <Bar label={`PAYE Tax${pc.taxExempt ? " — EXEMPT" : ""}`} sub={fmt(pay.paye) + "/mo"} value={pay.paye} max={pay.gross || 1} color="bg-purple-500" />
-                    <p className="text-[10px] text-muted-foreground">Chargeable: {fmt(pay.chargeable)} · Personal: GYD 100,000 · Child: {fmt(pay.childDeduct)}</p>
+                    <p className="text-[10px] text-muted-foreground">Chargeable: {fmt(pay.chargeable)} · Personal: {fmt(pay.personalAllow)}{pay.personalAllow > GY_PERSONAL_ALLOW ? " (⅓ gross)" : ""} · Child: {fmt(pay.childDeduct)}</p>
                   </div>
                   <div className="flex justify-between pt-2 border-t border-border text-sm font-semibold">
                     <span>Total Statutory</span><span className="text-red-600">{fmt(pay.statutory)}/mo</span>
