@@ -1,20 +1,20 @@
 import { useState, useMemo, useRef, useEffect } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import {
   format, eachDayOfInterval, parseISO,
   startOfMonth, endOfMonth, addMonths, subMonths, getDate, getDaysInMonth,
 } from "date-fns";
 import {
-  X, Plus, Search, ChevronDown, Save, Loader2, Shield, ShieldOff,
-  Trash2, RefreshCw, MapPin,
+  X, Plus, Search, ChevronDown, Save, Loader2,
+  Trash2, Upload, FileSpreadsheet,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { FMS_LOCATIONS, CLIENT_AGENCIES, type ClientAgency, type ArmedStatus } from "@shared/schema";
+import { FMS_LOCATIONS, type ArmedStatus, type CallSign } from "@shared/schema";
 
 // ── Shift presets (from actual FMS schedule formats) ──────────────────────────
 interface ShiftPreset {
@@ -101,6 +101,64 @@ function EmpCombo({
             >
               <span><span className="font-medium">{e.name}</span> <span className="text-muted-foreground text-xs">{e.pos}</span></span>
               <span className="text-xs text-muted-foreground ml-2">{e.userId}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Call Sign combobox (per row in grid) ──────────────────────────────────────
+function CallSignCombo({
+  value, registry, onChange, onLocationFill,
+}: {
+  value: string;
+  registry: CallSign[];
+  onChange: (v: string) => void;
+  onLocationFill: (loc: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const filtered = useMemo(() => {
+    const q = value.trim().toLowerCase();
+    if (!q) return registry.slice(0, 10);
+    return registry.filter((r) => r.callSign.toLowerCase().includes(q)).slice(0, 10);
+  }, [value, registry]);
+
+  useEffect(() => {
+    const fn = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener("mousedown", fn);
+    return () => document.removeEventListener("mousedown", fn);
+  }, []);
+
+  function selectEntry(cs: CallSign) {
+    onChange(cs.callSign);
+    onLocationFill(cs.location);
+    setOpen(false);
+  }
+
+  return (
+    <div ref={ref} className="relative w-full">
+      <input
+        type="text"
+        value={value}
+        onChange={(e) => { onChange(e.target.value); setOpen(true); }}
+        onFocus={() => setOpen(true)}
+        className="w-full text-xs border rounded px-1.5 py-1 bg-background font-mono font-medium focus:outline-none focus:ring-1 focus:ring-ring"
+        placeholder={registry.length ? "Search…" : "ID"}
+      />
+      {open && filtered.length > 0 && (
+        <div className="absolute z-[60] top-full left-0 mt-0.5 min-w-[160px] rounded-md border bg-background shadow-lg max-h-40 overflow-y-auto">
+          {filtered.map((cs) => (
+            <button
+              key={cs.callSign}
+              type="button"
+              className="w-full text-left px-2 py-1 text-xs hover:bg-muted flex items-center justify-between gap-2"
+              onMouseDown={() => selectEntry(cs)}
+            >
+              <span className="font-mono font-semibold">{cs.callSign}</span>
+              <span className="text-muted-foreground truncate">{cs.location}</span>
             </button>
           ))}
         </div>
@@ -267,6 +325,63 @@ export function RosterBuilder({ open, onClose, employees, onSaved }: Props) {
 
   const [rows,      setRows]      = useState<EmpRow[]>([]);
   const [saving,    setSaving]    = useState(false);
+  const [importing, setImporting] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Call sign registry from the database
+  const { data: callSignRegistry = [], refetch: refetchCallSigns } =
+    useQuery<CallSign[]>({ queryKey: ["/api/call-signs"] });
+
+  // Excel import: parse client-side, send JSON to backend
+  async function handleFileImport(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = "";
+    setImporting(true);
+    try {
+      const XLSX = await import("xlsx");
+      const buf  = await file.arrayBuffer();
+      const wb   = XLSX.read(buf, { type: "array" });
+      const ws   = wb.Sheets[wb.SheetNames[0]];
+      const rows: string[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" }) as string[][];
+
+      // Auto-detect columns: look for a header row or assume col A = callSign, col B = location
+      let startRow = 0;
+      const header = (rows[0] ?? []).map((c: any) => String(c).toLowerCase());
+      const csIdx  = header.findIndex((h) => h.includes("call") || h.includes("sign") || h.includes("id"));
+      const locIdx = header.findIndex((h) => h.includes("loc") || h.includes("site") || h.includes("post"));
+      const noteIdx = header.findIndex((h) => h.includes("note") || h.includes("desc"));
+
+      let csCol  = csIdx  >= 0 ? csIdx  : 0;
+      let locCol = locIdx >= 0 ? locIdx : 1;
+      let noteCol = noteIdx >= 0 ? noteIdx : -1;
+      if (csIdx >= 0 || locIdx >= 0) startRow = 1; // skip header
+
+      const records: { callSign: string; location: string; note?: string }[] = [];
+      for (let i = startRow; i < rows.length; i++) {
+        const row = rows[i];
+        const cs  = String(row[csCol] ?? "").trim();
+        const loc = String(row[locCol] ?? "").trim();
+        if (!cs || !loc) continue;
+        const note = noteCol >= 0 ? String(row[noteCol] ?? "").trim() || undefined : undefined;
+        records.push({ callSign: cs, location: loc, ...(note ? { note } : {}) });
+      }
+
+      if (!records.length) {
+        toast({ title: "No data found", description: "The file had no valid call sign / location rows.", variant: "destructive" });
+        return;
+      }
+
+      const res = await apiRequest("POST", "/api/call-signs/import", records);
+      const { imported } = await res.json();
+      await refetchCallSigns();
+      toast({ title: `${imported} call sign${imported > 1 ? "s" : ""} imported`, description: "Call sign → location mapping updated." });
+    } catch (err: any) {
+      toast({ title: "Import failed", description: err.message, variant: "destructive" });
+    } finally {
+      setImporting(false);
+    }
+  }
 
   // Apply a period button
   function applyPeriod(p: 1 | 2, a: Date = anchor) {
@@ -490,6 +605,32 @@ export function RosterBuilder({ open, onClose, employees, onSaved }: Props) {
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
+          {/* Hidden file input for Excel import */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".xlsx,.xls,.csv"
+            className="hidden"
+            onChange={handleFileImport}
+          />
+
+          {/* Import call signs button */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={importing}
+            data-testid="button-import-callsigns"
+            title="Import call signs from Excel"
+          >
+            {importing
+              ? <Loader2 className="w-4 h-4 animate-spin mr-1" />
+              : <FileSpreadsheet className="w-4 h-4 mr-1" />}
+            {callSignRegistry.length > 0
+              ? `Call Signs (${callSignRegistry.length})`
+              : "Import Call Signs"}
+          </Button>
+
           {totalShifts > 0 && (
             <span className="text-xs text-muted-foreground">{totalShifts} shift{totalShifts > 1 ? "s" : ""} planned</span>
           )}
@@ -587,13 +728,11 @@ export function RosterBuilder({ open, onClose, employees, onSaved }: Props) {
                   <tr key={row.eid} className="border-t border-border/40 hover:bg-muted/10 group">
                     {/* Call Sign cell */}
                     <td className="py-1 px-1 align-middle sticky left-0 bg-background group-hover:bg-muted/10 z-10 border-r w-20">
-                      <input
-                        type="text"
+                      <CallSignCombo
                         value={row.callSign}
-                        onChange={(e) => updateRowField(row.eid, "callSign", e.target.value)}
-                        className="w-full text-xs border rounded px-1.5 py-1 bg-background font-mono font-medium"
-                        placeholder="ID"
-                        data-testid={`input-callsign-${row.eid}`}
+                        registry={callSignRegistry}
+                        onChange={(v) => updateRowField(row.eid, "callSign", v)}
+                        onLocationFill={(loc) => updateRowField(row.eid, "location", loc)}
                       />
                     </td>
 

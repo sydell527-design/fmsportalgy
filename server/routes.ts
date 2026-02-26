@@ -2,7 +2,7 @@ import type { Express } from "express";
 import type { Server } from "http";
 import { storage } from "./storage";
 import { api } from "@shared/routes";
-import { insertEmployeeChildSchema, insertEmployeeLoanSchema, insertScheduleSchema } from "@shared/schema";
+import { insertEmployeeChildSchema, insertEmployeeLoanSchema, insertScheduleSchema, insertCallSignSchema } from "@shared/schema";
 import { z } from "zod";
 
 export async function registerRoutes(httpServer: Server, app: Express): Promise<Server> {
@@ -260,6 +260,29 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
   app.delete("/api/schedules/:id", async (req, res) => {
     try { await storage.deleteSchedule(Number(req.params.id)); res.status(204).send(); }
+    catch { res.status(500).json({ message: "Server error" }); }
+  });
+
+  // ── Call Sign Registry ──────────────────────────────────────────────────────
+  app.get("/api/call-signs", async (_req, res) => {
+    try { res.json(await storage.getCallSigns()); }
+    catch { res.status(500).json({ message: "Server error" }); }
+  });
+
+  // POST /api/call-signs/import — body: [{ callSign, location, note? }]
+  app.post("/api/call-signs/import", async (req, res) => {
+    try {
+      const rows = z.array(insertCallSignSchema).parse(req.body);
+      const count = await storage.importCallSigns(rows);
+      res.json({ imported: count });
+    } catch (err) {
+      if (err instanceof z.ZodError) return res.status(400).json({ message: err.errors[0].message });
+      res.status(500).json({ message: "Server error" });
+    }
+  });
+
+  app.delete("/api/call-signs", async (_req, res) => {
+    try { await storage.clearCallSigns(); res.status(204).send(); }
     catch { res.status(500).json({ message: "Server error" }); }
   });
 

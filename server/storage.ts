@@ -1,6 +1,6 @@
 import { db } from "./db";
 import {
-  users, timesheets, requests, geofences, employeeChildren, employeeLoans, schedules,
+  users, timesheets, requests, geofences, employeeChildren, employeeLoans, schedules, callSigns,
   type User, type InsertUser,
   type Timesheet, type InsertTimesheet,
   type Request, type InsertRequest,
@@ -8,8 +8,9 @@ import {
   type EmployeeChild, type InsertEmployeeChild,
   type EmployeeLoan, type InsertEmployeeLoan,
   type Schedule, type InsertSchedule,
+  type CallSign, type InsertCallSign,
 } from "@shared/schema";
-import { eq, and, gte, lte, desc, inArray } from "drizzle-orm";
+import { eq, and, gte, lte, desc, inArray, sql } from "drizzle-orm";
 
 export interface TimesheetFilters {
   startDate?: string;   // "YYYY-MM-DD"
@@ -63,6 +64,10 @@ export interface IStorage {
   createSchedule(s: InsertSchedule): Promise<Schedule>;
   updateSchedule(id: number, updates: Partial<InsertSchedule>): Promise<Schedule>;
   deleteSchedule(id: number): Promise<void>;
+
+  getCallSigns(): Promise<CallSign[]>;
+  importCallSigns(records: InsertCallSign[]): Promise<number>;
+  clearCallSigns(): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -231,6 +236,26 @@ export class DatabaseStorage implements IStorage {
   }
   async deleteSchedule(id: number) {
     await db.delete(schedules).where(eq(schedules.id, id));
+  }
+
+  async getCallSigns() {
+    return db.select().from(callSigns).orderBy(callSigns.callSign);
+  }
+
+  async importCallSigns(records: InsertCallSign[]) {
+    if (!records.length) return 0;
+    await db
+      .insert(callSigns)
+      .values(records)
+      .onConflictDoUpdate({
+        target: callSigns.callSign,
+        set: { location: sql`excluded.location`, note: sql`excluded.note` },
+      });
+    return records.length;
+  }
+
+  async clearCallSigns() {
+    await db.delete(callSigns);
   }
 }
 

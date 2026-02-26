@@ -178,6 +178,15 @@ export const schedules = pgTable("schedules", {
   createdBy: text("created_by").notNull(),      // userId of creator
 });
 
+// ── Call Sign Registry ─────────────────────────────────────────────────────
+// Imported from admin's Excel sheet: call sign → location mapping
+export const callSigns = pgTable("call_signs", {
+  id:        serial("id").primaryKey(),
+  callSign:  text("call_sign").notNull().unique(),  // e.g. "ALPHA-1", "1234"
+  location:  text("location").notNull(),            // matches FMS_LOCATIONS
+  note:      text("note"),                          // optional extra info
+});
+
 // ── Insert schemas ─────────────────────────────────────────────────────────
 export const insertEmployeeChildSchema = createInsertSchema(employeeChildren).omit({ id: true });
 export const insertEmployeeLoanSchema = createInsertSchema(employeeLoans).omit({ id: true });
@@ -186,6 +195,7 @@ export const insertTimesheetSchema = createInsertSchema(timesheets).omit({ id: t
 export const insertRequestSchema = createInsertSchema(requests).omit({ id: true });
 export const insertGeofenceSchema = createInsertSchema(geofences).omit({ id: true });
 export const insertScheduleSchema = createInsertSchema(schedules).omit({ id: true });
+export const insertCallSignSchema = createInsertSchema(callSigns).omit({ id: true });
 
 // ── Select types ──────────────────────────────────────────────────────────
 export type User = typeof users.$inferSelect;
@@ -208,3 +218,6 @@ export type InsertEmployeeLoan = z.infer<typeof insertEmployeeLoanSchema>;
 
 export type Schedule = typeof schedules.$inferSelect;
 export type InsertSchedule = z.infer<typeof insertScheduleSchema>;
+
+export type CallSign = typeof callSigns.$inferSelect;
+export type InsertCallSign = z.infer<typeof insertCallSignSchema>;
