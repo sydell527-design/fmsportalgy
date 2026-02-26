@@ -4,10 +4,16 @@ import { useCreateTimesheet, useTimesheets, useUpdateTimesheet } from "@/hooks/u
 import { useGeofences } from "@/hooks/use-geofences";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { MapPin, Clock, LogIn, LogOut, CheckCircle2, Navigation, AlertTriangle, PenLine, ShieldCheck, Car, Wifi } from "lucide-react";
+import { MapPin, Clock, LogIn, LogOut, CheckCircle2, Navigation, AlertTriangle, PenLine, ShieldCheck, Car, Wifi, Shield, ShieldOff } from "lucide-react";
 import { useLocation } from "wouter";
 import { format } from "date-fns";
+import {
+  DAY_STATUSES, HOLIDAY_TYPES, ARMED_STATUSES, CLIENT_AGENCIES,
+  PH_HOLIDAYS,
+  type DayStatus, type HolidayType, type ArmedStatus, type ClientAgency,
+} from "@shared/schema";
 
+// ── Haversine distance ───────────────────────────────────────────────────────
 function haversineMetres(lat1: number, lng1: number, lat2: number, lng2: number) {
   const R = 6371000;
   const toRad = (d: number) => (d * Math.PI) / 180;
@@ -17,6 +23,73 @@ function haversineMetres(lat1: number, lng1: number, lat2: number, lng2: number)
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
+// ── Zone → Client auto-mapping ───────────────────────────────────────────────
+const ZONE_CLIENT_MAP: Record<string, ClientAgency> = {
+  "HEAD OFFICE": "Head Office",
+  "CARICOM":     "Caricom",
+  "EU":          "EU",
+  "UN":          "UN",
+  "DMC":         "DMC",
+  "ARU":         "ARU",
+  "CANTEEN":     "Canteen",
+};
+
+// ── Auto time-out calculation (from FMS formula doc) ────────────────────────
+// TIME employees: morning shift starts at 6 AM
+// FIXED / EXECUTIVE: morning shift starts at 5 AM
+function calcAutoTimeOut(timeIn: string, cat: string): string {
+  const [h, m] = timeIn.split(":").map(Number);
+  const mins = h * 60 + m;
+  const morningStart = (cat === "Fixed" || cat === "Executive") ? 5 * 60 : 6 * 60;
+
+  if (mins >= 1    && mins <= 2   * 60) return "07:00"; // Night late arrival: 12:01–2:00 AM → 7 AM
+  if (mins >= morningStart && mins <= 8 * 60) return "12:00"; // Morning on-time → 12 PM
+  if (mins >  8   * 60 && mins <= 13 * 60 + 59) return "15:00"; // Late morning → 3 PM
+  if (mins >= 14  * 60 && mins <= 17 * 60 + 59) return "21:00"; // Afternoon → 9 PM
+  if (mins >= 18  * 60 && mins <= 21 * 60 + 59) return "00:00"; // Evening → Midnight
+  if (mins >= 22  * 60 && mins <= 23 * 60 + 59) return "07:00"; // Night → 7 AM next day
+  return "";
+}
+
+// ── Meal entitlement (1 meal per qualifying shift) ───────────────────────────
+// No meals if client = Canteen or Head Office
+// TIME: qualifying clock-in window = 06–07, 14–15, 18–19, 22–23
+// FIXED/EXECUTIVE: qualifying window = 05–07, 14–15, 18–19  (no 22–23)
+function calcMeals(timeIn: string, client: string, cat: string, totalHours: number): number {
+  if (!timeIn || totalHours <= 0) return 0;
+  if (client === "Canteen" || client === "Head Office") return 0;
+  const [h] = timeIn.split(":").map(Number);
+  const windows: Array<[number, number]> =
+    cat === "Time"
+      ? [[6, 7], [14, 15], [18, 19], [22, 23]]
+      : [[5, 7], [14, 15], [18, 19]];
+  return windows.some(([s, e]) => h >= s && h < e) ? 1 : 0;
+}
+
+// ── Hours split (reg / ot / ph) based on dayStatus ──────────────────────────
+function splitHours(totalHours: number, dayStatus: DayStatus, holidayType: HolidayType | "") {
+  if (dayStatus === "Sick" || dayStatus === "Absent" || dayStatus === "Annual Leave") {
+    return { reg: 0, ot: 0, ph: 0 };
+  }
+  if (dayStatus === "Off Day") {
+    return { reg: 0, ot: totalHours, ph: 0 };
+  }
+  if (dayStatus === "Holiday") {
+    if (holidayType && PH_HOLIDAYS.includes(holidayType as any)) {
+      return { reg: 0, ot: 0, ph: totalHours };
+    }
+    // Holiday Double or unknown → OT
+    return { reg: 0, ot: totalHours, ph: 0 };
+  }
+  // On Day
+  return {
+    reg: Math.min(8, totalHours),
+    ot:  Math.max(0, totalHours - 8),
+    ph:  0,
+  };
+}
+
+// ── Component ────────────────────────────────────────────────────────────────
 export function ClockInOut() {
   const { user } = useAuth();
   const todayDate = format(new Date(), "yyyy-MM-dd");
@@ -34,10 +107,24 @@ export function ClockInOut() {
   const [distanceFromZone, setDistanceFromZone] = useState<number | null>(null);
   const [locationEnabled, setLocationEnabled] = useState(false);
 
+  // ── New shift-metadata state ─────────────────────────────────────────────
+  const [dayStatus, setDayStatus] = useState<DayStatus>("On Day");
+  const [holidayType, setHolidayType] = useState<HolidayType | "">("");
+  const [armedStatus, setArmedStatus] = useState<ArmedStatus>("Unarmed");
+  const [client, setClient] = useState<ClientAgency | "">("");
+
   useEffect(() => {
     const t = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(t);
   }, []);
+
+  // Auto-fill client when zone changes
+  useEffect(() => {
+    if (selectedZone) {
+      const mapped = ZONE_CLIENT_MAP[selectedZone.toUpperCase()] ?? null;
+      if (mapped) setClient(mapped);
+    }
+  }, [selectedZone]);
 
   const today = todayDate;
   const todaysTsList = timesheets ?? [];
@@ -50,14 +137,9 @@ export function ClockInOut() {
   );
 
   const selectedFence = availableZones.find((g) => g.name === selectedZone);
-
-  // Mobility type of this employee
   const mobility: string = (user as any)?.mobility ?? "fixed";
-
-  // Clock-in zone's geofence (for clock-out verification)
   const clockInFence = (allGeofences ?? []).find((g) => g.name === todaysTs?.zone);
 
-  // Distance from the clock-in zone (used during clock-out)
   const distanceFromClockInZone =
     gpsCoords && clockInFence
       ? Math.round(haversineMetres(gpsCoords.lat, gpsCoords.lng, clockInFence.lat, clockInFence.lng))
@@ -81,18 +163,13 @@ export function ClockInOut() {
         setGpsStatus("ok");
         setLocationEnabled(true);
         if (selectedFence) {
-          const dist = haversineMetres(coords.lat, coords.lng, selectedFence.lat, selectedFence.lng);
-          setDistanceFromZone(Math.round(dist));
+          setDistanceFromZone(Math.round(haversineMetres(coords.lat, coords.lng, selectedFence.lat, selectedFence.lng)));
         }
         toast({ title: "Location enabled", description: "GPS coordinates captured." });
       },
       (err) => {
         setGpsStatus("error");
-        toast({
-          title: "Location access denied",
-          description: err.message || "Please allow location access in your browser to clock in.",
-          variant: "destructive",
-        });
+        toast({ title: "Location access denied", description: err.message || "Please allow location access.", variant: "destructive" });
       },
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
     );
@@ -103,8 +180,7 @@ export function ClockInOut() {
     setSelectedPost("");
     const fence = availableZones.find((g) => g.name === zoneName);
     if (fence && gpsCoords) {
-      const dist = haversineMetres(gpsCoords.lat, gpsCoords.lng, fence.lat, fence.lng);
-      setDistanceFromZone(Math.round(dist));
+      setDistanceFromZone(Math.round(haversineMetres(gpsCoords.lat, gpsCoords.lng, fence.lat, fence.lng)));
     } else {
       setDistanceFromZone(null);
     }
@@ -112,10 +188,10 @@ export function ClockInOut() {
 
   const isWithinFence = () => {
     if (!selectedFence || !gpsCoords) return false;
-    const dist = haversineMetres(gpsCoords.lat, gpsCoords.lng, selectedFence.lat, selectedFence.lng);
-    return dist <= selectedFence.radius;
+    return haversineMetres(gpsCoords.lat, gpsCoords.lng, selectedFence.lat, selectedFence.lng) <= selectedFence.radius;
   };
 
+  // ── Clock In ─────────────────────────────────────────────────────────────
   const handleClockIn = async () => {
     if (!user) return;
     if (!locationEnabled || !gpsCoords) {
@@ -127,140 +203,170 @@ export function ClockInOut() {
       return;
     }
     if (!isWithinFence()) {
-      const dist = distanceFromZone ?? "?";
       toast({
         title: "Outside work zone",
-        description: `You are ${dist}m from ${selectedZone} (radius: ${selectedFence.radius}m). Move closer to clock in.`,
+        description: `You are ${distanceFromZone ?? "?"}m from ${selectedZone} (radius: ${selectedFence.radius}m). Move closer to clock in.`,
         variant: "destructive",
       });
       return;
     }
+
+    const ciTime = format(new Date(), "HH:mm");
+    const autoOut = calcAutoTimeOut(ciTime, user.cat ?? "Time");
 
     try {
       await createTimesheet({
         tsId: `TS-${Date.now()}`,
         eid: user.userId,
         date: today,
-        ci: format(new Date(), "HH:mm"),
+        ci: ciTime,
         gIn: gpsCoords,
         zone: selectedZone,
-        post: selectedPost,
+        post: selectedPost || null,
+        dayStatus,
+        holidayType: dayStatus === "Holiday" ? (holidayType || null) : null,
+        armed: armedStatus,
+        client: client || null,
         status: "pending_employee",
-        reg: 0, ot: 0, brk: 0,
-        notes: "", edited: false, hist: [],
+        reg: 0, ot: 0, ph: 0, brk: 0, meals: 0,
+        notes: autoOut ? `Auto time-out: ${autoOut}` : "",
+        edited: false, hist: [],
       } as any);
-      toast({ title: "Clocked in!", description: selectedPost ? `${selectedZone} · ${selectedPost}` : selectedZone });
+
+      toast({
+        title: "Clocked in!",
+        description: `${selectedZone}${selectedPost ? ` · ${selectedPost}` : ""} · ${armedStatus}${autoOut ? ` · Expected out: ${autoOut}` : ""}`,
+      });
     } catch (err: any) {
       toast({ title: "Clock in failed", description: err.message, variant: "destructive" });
     }
   };
 
+  // ── Clock Out ────────────────────────────────────────────────────────────
   const handleClockOut = async () => {
     if (!todaysTs) return;
     if (!gpsCoords) {
       toast({ title: "Location required", description: "Please enable your location to clock out.", variant: "destructive" });
       return;
     }
-
-    // Zone verification — only enforce for "fixed" employees
     if (mobility === "fixed" && clockInFence && !isWithinClockInZone) {
       toast({
         title: "Outside your work zone",
-        description: `You must be within ${todaysTs.zone} (radius: ${clockInFence.radius}m) to clock out. You are currently ${distanceFromClockInZone}m away. If you have left your post, contact your supervisor.`,
+        description: `You must be within ${todaysTs.zone} (radius: ${clockInFence.radius}m) to clock out. You are ${distanceFromClockInZone}m away.`,
         variant: "destructive",
         duration: 8000,
       });
       return;
     }
 
-    const [ih, im] = (todaysTs.ci ?? "08:00").split(":").map(Number);
     const nowStr = format(new Date(), "HH:mm");
+    const [ih, im] = (todaysTs.ci ?? "08:00").split(":").map(Number);
     const [oh, om] = nowStr.split(":").map(Number);
-    const totalMins = oh * 60 + om - (ih * 60 + im);
-    const workMins = Math.max(0, totalMins - 30);
-    const reg = Math.min(8, workMins / 60);
-    const ot = Math.max(0, workMins / 60 - 8);
+    let totalMins = (oh * 60 + om) - (ih * 60 + im);
+    if (totalMins < 0) totalMins += 24 * 60; // crosses midnight
+    const workMins = Math.max(0, totalMins - 30); // 30-min break
+    const totalHours = Math.round((workMins / 60) * 100) / 100;
 
-    // Build auto-note for zone mismatch (mobile/remote out of zone)
+    const ds = (todaysTs.dayStatus as DayStatus) ?? "On Day";
+    const ht = (todaysTs.holidayType as HolidayType | "") ?? "";
+    const { reg, ot, ph } = splitHours(totalHours, ds, ht);
+
+    const mealCount = calcMeals(
+      todaysTs.ci ?? "",
+      todaysTs.client ?? "",
+      user?.cat ?? "Time",
+      totalHours
+    );
+
     let notes = todaysTs.notes ?? "";
     if (clockInFence && !isWithinClockInZone && mobility !== "fixed") {
-      const tag = `[Auto] Clocked out ${distanceFromClockInZone}m from ${todaysTs.zone} zone (mobility: ${mobility}).`;
+      const tag = `[Auto] Clocked out ${distanceFromClockInZone}m from ${todaysTs.zone} (${mobility}).`;
       notes = notes ? `${notes}\n${tag}` : tag;
     }
 
     try {
       await updateTimesheet({
         id: todaysTs.id,
-        co: format(new Date(), "HH:mm"),
+        co: nowStr,
         gOut: gpsCoords,
         reg: Math.round(reg * 100) / 100,
-        ot: Math.round(ot * 100) / 100,
+        ot:  Math.round(ot  * 100) / 100,
+        ph:  Math.round(ph  * 100) / 100,
         brk: 30,
+        meals: mealCount,
         status: "pending_employee",
         notes,
       });
 
-      if (clockInFence && !isWithinClockInZone) {
-        toast({
-          title: "Clocked out (outside zone)",
-          description: `${reg.toFixed(1)}h regular${ot > 0 ? ` + ${ot.toFixed(1)}h OT` : ""}. You were ${distanceFromClockInZone}m from ${todaysTs.zone} — this has been noted on your timesheet.`,
-          duration: 6000,
-        });
-      } else {
-        toast({ title: "Clocked out!", description: `${reg.toFixed(1)}h regular${ot > 0 ? ` + ${ot.toFixed(1)}h OT` : ""}` });
-      }
+      const summary = [
+        reg > 0 ? `${reg.toFixed(1)}h reg` : null,
+        ot  > 0 ? `${ot.toFixed(1)}h OT` : null,
+        ph  > 0 ? `${ph.toFixed(1)}h PH` : null,
+        mealCount > 0 ? `${mealCount} meal` : null,
+      ].filter(Boolean).join(" · ");
+
+      toast({ title: "Clocked out!", description: summary || `${totalHours.toFixed(1)}h total` });
     } catch (err: any) {
       toast({ title: "Clock out failed", description: err.message, variant: "destructive" });
     }
   };
 
   const [, setLocation] = useLocation();
-
   if (!user) return null;
 
-  const fenceOk = locationEnabled && selectedZone && isWithinFence();
+  const fenceOk   = locationEnabled && selectedZone && isWithinFence();
   const fenceFail = locationEnabled && selectedZone && !isWithinFence();
-
-  // Clock-out zone status (when clocked in)
-  const clockOutZoneOk = gpsCoords && clockInFence && isWithinClockInZone;
+  const clockOutZoneOk   = gpsCoords && clockInFence && isWithinClockInZone;
   const clockOutZoneFail = gpsCoords && clockInFence && !isWithinClockInZone;
 
-  const mobilityIcon = mobility === "mobile" ? <Car className="w-3 h-3" /> : mobility === "remote" ? <Wifi className="w-3 h-3" /> : <MapPin className="w-3 h-3" />;
-  const mobilityLabel = mobility === "mobile" ? "Mobile" : mobility === "remote" ? "Remote" : "Fixed";
+  const mobilityIcon =
+    mobility === "mobile" ? <Car className="w-3 h-3" /> :
+    mobility === "remote" ? <Wifi className="w-3 h-3" /> :
+    <MapPin className="w-3 h-3" />;
+  const mobilityLabel =
+    mobility === "mobile" ? "Mobile" :
+    mobility === "remote" ? "Remote" : "Fixed";
+
+  const selectCls = "flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm disabled:opacity-50";
 
   return (
     <div className="bg-card border border-border rounded-md overflow-hidden">
       <div className="flex flex-col md:flex-row gap-0 divide-y md:divide-y-0 md:divide-x divide-border">
 
-        {/* Live clock */}
+        {/* ── Live clock ── */}
         <div className="flex-1 p-5">
           <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide mb-1 flex items-center gap-1.5">
             <Clock className="w-3.5 h-3.5" /> Current Time
           </p>
           <p className="text-3xl font-mono font-semibold">{format(currentTime, "hh:mm:ss a")}</p>
           <p className="text-xs text-muted-foreground mt-1">{format(currentTime, "EEEE, MMMM d, yyyy")}</p>
+
           {todaysTs?.ci && (
-            <p className="text-xs mt-2 text-muted-foreground">
-              Clocked in: <strong className="text-foreground">{todaysTs.ci}</strong>
-              {todaysTs.co && <> · Out: <strong className="text-foreground">{todaysTs.co}</strong></>}
-              {todaysTs.zone && <> · Zone: <strong className="text-foreground">{todaysTs.zone}</strong></>}
-              {todaysTs.post && <> · Post: <strong className="text-foreground">{todaysTs.post}</strong></>}
-            </p>
+            <div className="mt-2 space-y-0.5 text-xs text-muted-foreground">
+              <p>Clocked in: <strong className="text-foreground">{todaysTs.ci}</strong>
+                {todaysTs.co && <> · Out: <strong className="text-foreground">{todaysTs.co}</strong></>}
+              </p>
+              {todaysTs.zone && <p>Zone: <strong className="text-foreground">{todaysTs.zone}</strong>{todaysTs.post ? ` · ${todaysTs.post}` : ""}</p>}
+              {todaysTs.dayStatus && <p>Status: <strong className="text-foreground">{todaysTs.dayStatus}</strong>{todaysTs.holidayType ? ` (${todaysTs.holidayType})` : ""}</p>}
+              {todaysTs.armed && <p>Armed: <strong className={todaysTs.armed === "Armed" ? "text-red-600" : "text-foreground"}>{todaysTs.armed}</strong></p>}
+              {todaysTs.client && <p>Client: <strong className="text-foreground">{todaysTs.client}</strong></p>}
+            </div>
           )}
-          {/* Mobility badge */}
+
           <div className="mt-2 flex items-center gap-1.5 text-[11px] text-muted-foreground">
             {mobilityIcon}
             <span>{mobilityLabel} worker</span>
-            {mobility === "fixed" && <span className="text-orange-600 font-medium">· zone-locked</span>}
+            {mobility === "fixed"  && <span className="text-orange-600 font-medium">· zone-locked</span>}
             {mobility === "mobile" && <span className="text-blue-600 font-medium">· may leave zone</span>}
             {mobility === "remote" && <span className="text-purple-600 font-medium">· offsite permitted</span>}
           </div>
         </div>
 
-        {/* Zone & GPS selector */}
+        {/* ── Zone / shift setup / GPS ── */}
         <div className="flex-1 p-5 space-y-3">
           {!hasClockedIn ? (
             <>
+              {/* Work location */}
               <div>
                 <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide mb-1.5 flex items-center gap-1.5">
                   <MapPin className="w-3.5 h-3.5" /> Work Location
@@ -268,12 +374,7 @@ export function ClockInOut() {
                 {availableZones.length === 0 ? (
                   <p className="text-sm text-muted-foreground italic">No locations assigned to your profile.</p>
                 ) : (
-                  <select
-                    className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm disabled:opacity-50"
-                    value={selectedZone}
-                    onChange={(e) => handleZoneChange(e.target.value)}
-                    data-testid="select-work-zone"
-                  >
+                  <select className={selectCls} value={selectedZone} onChange={(e) => handleZoneChange(e.target.value)} data-testid="select-work-zone">
                     <option value="">— Select your work location —</option>
                     {availableZones.map((g) => (
                       <option key={g.id} value={g.name}>{g.name}</option>
@@ -282,16 +383,11 @@ export function ClockInOut() {
                 )}
 
                 {selectedZone && (
-                  <div className="mt-3">
-                    <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide mb-1.5 flex items-center gap-1.5">
-                      <ShieldCheck className="w-3.5 h-3.5" /> Post Number <span className="font-normal text-muted-foreground">(optional)</span>
+                  <div className="mt-2">
+                    <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide mb-1 flex items-center gap-1.5">
+                      <ShieldCheck className="w-3.5 h-3.5" /> Post <span className="font-normal">(optional)</span>
                     </p>
-                    <select
-                      className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm disabled:opacity-50"
-                      value={selectedPost}
-                      onChange={(e) => setSelectedPost(e.target.value)}
-                      data-testid="select-post-number"
-                    >
+                    <select className={selectCls} value={selectedPost} onChange={(e) => setSelectedPost(e.target.value)} data-testid="select-post-number">
                       <option value="">— Select post —</option>
                       {(selectedFence?.postNames?.length
                         ? selectedFence.postNames
@@ -304,103 +400,189 @@ export function ClockInOut() {
                 )}
               </div>
 
+              {/* Day Status */}
+              <div>
+                <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide mb-1.5">Day Status</p>
+                <select className={selectCls} value={dayStatus} onChange={(e) => { setDayStatus(e.target.value as DayStatus); setHolidayType(""); }} data-testid="select-day-status">
+                  {DAY_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
+                {dayStatus === "Holiday" && (
+                  <div className="mt-1.5">
+                    <select className={selectCls} value={holidayType} onChange={(e) => setHolidayType(e.target.value as HolidayType)} data-testid="select-holiday-type">
+                      <option value="">— Select holiday type —</option>
+                      {HOLIDAY_TYPES.map((h) => <option key={h} value={h}>{h}</option>)}
+                    </select>
+                  </div>
+                )}
+              </div>
+
+              {/* Armed / Unarmed toggle buttons */}
+              <div>
+                <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide mb-1.5">Armed Status</p>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setArmedStatus("Unarmed")}
+                    data-testid="button-unarmed"
+                    className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-md border text-sm font-medium transition-colors ${
+                      armedStatus === "Unarmed"
+                        ? "bg-blue-600 text-white border-blue-600"
+                        : "border-border bg-background text-muted-foreground hover:bg-muted"
+                    }`}
+                  >
+                    <ShieldOff className="w-4 h-4" /> Unarmed
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setArmedStatus("Armed")}
+                    data-testid="button-armed"
+                    className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-md border text-sm font-medium transition-colors ${
+                      armedStatus === "Armed"
+                        ? "bg-red-600 text-white border-red-600"
+                        : "border-border bg-background text-muted-foreground hover:bg-muted"
+                    }`}
+                  >
+                    <Shield className="w-4 h-4" /> Armed
+                  </button>
+                </div>
+              </div>
+
+              {/* Client / Agency (auto-filled from zone) */}
+              <div>
+                <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide mb-1.5">Client / Agency</p>
+                <select className={selectCls} value={client} onChange={(e) => setClient(e.target.value as ClientAgency)} data-testid="select-client">
+                  <option value="">— Select client —</option>
+                  {CLIENT_AGENCIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+
+              {/* Enable GPS */}
               <button
                 onClick={enableLocation}
                 disabled={gpsStatus === "locating"}
                 className={`flex items-center gap-2 w-full px-3 py-2 rounded-md border text-sm font-medium transition-colors ${
-                  gpsStatus === "ok"
-                    ? "border-green-300 bg-green-50 text-green-700"
-                    : gpsStatus === "error"
-                    ? "border-red-300 bg-red-50 text-red-700"
-                    : "border-border bg-background text-muted-foreground hover:bg-muted"
+                  gpsStatus === "ok"    ? "border-green-300 bg-green-50 text-green-700" :
+                  gpsStatus === "error" ? "border-red-300 bg-red-50 text-red-700" :
+                  "border-border bg-background text-muted-foreground hover:bg-muted"
                 }`}
                 data-testid="button-enable-location"
               >
                 <Navigation className={`w-4 h-4 ${gpsStatus === "locating" ? "animate-pulse" : ""}`} />
-                {gpsStatus === "idle" && "Enable Location"}
+                {gpsStatus === "idle"     && "Enable Location"}
                 {gpsStatus === "locating" && "Getting GPS coordinates..."}
-                {gpsStatus === "ok" && `Location captured (${gpsCoords?.lat.toFixed(5)}, ${gpsCoords?.lng.toFixed(5)})`}
-                {gpsStatus === "error" && "Location denied — tap to retry"}
+                {gpsStatus === "ok"       && `Location captured (${gpsCoords?.lat.toFixed(5)}, ${gpsCoords?.lng.toFixed(5)})`}
+                {gpsStatus === "error"    && "Location denied — tap to retry"}
               </button>
 
               {locationEnabled && selectedZone && (
                 <div className={`flex items-center gap-2 px-3 py-2 rounded-md border text-sm font-medium ${
                   fenceOk ? "border-green-300 bg-green-50 text-green-700" : "border-red-300 bg-red-50 text-red-700"
                 }`} data-testid="geofence-status">
-                  {fenceOk ? (
-                    <><CheckCircle2 className="w-4 h-4 shrink-0" /> Within {selectedZone} zone ({distanceFromZone}m · limit {selectedFence?.radius}m)</>
-                  ) : (
-                    <><AlertTriangle className="w-4 h-4 shrink-0" /> Outside zone — {distanceFromZone}m away (limit {selectedFence?.radius}m)</>
-                  )}
+                  {fenceOk
+                    ? <><CheckCircle2 className="w-4 h-4 shrink-0" /> Within {selectedZone} zone ({distanceFromZone}m · limit {selectedFence?.radius}m)</>
+                    : <><AlertTriangle className="w-4 h-4 shrink-0" /> Outside zone — {distanceFromZone}m away (limit {selectedFence?.radius}m)</>
+                  }
                 </div>
               )}
+
+              {/* Auto time-out preview */}
+              {locationEnabled && selectedZone && fenceOk && (() => {
+                const preview = calcAutoTimeOut(format(currentTime, "HH:mm"), user.cat ?? "Time");
+                return preview ? (
+                  <p className="text-[11px] text-muted-foreground text-center">
+                    Expected shift end: <strong className="text-foreground">{preview}</strong>
+                    {" "}· Meals: <strong className="text-foreground">{client && (client === "Canteen" || client === "Head Office") ? "None (site policy)" : "1 if qualifying shift"}</strong>
+                  </p>
+                ) : null;
+              })()}
             </>
           ) : (
-            /* ── CLOCKED IN: show zone status and GPS re-acquire ── */
+            /* ── CLOCKED IN: show current shift info + GPS re-acquire ── */
             <div className="space-y-3">
               <div>
                 <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide mb-1.5 flex items-center gap-1.5">
                   <MapPin className="w-3.5 h-3.5" /> Current Shift
                 </p>
-                <div className="text-sm space-y-0.5">
-                  <p><span className="text-muted-foreground">Zone:</span> <strong>{todaysTs?.zone}</strong></p>
-                  <p><span className="text-muted-foreground">Post:</span> <strong>{todaysTs?.post ?? "—"}</strong></p>
-                  <p><span className="text-muted-foreground">Clocked in:</span> <strong>{todaysTs?.ci}</strong></p>
+                <div className="text-sm space-y-1">
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-sm">
+                    <p><span className="text-muted-foreground">Zone:</span> <strong>{todaysTs?.zone}</strong></p>
+                    <p><span className="text-muted-foreground">Post:</span> <strong>{todaysTs?.post ?? "—"}</strong></p>
+                    <p><span className="text-muted-foreground">Status:</span> <strong>{todaysTs?.dayStatus ?? "On Day"}</strong></p>
+                    <p><span className="text-muted-foreground">Client:</span> <strong>{todaysTs?.client ?? "—"}</strong></p>
+                    <p><span className="text-muted-foreground">Armed:</span> <strong className={todaysTs?.armed === "Armed" ? "text-red-600" : ""}>{todaysTs?.armed ?? "—"}</strong></p>
+                    <p><span className="text-muted-foreground">In:</span> <strong>{todaysTs?.ci}</strong></p>
+                  </div>
+                  {todaysTs?.holidayType && (
+                    <p className="text-xs text-amber-700 font-medium">Holiday: {todaysTs.holidayType}</p>
+                  )}
                 </div>
               </div>
 
-              {/* GPS re-acquire for clock-out */}
               <button
                 onClick={enableLocation}
                 disabled={gpsStatus === "locating"}
                 className={`flex items-center gap-2 w-full px-3 py-2 rounded-md border text-sm font-medium transition-colors ${
-                  gpsStatus === "ok"
-                    ? "border-green-300 bg-green-50 text-green-700"
-                    : gpsStatus === "error"
-                    ? "border-red-300 bg-red-50 text-red-700"
-                    : "border-border bg-background text-muted-foreground hover:bg-muted"
+                  gpsStatus === "ok"    ? "border-green-300 bg-green-50 text-green-700" :
+                  gpsStatus === "error" ? "border-red-300 bg-red-50 text-red-700" :
+                  "border-border bg-background text-muted-foreground hover:bg-muted"
                 }`}
                 data-testid="button-enable-location"
               >
                 <Navigation className={`w-4 h-4 ${gpsStatus === "locating" ? "animate-pulse" : ""}`} />
-                {gpsStatus === "idle" && "Enable Location to Clock Out"}
+                {gpsStatus === "idle"     && "Enable Location to Clock Out"}
                 {gpsStatus === "locating" && "Getting GPS coordinates..."}
-                {gpsStatus === "ok" && `Location captured (${gpsCoords?.lat.toFixed(5)}, ${gpsCoords?.lng.toFixed(5)})`}
-                {gpsStatus === "error" && "Location denied — tap to retry"}
+                {gpsStatus === "ok"       && `Location captured (${gpsCoords?.lat.toFixed(5)}, ${gpsCoords?.lng.toFixed(5)})`}
+                {gpsStatus === "error"    && "Location denied — tap to retry"}
               </button>
 
-              {/* Clock-out zone match indicator */}
               {gpsCoords && clockInFence && (
                 <div className={`flex items-start gap-2 px-3 py-2 rounded-md border text-sm font-medium ${
-                  clockOutZoneOk
-                    ? "border-green-300 bg-green-50 text-green-700"
-                    : mobility === "fixed"
-                    ? "border-red-300 bg-red-50 text-red-700"
-                    : "border-amber-300 bg-amber-50 text-amber-700"
+                  clockOutZoneOk ? "border-green-300 bg-green-50 text-green-700" :
+                  mobility === "fixed" ? "border-red-300 bg-red-50 text-red-700" :
+                  "border-amber-300 bg-amber-50 text-amber-700"
                 }`} data-testid="clock-out-zone-status">
                   {clockOutZoneOk ? (
                     <><CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />
-                    <span>Within {todaysTs?.zone} zone — OK to clock out ({distanceFromClockInZone}m from centre)</span></>
+                    <span>Within {todaysTs?.zone} — OK to clock out ({distanceFromClockInZone}m)</span></>
                   ) : mobility === "fixed" ? (
                     <><AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-                    <span>
-                      <strong>Outside {todaysTs?.zone}</strong> — you are {distanceFromClockInZone}m away (limit {clockInFence.radius}m).
-                      Fixed employees must return to their zone before clocking out.
-                    </span></>
+                    <span><strong>Outside {todaysTs?.zone}</strong> — {distanceFromClockInZone}m away (limit {clockInFence.radius}m). Return to zone to clock out.</span></>
                   ) : (
                     <><AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-                    <span>
-                      <strong>Outside {todaysTs?.zone}</strong> — {distanceFromClockInZone}m from zone.
-                      As a {mobilityLabel.toLowerCase()} worker you may clock out, but this will be noted on your timesheet.
-                    </span></>
+                    <span><strong>Outside {todaysTs?.zone}</strong> — {distanceFromClockInZone}m. {mobilityLabel} worker — may clock out but will be noted.</span></>
                   )}
                 </div>
               )}
+
+              {/* Preview of what clock-out will calculate */}
+              {gpsCoords && todaysTs?.ci && (() => {
+                const [ih, im] = todaysTs.ci.split(":").map(Number);
+                const now = new Date();
+                let mins = (now.getHours() * 60 + now.getMinutes()) - (ih * 60 + im);
+                if (mins < 0) mins += 1440;
+                const totalH = Math.max(0, (mins - 30) / 60);
+                const ds = (todaysTs.dayStatus as DayStatus) ?? "On Day";
+                const ht = (todaysTs.holidayType as HolidayType | "") ?? "";
+                const { reg, ot, ph } = splitHours(totalH, ds, ht);
+                const meals = calcMeals(todaysTs.ci, todaysTs.client ?? "", user.cat ?? "Time", totalH);
+                return (
+                  <p className="text-[11px] text-muted-foreground text-center">
+                    If clocked out now: <strong className="text-foreground">
+                      {[
+                        reg > 0 ? `${reg.toFixed(1)}h reg` : null,
+                        ot  > 0 ? `${ot.toFixed(1)}h OT`  : null,
+                        ph  > 0 ? `${ph.toFixed(1)}h PH`  : null,
+                        meals > 0 ? `${meals} meal` : null,
+                      ].filter(Boolean).join(" · ") || "0h"}
+                    </strong>
+                  </p>
+                );
+              })()}
             </div>
           )}
         </div>
 
-        {/* Clock button */}
+        {/* ── Clock button ── */}
         <div className="p-5 flex flex-col items-center justify-center gap-3 min-w-[180px]">
           {!hasClockedIn ? (
             <>
@@ -414,11 +596,17 @@ export function ClockInOut() {
                 <LogIn className="w-5 h-5 mr-2" />
                 {isCreating ? "Processing..." : "Clock In"}
               </Button>
-              {(!locationEnabled || !selectedZone) && (
-                <p className="text-xs text-muted-foreground text-center">
-                  {!selectedZone ? "Select location first" : "Enable location first"}
-                </p>
-              )}
+              <div className="text-xs text-muted-foreground text-center space-y-0.5">
+                {!selectedZone && <p>Select location first</p>}
+                {selectedZone && !locationEnabled && <p>Enable location first</p>}
+                {locationEnabled && selectedZone && (
+                  <p>
+                    {armedStatus === "Armed"
+                      ? <span className="text-red-600 font-medium">Armed · {dayStatus}</span>
+                      : <span className="text-blue-600 font-medium">Unarmed · {dayStatus}</span>}
+                  </p>
+                )}
+              </div>
             </>
           ) : (
             <>
@@ -444,7 +632,7 @@ export function ClockInOut() {
         </div>
       </div>
 
-      {/* Banner: completed shift(s) awaiting employee signature */}
+      {/* ── Unsigned shifts banner ── */}
       {(() => {
         const unsigned = todaysTsList.filter((t) => t.ci && t.co && t.status === "pending_employee");
         if (unsigned.length === 0) return null;
@@ -455,8 +643,8 @@ export function ClockInOut() {
               <PenLine className="w-4 h-4 shrink-0" />
               <span>
                 {single
-                  ? <>Your <strong>{unsigned[0].ci} – {unsigned[0].co}</strong> shift needs your signature before it can be approved.</>
-                  : <><strong>{unsigned.length} completed shifts</strong> today are awaiting your signature.</>}
+                  ? <>Your <strong>{unsigned[0].ci}–{unsigned[0].co}</strong> shift needs your signature.</>
+                  : <><strong>{unsigned.length} shifts</strong> today are awaiting your signature.</>}
               </span>
             </div>
             <Button size="sm" variant="outline" className="border-amber-400 text-amber-800 hover:bg-amber-100 shrink-0" onClick={() => setLocation("/timesheets")} data-testid="button-go-sign">

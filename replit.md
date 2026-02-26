@@ -101,6 +101,19 @@ server/
 
 ## Change Log
 
+### 2026-02-26 — Clock-in full automation from FMS formula doc
+- **Armed/Unarmed toggle buttons** — two clearly styled buttons (blue = Unarmed, red = Armed) on every clock-in; value saved to `timesheets.armed`
+- **Day Status dropdown** — On Day / Off Day / Sick / Absent / Holiday / Annual Leave; saved to `timesheets.dayStatus`
+- **Holiday Type dropdown** — appears only when Day Status = Holiday; Phagwah / Good Friday / Easter Monday / Labour Day / Christmas / Eid ul Azha / Holiday Double; saved to `timesheets.holidayType`
+- **Client / Agency dropdown** — auto-filled from selected zone (CARICOM → Caricom, HEAD OFFICE → Head Office, etc.) but editable; saved to `timesheets.client`; used for meal eligibility (no meals at Canteen/Head Office)
+- **Auto time-out preview** — shown before clock-in based on current time + employee category (TIME = 6 AM morning start; FIXED/EXECUTIVE = 5 AM morning start) per formula doc shift mapping
+- **Live clock-out preview** — while clocked in shows real-time "If clocked out now: X.Xh reg · Y.Yh OT · 1 meal"
+- **Hours split at clock-out** — Off Day: all→OT; PH holidays (Phagwah/Good Friday/Easter Monday/Labour Day/Christmas/Eid ul Azha): all→ph; Holiday Double: all→OT; On Day: >8h→OT
+- **Meal auto-calculation at clock-out** — 1 meal if qualifying shift (TIME: 6-7 AM / 2-3 PM / 6-7 PM / 10-11 PM; FIXED/EXEC: 5-7 AM / 2-3 PM / 6-7 PM); 0 if client = Canteen or Head Office
+- **30-min break deducted** automatically from total worked time at clock-out
+- `splitHours()` and `calcMeals()` are pure utility functions (easy to unit-test)
+- `calcAutoTimeOut()` implements the full FMS Excel formula (TIME vs FIXED/EXECUTIVE morning start difference)
+
 ### 2026-02-26 — Bi-monthly hours corrected to 80; calculator divisor fixed
 - **Change**: Bi-monthly pay period = **80 hrs** (2 weeks × 40 hrs/wk); monthly = 160 hrs.
 - `payroll.ts` `WORKING_HOURS_PER_MONTH` 173.33 → **160**; `FREQ_HRS.bimonthly` 86.67 → **80**
