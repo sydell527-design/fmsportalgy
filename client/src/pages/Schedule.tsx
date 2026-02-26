@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
@@ -254,223 +254,235 @@ function BuilderDialog({ open, onClose, employees, defaultEid, defaultDate, crea
 
   const empName = employees.find((e) => e.userId === eid)?.name ?? "";
 
+  // Quick shift presets (same codes as RosterBuilder)
+  const QUICK_PRESETS = [
+    { label: "7–3",  start: "07:00", end: "15:00" },
+    { label: "3–11", start: "15:00", end: "23:00" },
+    { label: "11–7", start: "23:00", end: "07:00" },
+    { label: "20–5", start: "20:00", end: "05:00" },
+    { label: "8–4",  start: "08:00", end: "16:00" },
+  ];
+
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-lg max-h-[92vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <CalendarRange className="w-5 h-5 text-primary" />
-            Schedule Builder
-          </DialogTitle>
-        </DialogHeader>
+      <DialogContent className="max-w-[780px] p-0 overflow-hidden">
+        {/* ── Header ─────────────────────────────────────────────────────── */}
+        <div className="flex items-center gap-2 px-5 py-3 border-b">
+          <CalendarRange className="w-4 h-4 text-primary shrink-0" />
+          <DialogTitle className="text-base font-semibold">Single Shift</DialogTitle>
+          <DialogDescription className="sr-only">Schedule a single shift for one employee</DialogDescription>
+        </div>
 
-        <div className="space-y-5 pt-1">
+        {/* ── Landscape two-column body ───────────────────────────────────── */}
+        <div className="grid grid-cols-[1fr_1px_1fr] max-h-[75vh]">
 
-          {/* ── Employee ───────────────────────────────────────────────────── */}
-          <div className="space-y-1.5">
-            <Label className="text-sm font-semibold">Employee</Label>
-            <EmpSearch employees={employees} value={eid} onChange={setEid} />
-            {eid && (
-              <p className="text-xs text-muted-foreground pl-1">
-                Selected: <span className="font-medium text-foreground">{empName}</span> ({eid})
-              </p>
+          {/* ── LEFT column ── Employee · Dates · Repeat days ──────────────── */}
+          <div className="overflow-y-auto px-5 py-4 space-y-4">
+
+            {/* Employee */}
+            <div className="space-y-1">
+              <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Employee</Label>
+              <EmpSearch employees={employees} value={eid} onChange={setEid} />
+              {eid && (
+                <p className="text-[11px] text-muted-foreground pl-0.5">
+                  <span className="font-medium text-foreground">{empName}</span> · {eid}
+                </p>
+              )}
+            </div>
+
+            {/* Date range */}
+            <div className="space-y-1">
+              <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Date Range</Label>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <p className="text-[11px] text-muted-foreground mb-0.5">From</p>
+                  <Input
+                    type="date" value={dateFrom} className="h-8 text-sm"
+                    onChange={(e) => { setDateFrom(e.target.value); if (e.target.value > dateTo) setDateTo(e.target.value); }}
+                    data-testid="input-date-from"
+                  />
+                </div>
+                <div>
+                  <p className="text-[11px] text-muted-foreground mb-0.5">To</p>
+                  <Input
+                    type="date" value={dateTo} min={dateFrom} className="h-8 text-sm"
+                    onChange={(e) => setDateTo(e.target.value)}
+                    data-testid="input-date-to"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Repeat on (multi-day only) */}
+            {!isSingleDay && (
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Repeat On</Label>
+                  <div className="flex gap-2 text-[11px]">
+                    <button type="button" className="text-primary hover:underline" onClick={() => setActiveDays(WEEKDAYS)}>Weekdays</button>
+                    <span className="text-muted-foreground">·</span>
+                    <button type="button" className="text-primary hover:underline" onClick={() => setActiveDays(ALL_DAYS)}>All</button>
+                    <span className="text-muted-foreground">·</span>
+                    <button type="button" className="text-primary hover:underline" onClick={() => setActiveDays([5, 6])}>Weekend</button>
+                  </div>
+                </div>
+                <div className="flex gap-1">
+                  {ALL_DAYS.map((d) => {
+                    const active = activeDays.includes(d);
+                    return (
+                      <button
+                        key={d} type="button" onClick={() => toggleDay(d)}
+                        className={`flex-1 h-8 rounded border text-[11px] font-medium transition-colors ${
+                          active ? "bg-primary text-primary-foreground border-primary" : "bg-background border-input text-muted-foreground hover:bg-muted"
+                        }`}
+                        data-testid={`button-day-${d}`}
+                      >{DAY_LABELS[d]}</button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Preview */}
+            {previewDates.length > 0 && (
+              <div className="rounded-md border border-primary/30 bg-primary/5 p-2.5 space-y-1.5">
+                <p className="text-xs font-semibold text-primary flex items-center gap-1">
+                  <Check className="w-3.5 h-3.5" />
+                  {previewDates.length} shift{previewDates.length > 1 ? "s" : ""} will be created
+                </p>
+                <div className="flex flex-wrap gap-1">
+                  {previewDates.slice(0, 15).map((d) => (
+                    <span key={format(d, "yyyy-MM-dd")} className="text-[11px] bg-background border border-border rounded px-1.5 py-0.5">
+                      {format(d, "EEE d")}
+                    </span>
+                  ))}
+                  {previewDates.length > 15 && (
+                    <span className="text-[11px] text-muted-foreground self-center">+{previewDates.length - 15} more</span>
+                  )}
+                </div>
+                {empName && (
+                  <p className="text-[11px] text-muted-foreground">
+                    {empName} · {fmt12(shiftStart)}–{fmt12(shiftEnd)}{location ? ` · ${location}` : ""}
+                  </p>
+                )}
+              </div>
             )}
           </div>
 
-          {/* ── Date range ─────────────────────────────────────────────────── */}
-          <div className="space-y-1.5">
-            <Label className="text-sm font-semibold">Date Range</Label>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <p className="text-xs text-muted-foreground">From</p>
-                <Input
-                  type="date"
-                  value={dateFrom}
-                  onChange={(e) => {
-                    setDateFrom(e.target.value);
-                    if (e.target.value > dateTo) setDateTo(e.target.value);
-                  }}
-                  data-testid="input-date-from"
-                />
-              </div>
-              <div className="space-y-1">
-                <p className="text-xs text-muted-foreground">To</p>
-                <Input
-                  type="date"
-                  value={dateTo}
-                  min={dateFrom}
-                  onChange={(e) => setDateTo(e.target.value)}
-                  data-testid="input-date-to"
-                />
-              </div>
-            </div>
-          </div>
+          {/* ── Divider ──────────────────────────────────────────────────────── */}
+          <div className="bg-border" />
 
-          {/* ── Day of week selector (only shows for multi-day range) ──────── */}
-          {!isSingleDay && (
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label className="text-sm font-semibold">Repeat On</Label>
-                <div className="flex gap-2 text-xs">
-                  <button
-                    type="button"
-                    className="text-primary hover:underline"
-                    onClick={() => setActiveDays(WEEKDAYS)}
-                  >Weekdays</button>
-                  <span className="text-muted-foreground">·</span>
-                  <button
-                    type="button"
-                    className="text-primary hover:underline"
-                    onClick={() => setActiveDays(ALL_DAYS)}
-                  >All Days</button>
-                  <span className="text-muted-foreground">·</span>
-                  <button
-                    type="button"
-                    className="text-primary hover:underline"
-                    onClick={() => setActiveDays([5, 6])}
-                  >Weekends</button>
-                </div>
-              </div>
+          {/* ── RIGHT column ── Shift · Armed · Location · Client · Notes ──── */}
+          <div className="overflow-y-auto px-5 py-4 space-y-4">
+
+            {/* Quick shift presets */}
+            <div className="space-y-1">
+              <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Shift Preset</Label>
               <div className="flex gap-1.5 flex-wrap">
-                {ALL_DAYS.map((d) => {
-                  const active = activeDays.includes(d);
+                {QUICK_PRESETS.map((p) => {
+                  const active = shiftStart === p.start && shiftEnd === p.end;
                   return (
                     <button
-                      key={d}
-                      type="button"
-                      onClick={() => toggleDay(d)}
-                      className={`w-11 h-9 rounded-md border text-xs font-medium transition-colors ${
+                      key={p.label} type="button"
+                      onClick={() => { setShiftStart(p.start); setShiftEnd(p.end); }}
+                      className={`px-3 py-1.5 rounded border text-xs font-semibold transition-colors ${
                         active
                           ? "bg-primary text-primary-foreground border-primary"
                           : "bg-background border-input text-muted-foreground hover:bg-muted"
                       }`}
-                      data-testid={`button-day-${d}`}
-                    >
-                      {DAY_LABELS[d]}
-                    </button>
+                      data-testid={`button-preset-${p.label}`}
+                    >{p.label}</button>
                   );
                 })}
               </div>
             </div>
-          )}
 
-          {/* ── Shift times ────────────────────────────────────────────────── */}
-          <div className="space-y-1.5">
-            <Label className="text-sm font-semibold">Shift Hours</Label>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <p className="text-xs text-muted-foreground">Start time</p>
-                <Input type="time" value={shiftStart} onChange={(e) => setShiftStart(e.target.value)} data-testid="input-shift-start" />
-              </div>
-              <div className="space-y-1">
-                <p className="text-xs text-muted-foreground">End time</p>
-                <Input type="time" value={shiftEnd}   onChange={(e) => setShiftEnd(e.target.value)}   data-testid="input-shift-end" />
+            {/* Custom shift times */}
+            <div className="space-y-1">
+              <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Custom Times</Label>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <p className="text-[11px] text-muted-foreground mb-0.5">Start</p>
+                  <Input type="time" value={shiftStart} className="h-8 text-sm" onChange={(e) => setShiftStart(e.target.value)} data-testid="input-shift-start" />
+                </div>
+                <div>
+                  <p className="text-[11px] text-muted-foreground mb-0.5">End</p>
+                  <Input type="time" value={shiftEnd} className="h-8 text-sm" onChange={(e) => setShiftEnd(e.target.value)} data-testid="input-shift-end" />
+                </div>
               </div>
             </div>
-          </div>
 
-          {/* ── Armed status ───────────────────────────────────────────────── */}
-          <div className="space-y-1.5">
-            <Label className="text-sm font-semibold">Armed Status</Label>
-            <div className="flex gap-2">
-              {(["Unarmed", "Armed"] as ArmedStatus[]).map((a) => (
-                <button
-                  key={a}
-                  type="button"
-                  onClick={() => setArmed(a)}
-                  className={`flex-1 py-2 rounded-md border text-sm font-medium transition-colors flex items-center justify-center gap-1.5 ${
-                    armed === a
-                      ? a === "Armed"
-                        ? "bg-red-600 text-white border-red-600"
-                        : "bg-blue-600 text-white border-blue-600"
-                      : "bg-background border-input hover:bg-muted"
-                  }`}
-                  data-testid={`button-armed-${a.toLowerCase()}`}
-                >
-                  {a === "Armed" ? <Shield className="w-4 h-4" /> : <ShieldOff className="w-4 h-4" />}
-                  {a}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* ── Location ───────────────────────────────────────────────────── */}
-          <div className="space-y-1.5">
-            <Label className="text-sm font-semibold">Location / Post</Label>
-            <select
-              className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm"
-              value={location}
-              onChange={(e) => setLocation(e.target.value)}
-              data-testid="select-schedule-location"
-            >
-              <option value="">— Select location —</option>
-              {FMS_LOCATIONS.map((l) => <option key={l} value={l}>{l}</option>)}
-            </select>
-          </div>
-
-          {/* ── Client ─────────────────────────────────────────────────────── */}
-          <div className="space-y-1.5">
-            <Label className="text-sm font-semibold">Client / Agency</Label>
-            <select
-              className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm"
-              value={client}
-              onChange={(e) => setClient(e.target.value as ClientAgency | "")}
-              data-testid="select-schedule-client"
-            >
-              <option value="">— Select client —</option>
-              {CLIENT_AGENCIES.map((c) => <option key={c} value={c}>{c}</option>)}
-            </select>
-          </div>
-
-          {/* ── Notes ──────────────────────────────────────────────────────── */}
-          <div className="space-y-1.5">
-            <Label className="text-sm font-semibold">Notes <span className="font-normal text-muted-foreground">(optional)</span></Label>
-            <Input
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              placeholder="e.g. Cover shift, bring radio"
-              data-testid="input-schedule-notes"
-            />
-          </div>
-
-          {/* ── Preview ────────────────────────────────────────────────────── */}
-          {previewDates.length > 0 && (
-            <div className="rounded-lg border border-primary/30 bg-primary/5 p-3 space-y-2">
-              <p className="text-sm font-semibold text-primary flex items-center gap-1.5">
-                <Check className="w-4 h-4" />
-                {previewDates.length} shift{previewDates.length > 1 ? "s" : ""} will be created
-              </p>
-              <div className="flex flex-wrap gap-1.5">
-                {previewDates.slice(0, 20).map((d) => (
-                  <span key={format(d, "yyyy-MM-dd")} className="text-xs bg-background border border-border rounded px-2 py-0.5">
-                    {format(d, "EEE, MMM d")}
-                  </span>
+            {/* Armed status */}
+            <div className="space-y-1">
+              <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Armed Status</Label>
+              <div className="flex gap-2">
+                {(["Unarmed", "Armed"] as ArmedStatus[]).map((a) => (
+                  <button
+                    key={a} type="button" onClick={() => setArmed(a)}
+                    className={`flex-1 py-1.5 rounded border text-xs font-medium transition-colors flex items-center justify-center gap-1 ${
+                      armed === a
+                        ? a === "Armed" ? "bg-red-600 text-white border-red-600" : "bg-blue-600 text-white border-blue-600"
+                        : "bg-background border-input hover:bg-muted"
+                    }`}
+                    data-testid={`button-armed-${a.toLowerCase()}`}
+                  >
+                    {a === "Armed" ? <Shield className="w-3.5 h-3.5" /> : <ShieldOff className="w-3.5 h-3.5" />}
+                    {a}
+                  </button>
                 ))}
-                {previewDates.length > 20 && (
-                  <span className="text-xs text-muted-foreground self-center">+{previewDates.length - 20} more</span>
-                )}
               </div>
-              {empName && location && (
-                <p className="text-xs text-muted-foreground">
-                  <span className="font-medium">{empName}</span> · {fmt12(shiftStart)}–{fmt12(shiftEnd)} · {location} · {armed}
-                </p>
-              )}
             </div>
-          )}
 
-          {/* ── Save ───────────────────────────────────────────────────────── */}
-          <Button
-            className="w-full"
-            onClick={handleSave}
-            disabled={saving || previewDates.length === 0 || !eid}
-            data-testid="button-save-schedule"
-          >
-            {saving
-              ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Saving…</>
-              : previewDates.length > 1
-                ? `Schedule ${previewDates.length} shifts`
-                : "Schedule shift"}
-          </Button>
+            {/* Location */}
+            <div className="space-y-1">
+              <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Location / Post</Label>
+              <select
+                className="flex h-8 w-full rounded-md border border-input bg-background px-3 text-sm"
+                value={location} onChange={(e) => setLocation(e.target.value)}
+                data-testid="select-schedule-location"
+              >
+                <option value="">— Select location —</option>
+                {FMS_LOCATIONS.map((l) => <option key={l} value={l}>{l}</option>)}
+              </select>
+            </div>
+
+            {/* Client */}
+            <div className="space-y-1">
+              <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Client / Agency</Label>
+              <select
+                className="flex h-8 w-full rounded-md border border-input bg-background px-3 text-sm"
+                value={client} onChange={(e) => setClient(e.target.value as ClientAgency | "")}
+                data-testid="select-schedule-client"
+              >
+                <option value="">— Select client —</option>
+                {CLIENT_AGENCIES.map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+
+            {/* Notes */}
+            <div className="space-y-1">
+              <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Notes <span className="font-normal normal-case">(optional)</span></Label>
+              <Input
+                value={notes} onChange={(e) => setNotes(e.target.value)} className="h-8 text-sm"
+                placeholder="e.g. Cover shift, bring radio"
+                data-testid="input-schedule-notes"
+              />
+            </div>
+
+            {/* Save */}
+            <Button
+              className="w-full"
+              onClick={handleSave}
+              disabled={saving || previewDates.length === 0 || !eid}
+              data-testid="button-save-schedule"
+            >
+              {saving
+                ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Saving…</>
+                : previewDates.length > 1
+                  ? `Schedule ${previewDates.length} shifts`
+                  : "Schedule shift"}
+            </Button>
+          </div>
         </div>
       </DialogContent>
     </Dialog>
