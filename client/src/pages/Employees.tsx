@@ -518,40 +518,64 @@ const GY_TAX_UPPER_RATE       = C.TAX_UPPER_RATE;
 const GY_HEALTH_SURCHARGE_FULL = C.HEALTH_SURCHARGE_FULL;
 const GY_HEALTH_SURCHARGE_HALF = C.HEALTH_SURCHARGE_HALF;
 
-function gyCalc(basic: number, cat: string, pc: PayConfig) {
-  const monthlyBasic = cat === "Time"
-    ? basic * 173.33           // 40h/wk × 4.333wk/mo
-    : basic;
-  const allowances = (pc.housingAllowance ?? 0) + (pc.transportAllowance ?? 0) +
-    (pc.mealAllowance ?? 0) + (pc.uniformAllowance ?? 0) + (pc.riskAllowance ?? 0) +
-    (pc.shiftAllowance ?? 0) + (pc.otherAllowances ?? []).reduce((s, x) => s + x.amount, 0);
-  const gross = monthlyBasic + allowances;
+// Periods per calendar month for each frequency
+const FREQ_PPM: Record<string, number> = { monthly: 1, biweekly: 26 / 12, weekly: 52 / 12 };
+// Standard working hours per pay period
+const FREQ_HRS: Record<string, number> = { monthly: 173.33, biweekly: 80, weekly: 40 };
+// Human-readable period label
+const FREQ_LABEL: Record<string, string> = { monthly: "mo", biweekly: "bi-wk", weekly: "wk" };
 
-  const nisBase = Math.min(gross, GY_NIS_MAX_INSURABLE);
-  const nisEmployeeCalc = pc.nisExempt ? 0 : Math.round(nisBase * GY_NIS_EMPLOYEE_RATE);
-  const nisEmployee = (pc.nisEmployeeOverride != null) ? pc.nisEmployeeOverride : nisEmployeeCalc;
-  const nisEmployerCalc = pc.nisExempt ? 0 : Math.round(nisBase * GY_NIS_EMPLOYER_RATE);
-  const nisEmployer = (pc.nisEmployerOverride != null) ? pc.nisEmployerOverride : nisEmployerCalc;
-  const healthSurchargeCalc = pc.healthSurchargeExempt ? 0
-    : pc.healthSurchargeRate === "half" ? GY_HEALTH_SURCHARGE_HALF : GY_HEALTH_SURCHARGE_FULL;
-  const healthSurcharge = (pc.healthSurchargeRate === "custom" && pc.healthSurchargeOverride != null)
-    ? (pc.healthSurchargeExempt ? 0 : pc.healthSurchargeOverride)
+function gyCalc(hourlyRate: number, salary: number, cat: string, pc: PayConfig | null | undefined) {
+  const safePC = pc ?? ({} as PayConfig);
+  const freq  = safePC.frequency ?? "monthly";
+  const ppm   = FREQ_PPM[freq]   ?? 1;       // periods per month
+  const hrs   = FREQ_HRS[freq]   ?? 173.33;  // hours per period
+  const label = FREQ_LABEL[freq] ?? "mo";
+
+  // Per-period basic pay
+  const periodBasic = cat === "Time" ? hourlyRate * hrs : salary / ppm;
+
+  // Monthly allowances prorated to this period
+  const monthlyAllowances = (safePC.housingAllowance ?? 0) + (safePC.transportAllowance ?? 0) +
+    (safePC.mealAllowance ?? 0) + (safePC.uniformAllowance ?? 0) + (safePC.riskAllowance ?? 0) +
+    (safePC.shiftAllowance ?? 0) + (safePC.otherAllowances ?? []).reduce((s, x) => s + x.amount, 0);
+  const allowances = monthlyAllowances / ppm;
+  const gross = periodBasic + allowances;
+
+  // NIS — ceiling prorated from monthly (GYD 280,000/mo)
+  const nisBase = Math.min(gross, GY_NIS_MAX_INSURABLE / ppm);
+  const nisEmployeeCalc = safePC.nisExempt ? 0 : Math.round(nisBase * GY_NIS_EMPLOYEE_RATE);
+  const nisEmployee = (safePC.nisEmployeeOverride != null) ? safePC.nisEmployeeOverride : nisEmployeeCalc;
+  const nisEmployerCalc = safePC.nisExempt ? 0 : Math.round(nisBase * GY_NIS_EMPLOYER_RATE);
+  const nisEmployer = (safePC.nisEmployerOverride != null) ? safePC.nisEmployerOverride : nisEmployerCalc;
+
+  // Health surcharge — flat monthly amounts prorated to this period
+  const hsMonthly = safePC.healthSurchargeRate === "half" ? GY_HEALTH_SURCHARGE_HALF : GY_HEALTH_SURCHARGE_FULL;
+  const healthSurchargeCalc = safePC.healthSurchargeExempt ? 0 : Math.round(hsMonthly / ppm);
+  const healthSurcharge = (safePC.healthSurchargeRate === "custom" && safePC.healthSurchargeOverride != null)
+    ? (safePC.healthSurchargeExempt ? 0 : safePC.healthSurchargeOverride)
     : healthSurchargeCalc;
-  const personalAllow = Math.max(GY_PERSONAL_ALLOWANCE, Math.round(gross / 3));
-  const chargeable = pc.taxExempt ? 0
-    : Math.max(0, gross - nisEmployee - personalAllow);
-  const taxCalc = pc.taxExempt ? 0
-    : chargeable <= GY_TAX_LOWER_LIMIT
+
+  // Personal allowance — GRA rule on monthly basis, prorated to period
+  const monthlyGross = gross * ppm;
+  const monthlyPersonalAllow = Math.max(GY_PERSONAL_ALLOWANCE, Math.round(monthlyGross / 3));
+  const personalAllow = Math.round(monthlyPersonalAllow / ppm);
+
+  // PAYE — tax bracket limit prorated to period
+  const periodLowerLimit = Math.round(GY_TAX_LOWER_LIMIT / ppm);
+  const chargeable = safePC.taxExempt ? 0 : Math.max(0, gross - nisEmployee - personalAllow);
+  const taxCalc = safePC.taxExempt ? 0
+    : chargeable <= periodLowerLimit
       ? Math.round(chargeable * GY_TAX_LOWER_RATE)
-      : Math.round(GY_TAX_LOWER_LIMIT * GY_TAX_LOWER_RATE + (chargeable - GY_TAX_LOWER_LIMIT) * GY_TAX_UPPER_RATE);
-  const tax = (pc.taxOverride != null) ? (pc.taxExempt ? 0 : pc.taxOverride) : taxCalc;
+      : Math.round(periodLowerLimit * GY_TAX_LOWER_RATE + (chargeable - periodLowerLimit) * GY_TAX_UPPER_RATE);
+  const tax = (safePC.taxOverride != null) ? (safePC.taxExempt ? 0 : safePC.taxOverride) : taxCalc;
 
   const statutory = nisEmployee + healthSurcharge + tax;
-  const voluntary = (pc.creditUnion ?? 0) + (pc.loanRepayment ?? 0) +
-    (pc.advancesRecovery ?? 0) + (pc.unionDues ?? 0) +
-    (pc.otherDeductions ?? []).reduce((s, x) => s + x.amount, 0);
+  const voluntary = (safePC.creditUnion ?? 0) + (safePC.loanRepayment ?? 0) +
+    (safePC.advancesRecovery ?? 0) + (safePC.unionDues ?? 0) +
+    (safePC.otherDeductions ?? []).reduce((s, x) => s + x.amount, 0);
   const net = gross - statutory - voluntary;
-  return { gross, allowances, monthlyBasic, nisEmployee, nisEmployer, nisEmployeeCalc, nisEmployerCalc, healthSurcharge, healthSurchargeCalc, tax, taxCalc, statutory, voluntary, net, chargeable };
+  return { gross, allowances, periodBasic, nisEmployee, nisEmployer, nisEmployeeCalc, nisEmployerCalc, healthSurcharge, healthSurchargeCalc, tax, taxCalc, statutory, voluntary, net, chargeable, label, ppm };
 }
 
 function fmt(n: number) { return `GYD ${Math.round(n).toLocaleString("en-GY")}`; }
@@ -599,7 +623,7 @@ export function EmployeeFormDialog({
       : { ...EMPTY_FORM }
   );
 
-  const pc = formData.payConfig;
+  const pc = formData.payConfig ?? { ...DEFAULT_PAY_CONFIG };
   const setPc = (patch: Partial<PayConfig>) =>
     setFormData((prev) => ({ ...prev, payConfig: { ...prev.payConfig, ...patch } }));
 
@@ -611,7 +635,7 @@ export function EmployeeFormDialog({
   }
 
   const calc = useMemo(() =>
-    gyCalc(formData.cat === "Time" ? formData.hourlyRate : formData.salary, formData.cat, pc),
+    gyCalc(formData.hourlyRate, formData.salary, formData.cat, pc),
     [formData.cat, formData.hourlyRate, formData.salary, pc]
   );
 
@@ -792,7 +816,7 @@ export function EmployeeFormDialog({
                     {formData.cat === "Time" ? (<>
                       <Label>Hourly Rate (GYD)</Label>
                       <Input type="number" min={0} step="0.01" value={formData.hourlyRate} onChange={(e) => { setSalaryCalcInput(""); setFormData({ ...formData, hourlyRate: Number(e.target.value) }); }} data-testid="input-employee-hourly" />
-                      <p className="text-xs text-muted-foreground">≈ {fmt(formData.hourlyRate * 173.33)}/mo</p>
+                      <p className="text-xs text-muted-foreground">≈ {fmt(calc.gross)}/{calc.label} · {fmt(calc.gross * calc.ppm)}/mo</p>
                       <div className="mt-3 pt-3 border-t border-border/50 space-y-1.5">
                         <Label className="text-xs font-medium text-muted-foreground">
                           Calculate from {pc.frequency === "biweekly" ? "bi-weekly" : pc.frequency === "weekly" ? "weekly" : "monthly"} salary
@@ -967,7 +991,7 @@ export function EmployeeFormDialog({
                     {!pc.nisExempt && calc.gross > 0 && (
                       <div className="grid grid-cols-2 gap-3">
                         <div className="space-y-1">
-                          <Label className="text-xs text-muted-foreground">Employee/mo (GYD)</Label>
+                          <Label className="text-xs text-muted-foreground">Employee/{calc.label} (GYD)</Label>
                           <Input
                             type="number" min={0}
                             value={pc.nisEmployeeOverride ?? calc.nisEmployeeCalc}
@@ -983,7 +1007,7 @@ export function EmployeeFormDialog({
                           )}
                         </div>
                         <div className="space-y-1">
-                          <Label className="text-xs text-muted-foreground">Employer/mo (GYD)</Label>
+                          <Label className="text-xs text-muted-foreground">Employer/{calc.label} (GYD)</Label>
                           <Input
                             type="number" min={0}
                             value={pc.nisEmployerOverride ?? calc.nisEmployerCalc}
@@ -1007,7 +1031,7 @@ export function EmployeeFormDialog({
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <p className="font-medium text-sm">Health Surcharge</p>
-                        <p className="text-xs text-muted-foreground">Full GYD 1,200/mo · Reduced GYD 600/mo</p>
+                        <p className="text-xs text-muted-foreground">Full GYD 1,200/mo · Reduced GYD 600/mo (prorated to pay period)</p>
                       </div>
                       <label className="flex items-center gap-1.5 text-xs cursor-pointer shrink-0 mt-0.5">
                         <input type="checkbox" checked={pc.healthSurchargeExempt} onChange={(e) => setPc({ healthSurchargeExempt: e.target.checked })} data-testid="checkbox-hs-exempt" /> Exempt
@@ -1019,16 +1043,16 @@ export function EmployeeFormDialog({
                           {(["full","half","custom"] as const).map((r) => (
                             <label key={r} className="flex items-center gap-1.5 text-xs cursor-pointer">
                               <input type="radio" name="hsRate" checked={pc.healthSurchargeRate === r} onChange={() => setPc({ healthSurchargeRate: r })} data-testid={`radio-hs-${r}`} />
-                              {r === "full" ? "Full — GYD 1,200" : r === "half" ? "Reduced — GYD 600" : "Custom"}
+                              {r === "full" ? `Full (GYD ${Math.round(1200 / calc.ppm).toLocaleString()}/${calc.label})` : r === "half" ? `Reduced (GYD ${Math.round(600 / calc.ppm).toLocaleString()}/${calc.label})` : "Custom"}
                             </label>
                           ))}
                           {calc.gross > 0 && pc.healthSurchargeRate !== "custom" && (
-                            <span className="ml-auto text-xs font-semibold text-red-600">{fmt(calc.healthSurcharge)}/mo</span>
+                            <span className="ml-auto text-xs font-semibold text-red-600">{fmt(calc.healthSurcharge)}/{calc.label}</span>
                           )}
                         </div>
                         {pc.healthSurchargeRate === "custom" && (
                           <div className="space-y-1">
-                            <Label className="text-xs text-muted-foreground">Custom amount/mo (GYD)</Label>
+                            <Label className="text-xs text-muted-foreground">Custom amount/{calc.label} (GYD)</Label>
                             <Input
                               type="number" min={0}
                               value={pc.healthSurchargeOverride ?? ""}
@@ -1048,7 +1072,7 @@ export function EmployeeFormDialog({
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <p className="font-medium text-sm">Income Tax (PAYE)</p>
-                        <p className="text-xs text-muted-foreground">Personal allowance {fmt(GY_PERSONAL_ALLOWANCE)}/mo or ⅓ gross · {(GY_TAX_LOWER_RATE*100).toFixed(0)}% / {(GY_TAX_UPPER_RATE*100).toFixed(0)}%</p>
+                        <p className="text-xs text-muted-foreground">GRA allowance {fmt(GY_PERSONAL_ALLOWANCE)}/mo or ⅓ gross (prorated to period) · {(GY_TAX_LOWER_RATE*100).toFixed(0)}% / {(GY_TAX_UPPER_RATE*100).toFixed(0)}%</p>
                       </div>
                       <label className="flex items-center gap-1.5 text-xs cursor-pointer shrink-0 mt-0.5">
                         <input type="checkbox" checked={pc.taxExempt} onChange={(e) => setPc({ taxExempt: e.target.checked, taxOverride: undefined })} data-testid="checkbox-tax-exempt" /> Exempt
@@ -1057,13 +1081,13 @@ export function EmployeeFormDialog({
                     {!pc.taxExempt && calc.gross > 0 && (
                       <div className="grid grid-cols-2 gap-3">
                         <div className="space-y-1">
-                          <Label className="text-xs text-muted-foreground">Chargeable income/mo</Label>
+                          <Label className="text-xs text-muted-foreground">Chargeable income/{calc.label}</Label>
                           <div className="h-8 flex items-center px-3 rounded-md border border-border bg-background text-sm font-medium">
                             {fmt(calc.chargeable)}
                           </div>
                         </div>
                         <div className="space-y-1">
-                          <Label className="text-xs text-muted-foreground">PAYE deduction/mo (GYD)</Label>
+                          <Label className="text-xs text-muted-foreground">PAYE deduction/{calc.label} (GYD)</Label>
                           <Input
                             type="number" min={0}
                             value={pc.taxOverride ?? calc.taxCalc}

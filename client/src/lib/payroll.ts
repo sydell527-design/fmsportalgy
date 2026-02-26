@@ -106,6 +106,10 @@ export function calcPayroll(
   const regularHours = approvedTs.reduce((s, ts) => s + (ts.reg ?? 0), 0);
   const otHours      = approvedTs.reduce((s, ts) => s + (ts.ot ?? 0), 0);
 
+  // ── Pay frequency — periods per calendar month ────────────────────────────
+  const freq = pc.frequency ?? "monthly";
+  const ppm  = freq === "biweekly" ? 26 / 12 : freq === "weekly" ? 52 / 12 : 1;
+
   // ── Earnings ──────────────────────────────────────────────────────────────
   const otMultiplier = pc.otMultiplier ?? C.OT_MULTIPLIER_DEFAULT;
   let basicPay = 0;
@@ -116,58 +120,62 @@ export function calcPayroll(
     basicPay = regularHours * rate;
     otPay    = otHours * rate * otMultiplier;
   } else {
-    // Salaried: full monthly salary regardless of hours; OT adds on top
-    basicPay = employee.salary ?? 0;
+    // Salaried: monthly salary prorated to pay period; OT adds on top
+    const monthlySalary = employee.salary ?? 0;
+    basicPay = monthlySalary / ppm;
     if (otHours > 0) {
-      const hourlyEquiv = basicPay / C.WORKING_HOURS_PER_MONTH;
+      const hourlyEquiv = monthlySalary / C.WORKING_HOURS_PER_MONTH;
       otPay = otHours * hourlyEquiv * otMultiplier;
     }
   }
 
+  // Monthly allowances prorated to this pay period
   const allowances =
-    (pc.housingAllowance   ?? 0) +
-    (pc.transportAllowance ?? 0) +
-    (pc.mealAllowance      ?? 0) +
-    (pc.uniformAllowance   ?? 0) +
-    (pc.riskAllowance      ?? 0) +
-    (pc.shiftAllowance     ?? 0) +
-    (pc.otherAllowances    ?? []).reduce((s, x) => s + x.amount, 0);
+    ((pc.housingAllowance   ?? 0) +
+     (pc.transportAllowance ?? 0) +
+     (pc.mealAllowance      ?? 0) +
+     (pc.uniformAllowance   ?? 0) +
+     (pc.riskAllowance      ?? 0) +
+     (pc.shiftAllowance     ?? 0) +
+     (pc.otherAllowances    ?? []).reduce((s, x) => s + x.amount, 0)) / ppm;
 
   const grossPay = basicPay + otPay + allowances;
 
-  // ── NIS ───────────────────────────────────────────────────────────────────
-  const nisBase         = Math.min(grossPay, C.NIS_CEILING_MONTHLY);
+  // ── NIS — ceiling prorated to pay period ─────────────────────────────────
+  const nisBase         = Math.min(grossPay, C.NIS_CEILING_MONTHLY / ppm);
   const employeeNISCalc = pc.nisExempt ? 0 : Math.round(nisBase * C.NIS_EMP_RATE);
   const employeeNIS     = (pc.nisEmployeeOverride != null) ? pc.nisEmployeeOverride : employeeNISCalc;
   const employerNISCalc = pc.nisExempt ? 0 : Math.round(nisBase * C.NIS_ER_RATE);
   const employerNIS     = (pc.nisEmployerOverride != null) ? pc.nisEmployerOverride : employerNISCalc;
 
-  // ── Health Surcharge ──────────────────────────────────────────────────────
-  const healthSurchargeCalc = pc.healthSurchargeExempt ? 0
-    : pc.healthSurchargeRate === "half"
-      ? C.HEALTH_SURCHARGE_HALF
-      : C.HEALTH_SURCHARGE_FULL;
+  // ── Health Surcharge — prorated from monthly flat amount ──────────────────
+  const hsMonthly = pc.healthSurchargeRate === "half" ? C.HEALTH_SURCHARGE_HALF : C.HEALTH_SURCHARGE_FULL;
+  const healthSurchargeCalc = pc.healthSurchargeExempt ? 0 : Math.round(hsMonthly / ppm);
   const healthSurcharge = (pc.healthSurchargeRate === "custom" && pc.healthSurchargeOverride != null)
     ? (pc.healthSurchargeExempt ? 0 : pc.healthSurchargeOverride)
     : healthSurchargeCalc;
 
-  // ── PAYE (Income Tax) — progressive ───────────────────────────────────────
-  const empChildren       = allChildren.filter((ch) => ch.eid === employee.userId);
+  // ── PAYE (Income Tax) — progressive, GRA thresholds prorated to period ────
+  const empChildren        = allChildren.filter((ch) => ch.eid === employee.userId);
   const qualifyingChildren = empChildren.filter(isQualifyingChild).length;
-  const childAllowance    = qualifyingChildren * C.CHILD_ALLOWANCE;
+  const childAllowance     = Math.round((qualifyingChildren * C.CHILD_ALLOWANCE) / ppm);
 
-  // GRA rule: personal allowance = greater of GYD 140,000/month OR 1/3 of gross income
-  const personalAllowance = Math.max(C.PERSONAL_ALLOWANCE, Math.round(grossPay / 3));
+  // GRA rule: personal allowance = greater of GYD 140,000/month OR 1/3 of monthly gross
+  // Prorated to pay period
+  const monthlyGross      = grossPay * ppm;
+  const monthlyPersonalAl = Math.max(C.PERSONAL_ALLOWANCE, Math.round(monthlyGross / 3));
+  const personalAllowance = Math.round(monthlyPersonalAl / ppm);
 
   const chargeableIncome = pc.taxExempt ? 0
     : Math.max(0, grossPay - employeeNIS - personalAllowance - childAllowance);
 
+  const periodLowerLimit = Math.round(C.TAX_LOWER_LIMIT / ppm);
   const payeCalc = pc.taxExempt ? 0
-    : chargeableIncome <= C.TAX_LOWER_LIMIT
+    : chargeableIncome <= periodLowerLimit
       ? Math.round(chargeableIncome * C.TAX_LOWER_RATE)
       : Math.round(
-          C.TAX_LOWER_LIMIT * C.TAX_LOWER_RATE +
-          (chargeableIncome - C.TAX_LOWER_LIMIT) * C.TAX_UPPER_RATE
+          periodLowerLimit * C.TAX_LOWER_RATE +
+          (chargeableIncome - periodLowerLimit) * C.TAX_UPPER_RATE
         );
   const paye = (pc.taxOverride != null) ? (pc.taxExempt ? 0 : pc.taxOverride) : payeCalc;
 
