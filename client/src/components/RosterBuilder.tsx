@@ -53,7 +53,9 @@ interface EmpRow {
 
 interface AgencyRoster {
   agency: string;          // e.g. "CARICOM", "EU"
-  rows: EmpRow[];
+  rows: EmpRow[];          // main / primary officers
+  reliefRows: EmpRow[];    // relief security officers
+  reserveRows: EmpRow[];   // reserve officers
   savedCount?: number;     // shifts saved in last save action (for tab badge)
 }
 
@@ -370,6 +372,110 @@ function currentFmsPeriod(): { from: string; to: string; p: 1 | 2; anchor: Date 
   return { from, to, p, anchor: now };
 }
 
+// ── Shared roster grid (used for Main, Relief, Reserve sections) ──────────────
+function SectionGrid({
+  rows, days, DAY_ABBR, todayFmt, callSignRegistry,
+  onUpdateField, onUpdateCell, onFillRow, onClearRow,
+}: {
+  rows: EmpRow[];
+  days: Date[];
+  DAY_ABBR: string[];
+  todayFmt: string;
+  callSignRegistry: CallSign[];
+  onUpdateField: (eid: string, field: "callSign" | "location", value: string) => void;
+  onUpdateCell: (eid: string, dateStr: string, code: string, custom?: { start: string; end: string }) => void;
+  onFillRow: (eid: string, code: string) => void;
+  onClearRow: (eid: string) => void;
+}) {
+  return (
+    <table className="border-collapse text-sm w-full">
+      <thead>
+        <tr>
+          <th className="text-left py-2 px-2 font-medium text-muted-foreground text-xs uppercase tracking-wide w-20 sticky left-0 bg-background z-10 border-b border-r">Call Sign</th>
+          <th className="text-left py-2 px-2 font-medium text-muted-foreground text-xs uppercase tracking-wide w-32 sticky left-20 bg-background z-10 border-b border-r">Location</th>
+          <th className="text-left py-2 px-3 font-medium text-muted-foreground text-xs uppercase tracking-wide w-40 sticky left-52 bg-background z-10 border-b border-r">Employee</th>
+          <th className="py-2 px-1 font-medium text-muted-foreground text-xs uppercase tracking-wide w-24 sticky left-[368px] bg-background z-10 border-b border-r">Fill Row</th>
+          {days.map((d, i) => {
+            const ds = format(d, "yyyy-MM-dd");
+            const isToday = ds === todayFmt;
+            const dow = d.getDay();
+            const isWeekend = dow === 0 || dow === 6;
+            return (
+              <th key={i} className={`text-center py-1.5 px-0.5 min-w-[56px] border-b ${isToday ? "bg-primary/10" : isWeekend ? "bg-muted/40" : ""}`}>
+                <div className={`text-[9px] uppercase ${isToday ? "text-primary font-bold" : "text-muted-foreground"}`}>{DAY_ABBR[dow]}</div>
+                <div className={`text-xs font-bold ${isToday ? "text-primary" : isWeekend ? "text-muted-foreground" : "text-foreground"}`}>{format(d, "d")}</div>
+                <div className="text-[8px] text-muted-foreground">{format(d, "MMM")}</div>
+              </th>
+            );
+          })}
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((row) => (
+          <tr key={row.eid} className="border-t border-border/40 hover:bg-muted/10 group">
+            <td className="py-1 px-1 align-middle sticky left-0 bg-background group-hover:bg-muted/10 z-10 border-r w-20">
+              <CallSignCombo
+                value={row.callSign}
+                registry={callSignRegistry}
+                onChange={(v) => onUpdateField(row.eid, "callSign", v)}
+                onLocationFill={(loc) => onUpdateField(row.eid, "location", loc)}
+              />
+            </td>
+            <td className="py-1 px-1 align-middle sticky left-20 bg-background group-hover:bg-muted/10 z-10 border-r w-32">
+              <select
+                value={row.location}
+                onChange={(e) => onUpdateField(row.eid, "location", e.target.value)}
+                className="w-full text-xs border rounded px-1 py-1 bg-background h-7"
+                data-testid={`select-location-${row.eid}`}
+              >
+                <option value="">— loc —</option>
+                {FMS_LOCATIONS.map((l) => <option key={l} value={l}>{l}</option>)}
+              </select>
+            </td>
+            <td className="py-1.5 px-3 align-middle sticky left-52 bg-background group-hover:bg-muted/10 z-10 border-r w-40">
+              <div className="font-medium text-sm truncate max-w-[140px]">{row.name}</div>
+              <div className="text-[10px] text-muted-foreground truncate max-w-[140px]">{row.pos}</div>
+            </td>
+            <td className="py-1 px-1 align-middle sticky left-[368px] bg-background group-hover:bg-muted/10 z-10 border-r">
+              <div className="flex flex-col gap-0.5">
+                <select
+                  className="text-[10px] border rounded px-1 py-0.5 bg-background h-6"
+                  onChange={(e) => { if (e.target.value) { onFillRow(row.eid, e.target.value); e.target.value = ""; }}}
+                  data-testid={`select-fill-row-${row.eid}`}
+                >
+                  <option value="">Fill…</option>
+                  <optgroup label="All Days">{SHIFT_PRESETS.map((p) => <option key={p.code} value={p.code}>{p.label}</option>)}</optgroup>
+                  <optgroup label="Weekdays Only (W)">{SHIFT_PRESETS.filter((p) => p.code !== "Off").map((p) => <option key={`${p.code}|W`} value={`${p.code}|W`}>{p.label} W</option>)}</optgroup>
+                </select>
+                <button onClick={() => onClearRow(row.eid)} className="text-[10px] text-muted-foreground hover:text-destructive flex items-center gap-0.5 justify-center" title="Clear row">
+                  <Trash2 className="w-2.5 h-2.5" /> Clear
+                </button>
+              </div>
+            </td>
+            {days.map((d, ci) => {
+              const ds = format(d, "yyyy-MM-dd");
+              const dow = d.getDay();
+              const isWeekend = dow === 0 || dow === 6;
+              const isToday = ds === todayFmt;
+              return (
+                <td key={ci} className={`p-0.5 align-middle ${isToday ? "bg-primary/5" : isWeekend ? "bg-muted/20" : ""}`}>
+                  <div className="relative">
+                    <CellButton
+                      code={row.cells[ds] ?? ""}
+                      customTime={row.customTimes[ds]}
+                      onUpdate={(code, ct) => onUpdateCell(row.eid, ds, code, ct)}
+                    />
+                  </div>
+                </td>
+              );
+            })}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
 // ── Main RosterBuilder ────────────────────────────────────────────────────────
 export function RosterBuilder({ open, onClose, employees, onSaved }: Props) {
   const { user }  = useAuth();
@@ -388,7 +494,9 @@ export function RosterBuilder({ open, onClose, employees, onSaved }: Props) {
   const [activeAgency,  setActiveAgency]  = useState<string>("");
   const [saving,     setSaving]    = useState(false);
   const [importing,  setImporting] = useState(false);
-  const [exportOpen, setExportOpen] = useState(false);
+  const [exportOpen,  setExportOpen]  = useState(false);
+  const [reliefOpen,  setReliefOpen]  = useState(false);
+  const [reserveOpen, setReserveOpen] = useState(false);
   const fileInputRef  = useRef<HTMLInputElement>(null);
   const exportRef     = useRef<HTMLDivElement>(null);
 
@@ -405,19 +513,26 @@ export function RosterBuilder({ open, onClose, employees, onSaved }: Props) {
   function buildRosterData(): (string | number)[][] {
     const periodLabel = fmsPeriod(anchor, activePeriod).label;
     const header: string[] = ["Name", "Position", "Call Sign", "Location", ...days.map((d) => format(d, "EEE d MMM"))];
-    const rows = activeRows.map((row) => [
+    const toRows = (empRows: EmpRow[]) => empRows.map((row) => [
       row.name,
       row.pos,
       row.callSign,
       row.location,
       ...days.map((d) => row.cells[format(d, "yyyy-MM-dd")] ?? ""),
     ]);
-    return [
+    const data: (string | number)[][] = [
       [`${activeAgency} Roster — ${periodLabel}`],
       [],
       header,
-      ...rows,
+      ...toRows(activeRows),
     ];
+    if (activeReliefRows.length > 0) {
+      data.push([], ["— Relief Security —"], header, ...toRows(activeReliefRows));
+    }
+    if (activeReserveRows.length > 0) {
+      data.push([], ["— Reserve —"], header, ...toRows(activeReserveRows));
+    }
+    return data;
   }
 
   // Excel export using xlsx (already installed)
@@ -595,13 +710,36 @@ export function RosterBuilder({ open, onClose, employees, onSaved }: Props) {
     );
   }
 
+  // Derive active agency's relief and reserve rows
+  const activeReliefRows = useMemo(
+    () => agencyRosters.find((ar) => ar.agency === activeAgency)?.reliefRows ?? [],
+    [agencyRosters, activeAgency]
+  );
+  const activeReserveRows = useMemo(
+    () => agencyRosters.find((ar) => ar.agency === activeAgency)?.reserveRows ?? [],
+    [agencyRosters, activeAgency]
+  );
+
+  function updateActiveReliefRows(updater: (rows: EmpRow[]) => EmpRow[]) {
+    setAgencyRosters((prev) =>
+      prev.map((ar) => ar.agency === activeAgency ? { ...ar, reliefRows: updater(ar.reliefRows) } : ar)
+    );
+  }
+  function updateActiveReserveRows(updater: (rows: EmpRow[]) => EmpRow[]) {
+    setAgencyRosters((prev) =>
+      prev.map((ar) => ar.agency === activeAgency ? { ...ar, reserveRows: updater(ar.reserveRows) } : ar)
+    );
+  }
+
   // Agency management
   function openAgency(agency: string) {
     setAgencyRosters((prev) => {
       if (prev.some((ar) => ar.agency === agency)) return prev;
-      return [...prev, { agency, rows: [] }];
+      return [...prev, { agency, rows: [], reliefRows: [], reserveRows: [] }];
     });
     setActiveAgency(agency);
+    setReliefOpen(false);
+    setReserveOpen(false);
   }
 
   function closeAgency(agency: string) {
@@ -621,7 +759,23 @@ export function RosterBuilder({ open, onClose, employees, onSaved }: Props) {
     () => employees.filter((e) => !activeRows.some((r) => r.eid === e.userId)),
     [employees, activeRows]
   );
+  const availableRelief = useMemo(
+    () => employees.filter((e) =>
+      !activeRows.some((r) => r.eid === e.userId) &&
+      !activeReliefRows.some((r) => r.eid === e.userId)
+    ),
+    [employees, activeRows, activeReliefRows]
+  );
+  const availableReserve = useMemo(
+    () => employees.filter((e) =>
+      !activeRows.some((r) => r.eid === e.userId) &&
+      !activeReliefRows.some((r) => r.eid === e.userId) &&
+      !activeReserveRows.some((r) => r.eid === e.userId)
+    ),
+    [employees, activeRows, activeReliefRows, activeReserveRows]
+  );
 
+  // ── Main section helpers ────────────────────────────────────────────────────
   function addEmployee(emp: typeof employees[0]) {
     updateActiveRows((prev) => [
       ...prev,
@@ -635,6 +789,84 @@ export function RosterBuilder({ open, onClose, employees, onSaved }: Props) {
 
   function removeEmployee(eid: string) {
     updateActiveRows((prev) => prev.filter((r) => r.eid !== eid));
+  }
+
+  // ── Relief section helpers ──────────────────────────────────────────────────
+  function addRelief(emp: typeof employees[0]) {
+    updateActiveReliefRows((prev) => [
+      ...prev,
+      { eid: emp.userId, name: emp.name, pos: emp.pos, callSign: emp.userId, location: "", cells: {}, customTimes: {} },
+    ]);
+  }
+  function removeRelief(eid: string) {
+    updateActiveReliefRows((prev) => prev.filter((r) => r.eid !== eid));
+  }
+  function updateReliefRowField(eid: string, field: "callSign" | "location", value: string) {
+    updateActiveReliefRows((prev) => prev.map((r) => r.eid === eid ? { ...r, [field]: value } : r));
+  }
+  function updateReliefCell(eid: string, dateStr: string, code: string, custom?: { start: string; end: string }) {
+    updateActiveReliefRows((prev) => prev.map((r) => {
+      if (r.eid !== eid) return r;
+      const cells = { ...r.cells, [dateStr]: code };
+      const customTimes = { ...r.customTimes };
+      if (custom) customTimes[dateStr] = custom; else delete customTimes[dateStr];
+      return { ...r, cells, customTimes };
+    }));
+  }
+  function fillReliefRow(eid: string, rawCode: string) {
+    const weekdaysOnly = rawCode.endsWith("|W");
+    const code = weekdaysOnly ? rawCode.slice(0, -2) : rawCode;
+    updateActiveReliefRows((prev) => prev.map((r) => {
+      if (r.eid !== eid) return r;
+      const cells: Record<string, string> = {};
+      days.forEach((d) => {
+        const dow = d.getDay();
+        cells[format(d, "yyyy-MM-dd")] = weekdaysOnly && (dow === 0 || dow === 6) ? "Off" : code;
+      });
+      return { ...r, cells, customTimes: {} };
+    }));
+  }
+  function clearReliefRow(eid: string) {
+    updateActiveReliefRows((prev) => prev.map((r) => r.eid === eid ? { ...r, cells: {}, customTimes: {} } : r));
+  }
+
+  // ── Reserve section helpers ─────────────────────────────────────────────────
+  function addReserve(emp: typeof employees[0]) {
+    updateActiveReserveRows((prev) => [
+      ...prev,
+      { eid: emp.userId, name: emp.name, pos: emp.pos, callSign: emp.userId, location: "", cells: {}, customTimes: {} },
+    ]);
+  }
+  function removeReserve(eid: string) {
+    updateActiveReserveRows((prev) => prev.filter((r) => r.eid !== eid));
+  }
+  function updateReserveRowField(eid: string, field: "callSign" | "location", value: string) {
+    updateActiveReserveRows((prev) => prev.map((r) => r.eid === eid ? { ...r, [field]: value } : r));
+  }
+  function updateReserveCell(eid: string, dateStr: string, code: string, custom?: { start: string; end: string }) {
+    updateActiveReserveRows((prev) => prev.map((r) => {
+      if (r.eid !== eid) return r;
+      const cells = { ...r.cells, [dateStr]: code };
+      const customTimes = { ...r.customTimes };
+      if (custom) customTimes[dateStr] = custom; else delete customTimes[dateStr];
+      return { ...r, cells, customTimes };
+    }));
+  }
+  function fillReserveRow(eid: string, rawCode: string) {
+    const weekdaysOnly = rawCode.endsWith("|W");
+    const code = weekdaysOnly ? rawCode.slice(0, -2) : rawCode;
+    updateActiveReserveRows((prev) => prev.map((r) => {
+      if (r.eid !== eid) return r;
+      const cells: Record<string, string> = {};
+      days.forEach((d) => {
+        const dow = d.getDay();
+        cells[format(d, "yyyy-MM-dd")] = weekdaysOnly && (dow === 0 || dow === 6) ? "Off" : code;
+      });
+      return { ...r, cells, customTimes: {} };
+    }));
+  }
+  function clearReserveRow(eid: string) {
+    updateActiveReserveRows((prev) => prev.map((r) => r.eid === eid ? { ...r, cells: {}, customTimes: {} } : r));
   }
 
   function updateCell(eid: string, dateStr: string, code: string, custom?: { start: string; end: string }) {
@@ -684,7 +916,12 @@ export function RosterBuilder({ open, onClose, employees, onSaved }: Props) {
       return;
     }
     const toCreate: object[] = [];
-    for (const row of activeRows) {
+    const allSectionRows = [
+      ...activeRows,
+      ...activeReliefRows,
+      ...activeReserveRows,
+    ];
+    for (const row of allSectionRows) {
       for (const day of days) {
         const dateStr = format(day, "yyyy-MM-dd");
         const code = row.cells[dateStr] ?? "";
@@ -726,7 +963,7 @@ export function RosterBuilder({ open, onClose, employees, onSaved }: Props) {
     }
   }
 
-  const totalShifts = activeRows.reduce((sum, row) =>
+  const totalShifts = [...activeRows, ...activeReliefRows, ...activeReserveRows].reduce((sum, row) =>
     sum + Object.values(row.cells).filter((c) => c && c !== "Off").length, 0
   );
 
@@ -975,7 +1212,7 @@ export function RosterBuilder({ open, onClose, employees, onSaved }: Props) {
               <AgencyCombo onSelect={openAgency} existing={agencyRosters.map((ar) => ar.agency)} />
             </div>
 
-            {/* Employee search — only enabled when an agency is active */}
+            {/* ── MAIN section ─────────────────────────────────────────────── */}
             <div>
               <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1.5">Add Employee</p>
               {activeAgency
@@ -994,12 +1231,92 @@ export function RosterBuilder({ open, onClose, employees, onSaved }: Props) {
                         <p className="text-xs font-medium truncate">{r.name}</p>
                         <p className="text-[10px] text-muted-foreground truncate">{r.pos}</p>
                       </div>
-                      <button onClick={() => removeEmployee(r.eid)} className="shrink-0 p-0.5 hover:text-destructive transition-colors">
+                      <button onClick={() => removeEmployee(r.eid)} className="shrink-0 p-0.5 hover:text-destructive transition-colors" data-testid={`remove-main-${r.eid}`}>
                         <X className="w-3.5 h-3.5" />
                       </button>
                     </div>
                   ))}
                 </div>
+              </div>
+            )}
+
+            {/* ── RELIEF SECURITY section ───────────────────────────────────── */}
+            {activeAgency && (
+              <div className="border-t pt-3">
+                <button
+                  type="button"
+                  className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-md text-xs font-semibold uppercase tracking-wide transition-colors ${
+                    reliefOpen
+                      ? "bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-300"
+                      : "bg-muted text-muted-foreground hover:bg-amber-50 dark:hover:bg-amber-900/20 hover:text-amber-700"
+                  }`}
+                  onClick={() => setReliefOpen((o) => !o)}
+                  data-testid="button-toggle-relief"
+                >
+                  <span>Relief Security{activeReliefRows.length > 0 ? ` (${activeReliefRows.length})` : ""}</span>
+                  <ChevronDown className={`w-3.5 h-3.5 transition-transform ${reliefOpen ? "rotate-180" : ""}`} />
+                </button>
+
+                {reliefOpen && (
+                  <div className="mt-2 space-y-2">
+                    <EmpCombo employees={availableRelief} onAdd={addRelief} />
+                    {activeReliefRows.length > 0 && (
+                      <div className="space-y-1">
+                        {activeReliefRows.map((r) => (
+                          <div key={r.eid} className="flex items-center justify-between gap-1 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded px-2 py-1.5">
+                            <div className="min-w-0">
+                              <p className="text-xs font-medium truncate">{r.name}</p>
+                              <p className="text-[10px] text-muted-foreground truncate">{r.pos}</p>
+                            </div>
+                            <button onClick={() => removeRelief(r.eid)} className="shrink-0 p-0.5 hover:text-destructive transition-colors" data-testid={`remove-relief-${r.eid}`}>
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ── RESERVE section ───────────────────────────────────────────── */}
+            {activeAgency && (
+              <div className="border-t pt-3">
+                <button
+                  type="button"
+                  className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-md text-xs font-semibold uppercase tracking-wide transition-colors ${
+                    reserveOpen
+                      ? "bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300"
+                      : "bg-muted text-muted-foreground hover:bg-blue-50 dark:hover:bg-blue-900/20 hover:text-blue-700"
+                  }`}
+                  onClick={() => setReserveOpen((o) => !o)}
+                  data-testid="button-toggle-reserve"
+                >
+                  <span>Reserve{activeReserveRows.length > 0 ? ` (${activeReserveRows.length})` : ""}</span>
+                  <ChevronDown className={`w-3.5 h-3.5 transition-transform ${reserveOpen ? "rotate-180" : ""}`} />
+                </button>
+
+                {reserveOpen && (
+                  <div className="mt-2 space-y-2">
+                    <EmpCombo employees={availableReserve} onAdd={addReserve} />
+                    {activeReserveRows.length > 0 && (
+                      <div className="space-y-1">
+                        {activeReserveRows.map((r) => (
+                          <div key={r.eid} className="flex items-center justify-between gap-1 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded px-2 py-1.5">
+                            <div className="min-w-0">
+                              <p className="text-xs font-medium truncate">{r.name}</p>
+                              <p className="text-[10px] text-muted-foreground truncate">{r.pos}</p>
+                            </div>
+                            <button onClick={() => removeReserve(r.eid)} className="shrink-0 p-0.5 hover:text-destructive transition-colors" data-testid={`remove-reserve-${r.eid}`}>
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
 
@@ -1016,153 +1333,106 @@ export function RosterBuilder({ open, onClose, employees, onSaved }: Props) {
                 <p className="text-sm">Search for an agency in the left panel to open a roster sheet</p>
               </div>
             </div>
-          ) : activeRows.length === 0 ? (
+          ) : (activeRows.length === 0 && activeReliefRows.length === 0 && activeReserveRows.length === 0) ? (
             <div className="h-full flex flex-col items-center justify-center text-center text-muted-foreground gap-3">
               <Search className="w-10 h-10 opacity-20" />
               <div>
                 <p className="font-semibold">{activeAgency} roster is empty</p>
-                <p className="text-sm">Search and add employees from the left panel</p>
+                <p className="text-sm">Add employees from the left panel, or open a Relief / Reserve section</p>
               </div>
             </div>
           ) : (
-            <table className="border-collapse text-sm w-full">
-              <thead>
-                <tr>
-                  {/* Call Sign header */}
-                  <th className="text-left py-2 px-2 font-medium text-muted-foreground text-xs uppercase tracking-wide w-20 sticky left-0 bg-background z-10 border-b border-r">
-                    Call Sign
-                  </th>
-                  {/* Locations header */}
-                  <th className="text-left py-2 px-2 font-medium text-muted-foreground text-xs uppercase tracking-wide w-32 sticky left-20 bg-background z-10 border-b border-r">
-                    Location
-                  </th>
-                  {/* Employee header */}
-                  <th className="text-left py-2 px-3 font-medium text-muted-foreground text-xs uppercase tracking-wide w-40 sticky left-52 bg-background z-10 border-b border-r">
-                    Employee
-                  </th>
-                  {/* Quick fill header */}
-                  <th className="py-2 px-1 font-medium text-muted-foreground text-xs uppercase tracking-wide w-24 sticky left-[368px] bg-background z-10 border-b border-r">
-                    Fill Row
-                  </th>
-                  {/* Date columns */}
-                  {days.map((d, i) => {
-                    const ds = format(d, "yyyy-MM-dd");
-                    const isToday = ds === todayFmt;
-                    const dow = d.getDay();
-                    const isWeekend = dow === 0 || dow === 6;
-                    return (
-                      <th key={i} className={`text-center py-1.5 px-0.5 min-w-[56px] border-b ${isToday ? "bg-primary/10" : isWeekend ? "bg-muted/40" : ""}`}>
-                        <div className={`text-[9px] uppercase ${isToday ? "text-primary font-bold" : "text-muted-foreground"}`}>{DAY_ABBR[dow]}</div>
-                        <div className={`text-xs font-bold ${isToday ? "text-primary" : isWeekend ? "text-muted-foreground" : "text-foreground"}`}>{format(d, "d")}</div>
-                        <div className="text-[8px] text-muted-foreground">{format(d, "MMM")}</div>
-                      </th>
-                    );
-                  })}
-                </tr>
-              </thead>
-              <tbody>
-                {activeRows.map((row, ri) => (
-                  <tr key={row.eid} className="border-t border-border/40 hover:bg-muted/10 group">
-                    {/* Call Sign cell */}
-                    <td className="py-1 px-1 align-middle sticky left-0 bg-background group-hover:bg-muted/10 z-10 border-r w-20">
-                      <CallSignCombo
-                        value={row.callSign}
-                        registry={callSignRegistry}
-                        onChange={(v) => updateRowField(row.eid, "callSign", v)}
-                        onLocationFill={(loc) => updateRowField(row.eid, "location", loc)}
-                      />
-                    </td>
+            <div className="space-y-6">
 
-                    {/* Location cell */}
-                    <td className="py-1 px-1 align-middle sticky left-20 bg-background group-hover:bg-muted/10 z-10 border-r w-32">
-                      <select
-                        value={row.location}
-                        onChange={(e) => updateRowField(row.eid, "location", e.target.value)}
-                        className="w-full text-xs border rounded px-1 py-1 bg-background h-7"
-                        data-testid={`select-location-${row.eid}`}
-                      >
-                        <option value="">— loc —</option>
-                        {FMS_LOCATIONS.map((l) => <option key={l} value={l}>{l}</option>)}
-                      </select>
-                    </td>
+              {/* ── Main roster table ─────────────────────────────────────────── */}
+              {activeRows.length > 0 && (
+                <SectionGrid
+                  rows={activeRows}
+                  days={days}
+                  DAY_ABBR={DAY_ABBR}
+                  todayFmt={todayFmt}
+                  callSignRegistry={callSignRegistry}
+                  onUpdateField={updateRowField}
+                  onUpdateCell={updateCell}
+                  onFillRow={fillRow}
+                  onClearRow={clearRow}
+                />
+              )}
 
-                    {/* Employee name cell */}
-                    <td className="py-1.5 px-3 align-middle sticky left-52 bg-background group-hover:bg-muted/10 z-10 border-r w-40">
-                      <div className="font-medium text-sm truncate max-w-[140px]">{row.name}</div>
-                      <div className="text-[10px] text-muted-foreground truncate max-w-[140px]">{row.pos}</div>
-                    </td>
+              {/* ── Relief Security section ───────────────────────────────────── */}
+              {activeReliefRows.length > 0 && (
+                <div>
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="flex-1 border-t border-amber-300 dark:border-amber-700" />
+                    <span className="text-xs font-bold uppercase tracking-widest text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/30 border border-amber-300 dark:border-amber-700 rounded-full px-3 py-0.5">
+                      Relief Security
+                    </span>
+                    <div className="flex-1 border-t border-amber-300 dark:border-amber-700" />
+                  </div>
+                  <SectionGrid
+                    rows={activeReliefRows}
+                    days={days}
+                    DAY_ABBR={DAY_ABBR}
+                    todayFmt={todayFmt}
+                    callSignRegistry={callSignRegistry}
+                    onUpdateField={updateReliefRowField}
+                    onUpdateCell={updateReliefCell}
+                    onFillRow={fillReliefRow}
+                    onClearRow={clearReliefRow}
+                  />
+                </div>
+              )}
 
-                    {/* Quick fill buttons */}
-                    <td className="py-1 px-1 align-middle sticky left-[368px] bg-background group-hover:bg-muted/10 z-10 border-r">
-                      <div className="flex flex-col gap-0.5">
-                        <select
-                          className="text-[10px] border rounded px-1 py-0.5 bg-background h-6"
-                          onChange={(e) => { if (e.target.value) { fillRow(row.eid, e.target.value); e.target.value = ""; }}}
-                          data-testid={`select-fill-row-${row.eid}`}
-                        >
-                          <option value="">Fill…</option>
-                          <optgroup label="All Days">
-                            {SHIFT_PRESETS.map((p) => <option key={p.code} value={p.code}>{p.label}</option>)}
-                          </optgroup>
-                          <optgroup label="Weekdays Only (W)">
-                            {SHIFT_PRESETS.filter((p) => p.code !== "Off").map((p) => (
-                              <option key={`${p.code}|W`} value={`${p.code}|W`}>{p.label} W</option>
-                            ))}
-                          </optgroup>
-                        </select>
-                        <button
-                          onClick={() => clearRow(row.eid)}
-                          className="text-[10px] text-muted-foreground hover:text-destructive flex items-center gap-0.5 justify-center"
-                          title="Clear row"
-                        >
-                          <Trash2 className="w-2.5 h-2.5" /> Clear
-                        </button>
-                      </div>
-                    </td>
+              {/* ── Reserve section ───────────────────────────────────────────── */}
+              {activeReserveRows.length > 0 && (
+                <div>
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="flex-1 border-t border-blue-300 dark:border-blue-700" />
+                    <span className="text-xs font-bold uppercase tracking-widest text-blue-700 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 border border-blue-300 dark:border-blue-700 rounded-full px-3 py-0.5">
+                      Reserve
+                    </span>
+                    <div className="flex-1 border-t border-blue-300 dark:border-blue-700" />
+                  </div>
+                  <SectionGrid
+                    rows={activeReserveRows}
+                    days={days}
+                    DAY_ABBR={DAY_ABBR}
+                    todayFmt={todayFmt}
+                    callSignRegistry={callSignRegistry}
+                    onUpdateField={updateReserveRowField}
+                    onUpdateCell={updateReserveCell}
+                    onFillRow={fillReserveRow}
+                    onClearRow={clearReserveRow}
+                  />
+                </div>
+              )}
 
-                    {/* Day cells */}
-                    {days.map((d, ci) => {
-                      const ds = format(d, "yyyy-MM-dd");
-                      const dow = d.getDay();
-                      const isWeekend = dow === 0 || dow === 6;
-                      const isToday = ds === todayFmt;
-                      return (
-                        <td key={ci} className={`p-0.5 align-middle ${isToday ? "bg-primary/5" : isWeekend ? "bg-muted/20" : ""}`}>
-                          <div className="relative">
-                            <CellButton
-                              code={row.cells[ds] ?? ""}
-                              customTime={row.customTimes[ds]}
-                              onUpdate={(code, ct) => updateCell(row.eid, ds, code, ct)}
-                            />
-                          </div>
-                        </td>
-                      );
-                    })}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            </div>
           )}
         </main>
       </div>
 
       {/* ── Bottom status bar ──────────────────────────────────────────────── */}
-      {activeRows.length > 0 && (
-        <div className="border-t px-4 py-2 text-xs text-muted-foreground flex items-center gap-4 bg-muted/20 shrink-0">
+      {(activeRows.length > 0 || activeReliefRows.length > 0 || activeReserveRows.length > 0) && (
+        <div className="border-t px-4 py-2 text-xs text-muted-foreground flex items-center gap-4 bg-muted/20 shrink-0 flex-wrap">
           {activeAgency && <span className="font-semibold text-foreground">{activeAgency}</span>}
           {activeAgency && <span>·</span>}
-          <span>{activeRows.length} employee{activeRows.length > 1 ? "s" : ""}</span>
+          {activeRows.length > 0 && <span>{activeRows.length} main</span>}
+          {activeReliefRows.length > 0 && <span className="text-amber-700">{activeReliefRows.length} relief</span>}
+          {activeReserveRows.length > 0 && <span className="text-blue-700">{activeReserveRows.length} reserve</span>}
           <span>·</span>
           <span>{days.length} days</span>
           <span>·</span>
           <span className="font-medium text-foreground">{totalShifts} shifts planned</span>
           <span>·</span>
           {Object.values(SHIFT_PRESETS).filter(p => p.code !== "Off").map(p => {
-            const cnt = activeRows.reduce((s, r) => s + Object.values(r.cells).filter(c => c === p.code).length, 0);
+            const allRows = [...activeRows, ...activeReliefRows, ...activeReserveRows];
+            const cnt = allRows.reduce((s, r) => s + Object.values(r.cells).filter(c => c === p.code).length, 0);
             return cnt > 0 ? <span key={p.code} className={`${p.text} font-medium`}>{p.label}: {cnt}</span> : null;
           })}
           {(() => {
-            const customCnt = activeRows.reduce((s, r) => s + Object.values(r.cells).filter(c => c === "custom").length, 0);
+            const allRows = [...activeRows, ...activeReliefRows, ...activeReserveRows];
+            const customCnt = allRows.reduce((s, r) => s + Object.values(r.cells).filter(c => c === "custom").length, 0);
             return customCnt > 0 ? <span className="text-amber-700 font-medium">Custom: {customCnt}</span> : null;
           })()}
         </div>
