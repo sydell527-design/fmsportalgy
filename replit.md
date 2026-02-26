@@ -101,12 +101,13 @@ server/
 
 ## Change Log
 
-### 2026-02-26 — Bi-monthly hours corrected to 80
-- **Change**: Bi-monthly pay period hours corrected from 86.67 to **80** (2 weeks × 40 hrs/week = 80 hrs/period; monthly = 160 hrs).
-- Updated in `payroll.ts`: `WORKING_HOURS_PER_MONTH` 173.33 → **160**
-- Updated in `Employees.tsx`: `FREQ_HRS.bimonthly` 86.67 → **80**; gyCalc fallback 173.33 → 160; salary calculator divisor 173.33 → **160** (both onChange and preview label)
-- Updated in `EmployeeProfile.tsx`: Time employee monthly basic `hourlyRate × 173.33` → `hourlyRate × 160`; Regular hours bar max 173.33 → 160 with label "160h"
-- Also fixes Fixed/Executive OT hourly equivalent: `monthlySalary / 160` (was / 173.33)
+### 2026-02-26 — Bi-monthly hours corrected to 80; calculator divisor fixed
+- **Change**: Bi-monthly pay period = **80 hrs** (2 weeks × 40 hrs/wk); monthly = 160 hrs.
+- `payroll.ts` `WORKING_HOURS_PER_MONTH` 173.33 → **160**; `FREQ_HRS.bimonthly` 86.67 → **80**
+- Salary calculator for Time employees: divisor = **80** (bi-monthly hours). Formula: bi-monthly amount ÷ 80 = hourly rate. Example: GYD 75,000 ÷ 80 = **937.5/hr** ✓
+- Label shows "bi-monthly (80 hrs)" with "bi-mo" suffix; preview hint shows correct /hr result
+- `EmployeeProfile.tsx`: Time monthly basic `hourlyRate × 160`; hours bar max = 160
+- Fixed/Executive OT hourly equivalent: `monthlySalary / 160`
 
 ### 2026-02-26 — Hourly rate calculator divisor fix
 - **Bug**: For bi-monthly Time employees, the "Calculate from salary" helper divided the entered amount by **86.67** (bi-monthly hours) instead of **173.33** (monthly hours). Anyone entering the known monthly salary (e.g. GYD 311,994/mo) got back double the correct hourly rate (GYD 3,600/hr instead of GYD 1,800/hr).

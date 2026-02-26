@@ -819,29 +819,29 @@ export function EmployeeFormDialog({
                       <p className="text-xs text-muted-foreground">≈ {fmt(calc.gross)}/{calc.label} · {fmt(calc.gross * calc.ppm)}/mo</p>
                       <div className="mt-3 pt-3 border-t border-border/50 space-y-1.5">
                         <Label className="text-xs font-medium text-muted-foreground">
-                          Calculate from {pc.frequency === "weekly" ? "weekly (40 hrs)" : "monthly salary"}
+                          Calculate from {pc.frequency === "weekly" ? "weekly (40 hrs)" : "bi-monthly (80 hrs)"}
                         </Label>
                         <div className="flex gap-2 items-center">
                           <Input
                             type="number"
                             min={0}
-                            placeholder={pc.frequency === "weekly" ? "Enter weekly amount…" : "Enter monthly salary…"}
+                            placeholder={pc.frequency === "weekly" ? "Enter weekly amount…" : "Enter bi-monthly amount…"}
                             value={salaryCalcInput}
                             onChange={(e) => {
                               setSalaryCalcInput(e.target.value);
                               const amount = Number(e.target.value);
-                              const divisor = pc.frequency === "weekly" ? 40 : 160;
+                              const divisor = pc.frequency === "weekly" ? 40 : 80;
                               if (amount > 0) setFormData((prev) => ({ ...prev, hourlyRate: Math.round((amount / divisor) * 100) / 100 }));
                             }}
                             data-testid="input-salary-calc"
                           />
                           <span className="text-xs text-muted-foreground whitespace-nowrap shrink-0">
-                            {pc.frequency === "weekly" ? "wk" : "mo"}
+                            {pc.frequency === "weekly" ? "wk" : "bi-mo"}
                           </span>
                         </div>
                         {salaryCalcInput && Number(salaryCalcInput) > 0 && (
                           <p className="text-xs text-emerald-600 font-medium">
-                            → GYD {(Number(salaryCalcInput) / (pc.frequency === "weekly" ? 40 : 160)).toFixed(2)}/hr
+                            → GYD {(Number(salaryCalcInput) / (pc.frequency === "weekly" ? 40 : 80)).toFixed(2)}/hr
                           </p>
                         )}
                       </div>
