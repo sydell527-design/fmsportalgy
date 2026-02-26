@@ -238,7 +238,7 @@ export default function Payroll() {
           </div>
           <div>
             <p className="text-muted-foreground text-xs">Personal Allowance</p>
-            <p className="font-semibold">{formatGYD(C.PERSONAL_ALLOWANCE)}/month</p>
+            <p className="font-semibold">min. {formatGYD(C.PERSONAL_ALLOWANCE)}/month or ⅓ of gross</p>
           </div>
           <div>
             <p className="text-muted-foreground text-xs">Child Allowance</p>
@@ -246,8 +246,8 @@ export default function Payroll() {
           </div>
           <div>
             <p className="text-muted-foreground text-xs">Income Tax (PAYE) — Progressive</p>
-            <p className="font-semibold">28% up to {formatGYD(C.TAX_LOWER_LIMIT)}/mo chargeable</p>
-            <p className="font-semibold">40% above {formatGYD(C.TAX_LOWER_LIMIT)}/mo chargeable</p>
+            <p className="font-semibold">{(C.TAX_LOWER_RATE * 100).toFixed(0)}% up to {formatGYD(C.TAX_LOWER_LIMIT)}/mo chargeable</p>
+            <p className="font-semibold">{(C.TAX_UPPER_RATE * 100).toFixed(0)}% above {formatGYD(C.TAX_LOWER_LIMIT)}/mo chargeable</p>
           </div>
           <div>
             <p className="text-muted-foreground text-xs">Standard OT / PH Multipliers</p>
@@ -313,13 +313,15 @@ export default function Payroll() {
                      value={pc?.nisExempt ? "GYD 0" : `- ${formatGYD(r.employeeNIS)}`} red={!pc?.nisExempt} />
                 <Row label={`Health Surcharge${pc?.healthSurchargeExempt ? " — EXEMPT" : ` (${pc?.healthSurchargeRate ?? "full"})`}`}
                      value={pc?.healthSurchargeExempt ? "GYD 0" : `- ${formatGYD(r.healthSurcharge)}`} red={!pc?.healthSurchargeExempt} />
-                <Row label="Personal Allowance" value={`- ${formatGYD(C.PERSONAL_ALLOWANCE)}`} />
+                <Row label={`Personal Allowance${r.personalAllowance > C.PERSONAL_ALLOWANCE ? " (⅓ gross)" : ""}`}
+                     sub={r.personalAllowance > C.PERSONAL_ALLOWANCE ? `min. ${formatGYD(C.PERSONAL_ALLOWANCE)} — ⅓ gross applies` : undefined}
+                     value={`- ${formatGYD(r.personalAllowance)}`} />
                 {r.qualifyingChildren > 0 && (
                   <Row label={`Child Allowance (${r.qualifyingChildren} qualifying child${r.qualifyingChildren > 1 ? "ren" : ""})`}
                        value={`- ${formatGYD(r.childAllowance)}`} />
                 )}
                 <Row label="Chargeable Income" value={formatGYD(r.chargeableIncome)} bold />
-                <Row label={`PAYE${pc?.taxExempt ? " — EXEMPT" : r.chargeableIncome > C.TAX_LOWER_LIMIT ? " (28% / 40% progressive)" : " (28%)"}`}
+                <Row label={`PAYE${pc?.taxExempt ? " — EXEMPT" : r.chargeableIncome > C.TAX_LOWER_LIMIT ? ` (${(C.TAX_LOWER_RATE*100).toFixed(0)}% / ${(C.TAX_UPPER_RATE*100).toFixed(0)}% progressive)` : ` (${(C.TAX_LOWER_RATE*100).toFixed(0)}%)`}`}
                      value={pc?.taxExempt ? "GYD 0" : `- ${formatGYD(r.paye)}`} red={!pc?.taxExempt} />
 
                 {/* Voluntary Deductions */}

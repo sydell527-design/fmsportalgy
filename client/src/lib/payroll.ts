@@ -2,20 +2,23 @@ import type { User, Timesheet, EmployeeChild, PayConfig } from "@shared/schema";
 import { differenceInYears, parseISO } from "date-fns";
 
 // ── Guyana 2026 Statutory Constants ─────────────────────────────────────────
+// Sources: GRA official notice, DPI Budget 2026 announcement (Jan 27 2026),
+//          PwC Guyana National Budget Insights 2026
 export const PAYROLL_CONSTANTS = {
-  // NIS (National Insurance Scheme)
+  // NIS (National Insurance Scheme) — unchanged from 2025
   NIS_EMP_RATE: 0.056,             // 5.6% employee contribution
   NIS_ER_RATE: 0.084,              // 8.4% employer contribution
-  NIS_CEILING_MONTHLY: 280_000,    // GYD/month maximum insurable earnings
+  NIS_CEILING_MONTHLY: 280_000,    // GYD/month maximum insurable earnings (= GYD 3,360,000/yr)
 
-  // Income Tax (PAYE) — progressive rates
-  PERSONAL_ALLOWANCE: 100_000,     // GYD/month personal allowance
-  CHILD_ALLOWANCE: 10_000,         // GYD/month per qualifying child
-  TAX_LOWER_RATE: 0.28,            // 28% on first GYD 200,000 chargeable/month
-  TAX_LOWER_LIMIT: 200_000,        // GYD/month — 28% bracket ceiling (= GYD 2.4M/year)
-  TAX_UPPER_RATE: 0.40,            // 40% on chargeable income above GYD 200,000/month
+  // Income Tax (PAYE) — Budget 2026 rates effective 1 Jan 2026
+  // Personal allowance = max(GYD 140,000/month, 1/3 of gross income) — whichever is greater
+  PERSONAL_ALLOWANCE: 140_000,     // GYD/month minimum personal allowance (raised from 130,000 in 2025)
+  CHILD_ALLOWANCE: 10_000,         // GYD/month per qualifying child (unchanged)
+  TAX_LOWER_RATE: 0.25,            // 25% on chargeable income up to GYD 280,000/month
+  TAX_LOWER_LIMIT: 280_000,        // GYD/month — 25% bracket ceiling (= GYD 3,360,000/year)
+  TAX_UPPER_RATE: 0.35,            // 35% on chargeable income above GYD 280,000/month
 
-  // Health Surcharge
+  // Health Surcharge — no change announced in Budget 2026
   HEALTH_SURCHARGE_FULL: 1_200,    // GYD/month — employed persons
   HEALTH_SURCHARGE_HALF: 600,      // GYD/month — casual/part-time workers
 
@@ -58,8 +61,9 @@ export interface PayrollResult {
   healthSurcharge: number;   // 1,200 full / 600 half / 0 if exempt
   qualifyingChildren: number;
   childAllowance: number;    // qualifyingChildren × 10,000
+  personalAllowance: number; // max(GYD 140,000, grossPay/3) — GRA 2026 rule
   chargeableIncome: number;  // grossPay − employeeNIS − personalAllowance − childAllowance
-  paye: number;              // progressive 28%/40%
+  paye: number;              // progressive 25%/35% (Budget 2026)
 
   // Voluntary deductions
   creditUnion: number;
@@ -147,8 +151,11 @@ export function calcPayroll(
   const qualifyingChildren = empChildren.filter(isQualifyingChild).length;
   const childAllowance    = qualifyingChildren * C.CHILD_ALLOWANCE;
 
+  // GRA rule: personal allowance = greater of GYD 140,000/month OR 1/3 of gross income
+  const personalAllowance = Math.max(C.PERSONAL_ALLOWANCE, Math.round(grossPay / 3));
+
   const chargeableIncome = pc.taxExempt ? 0
-    : Math.max(0, grossPay - employeeNIS - C.PERSONAL_ALLOWANCE - childAllowance);
+    : Math.max(0, grossPay - employeeNIS - personalAllowance - childAllowance);
 
   const paye = pc.taxExempt ? 0
     : chargeableIncome <= C.TAX_LOWER_LIMIT
@@ -184,6 +191,7 @@ export function calcPayroll(
     healthSurcharge,
     qualifyingChildren,
     childAllowance,
+    personalAllowance,
     chargeableIncome: Math.round(chargeableIncome),
     paye,
     creditUnion,
