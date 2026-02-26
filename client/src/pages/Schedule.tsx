@@ -721,6 +721,31 @@ export default function SchedulePage() {
 
   const mobileGridLabel = `${format(mobileGridDays[0], "MMM d")} – ${format(mobileGridDays[6], "MMM d, yyyy")}`;
 
+  // Mobile period label (P1 = 1–15, P2 = 16–end)
+  const mobilePeriodInfo = useMemo(() => {
+    const anchor = mobileGridDays[0];
+    const yr     = anchor.getFullYear();
+    const mo     = anchor.getMonth();
+    const day    = anchor.getDate();
+    let pNum: number, pStart: Date, pEnd: Date;
+    if (day <= 15) {
+      pNum   = 1;
+      pStart = new Date(yr, mo, 1);
+      pEnd   = new Date(yr, mo, 15);
+    } else {
+      pNum   = 2;
+      pStart = new Date(yr, mo, 16);
+      pEnd   = new Date(yr, mo + 1, 0);
+    }
+    return {
+      label: `P${pNum}  ·  ${format(pStart, "MMM d")} – ${format(pEnd, "MMM d, yyyy")}`,
+    };
+  }, [mobileGridDays]);
+
+  const mobileIsCurrentWeek =
+    format(mobileGridAnchor, "yyyy-MM-dd") ===
+    format(startOfWeek(new Date(), { weekStartsOn: 1 }), "yyyy-MM-dd");
+
   // Shift map for mobile: eid::date → Schedule[]
   const mobileShiftMap = useMemo(() => {
     const m: Record<string, Schedule[]> = {};
@@ -934,23 +959,39 @@ export default function SchedulePage() {
           </table>
         </div>
 
-        {/* ── Mobile roster grid (matches Roster Builder style) ─────────────── */}
+        {/* ── Mobile roster grid ───────────────────────────────────────────── */}
         <div className="lg:hidden -mx-4">
 
-          {/* Week nav bar */}
-          <div className="flex items-center justify-between px-4 py-2 bg-muted/30 border-b border-t">
+          {/* Period banner */}
+          <div className="bg-primary text-primary-foreground text-center py-1.5 px-4">
+            <span className="text-[11px] font-semibold tracking-wider uppercase">
+              {mobilePeriodInfo.label}
+            </span>
+          </div>
+
+          {/* Week navigation */}
+          <div className="flex items-center justify-between px-3 py-2 border-b bg-background">
             <button
-              className="p-1.5 rounded hover:bg-muted transition-colors"
+              className="p-2 rounded-lg hover:bg-muted active:scale-95 transition-all"
               onClick={() => setMobileGridAnchor((a) => addDays(a, -7))}
               data-testid="button-mobile-prev-week"
             >
               <ChevronLeft className="w-4 h-4" />
             </button>
-            <div className="text-center">
-              <p className="text-[11px] font-semibold text-foreground">{mobileGridLabel}</p>
+            <div className="flex flex-col items-center">
+              <span className="text-[12px] font-semibold text-foreground">{mobileGridLabel}</span>
+              {!mobileIsCurrentWeek && (
+                <button
+                  onClick={() => setMobileGridAnchor(startOfWeek(new Date(), { weekStartsOn: 1 }))}
+                  className="text-[10px] text-primary font-medium mt-0.5"
+                  data-testid="button-mobile-today"
+                >
+                  Today
+                </button>
+              )}
             </div>
             <button
-              className="p-1.5 rounded hover:bg-muted transition-colors"
+              className="p-2 rounded-lg hover:bg-muted active:scale-95 transition-all"
               onClick={() => setMobileGridAnchor((a) => addDays(a, 7))}
               data-testid="button-mobile-next-week"
             >
@@ -958,35 +999,40 @@ export default function SchedulePage() {
             </button>
           </div>
 
-          {/* Roster grid — horizontally scrollable */}
-          <div className="overflow-x-auto">
-            <table className="border-collapse text-xs w-full" style={{ minWidth: `${80 + 7 * 52}px` }}>
+          {/* Full-width roster grid — fills screen in portrait & landscape */}
+          <div className="w-full overflow-x-hidden">
+            <table
+              className="w-full border-collapse"
+              style={{ tableLayout: "fixed" }}
+            >
+              <colgroup>
+                {/* Employee col: fixed 68px; day cols split remaining width evenly */}
+                <col style={{ width: "68px" }} />
+                {mobileGridDays.map((_, i) => <col key={i} />)}
+              </colgroup>
               <thead>
-                <tr className="bg-muted/20">
-                  {/* Employee header — sticky left */}
-                  <th className="sticky left-0 z-10 bg-muted/20 text-left py-2 px-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground border-b border-r w-20 min-w-[80px]">
-                    Employee
+                <tr>
+                  <th className="sticky left-0 z-10 bg-muted/50 border-b border-r py-1.5 px-1 text-left">
+                    <span className="text-[9px] font-bold uppercase tracking-wide text-muted-foreground">Staff</span>
                   </th>
-                  {/* Day headers */}
                   {mobileGridDays.map((d, i) => {
                     const ds       = format(d, "yyyy-MM-dd");
                     const isToday  = ds === todayStr;
                     const dow      = d.getDay();
-                    const isWeekend = dow === 0 || dow === 6;
+                    const isWkend  = dow === 0 || dow === 6;
                     return (
                       <th
                         key={i}
-                        className={`text-center py-1.5 px-0.5 min-w-[52px] w-[52px] border-b border-r ${
-                          isToday ? "bg-primary/10" : isWeekend ? "bg-muted/40" : ""
+                        className={`text-center py-1.5 border-b border-r ${
+                          isToday ? "bg-primary/15" : isWkend ? "bg-muted/40" : "bg-muted/20"
                         }`}
                       >
-                        <div className={`text-[9px] uppercase font-medium ${isToday ? "text-primary" : "text-muted-foreground"}`}>
+                        <div className={`text-[9px] font-semibold leading-none ${isToday ? "text-primary" : "text-muted-foreground"}`}>
                           {["Su","Mo","Tu","We","Th","Fr","Sa"][dow]}
                         </div>
-                        <div className={`text-[11px] font-bold ${isToday ? "text-primary" : isWeekend ? "text-muted-foreground" : "text-foreground"}`}>
+                        <div className={`text-[12px] font-bold leading-snug ${isToday ? "text-primary" : isWkend ? "text-muted-foreground/70" : "text-foreground"}`}>
                           {format(d, "d")}
                         </div>
-                        <div className="text-[8px] text-muted-foreground">{format(d, "MMM")}</div>
                       </th>
                     );
                   })}
@@ -995,63 +1041,77 @@ export default function SchedulePage() {
               <tbody>
                 {gridEmployees.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="text-center py-8 text-muted-foreground text-xs italic">
-                      No employees found
+                    <td colSpan={8} className="text-center py-10 text-muted-foreground text-xs italic">
+                      No employees
                     </td>
                   </tr>
-                ) : gridEmployees.map((emp) => (
-                  <tr key={emp.userId} className="border-t border-border/40 hover:bg-muted/10 group">
+                ) : gridEmployees.map((emp, ri) => (
+                  <tr
+                    key={emp.userId}
+                    className={`border-t border-border/30 ${ri % 2 === 0 ? "" : "bg-muted/5"}`}
+                  >
                     {/* Employee name — sticky left */}
-                    <td className="sticky left-0 z-10 bg-background group-hover:bg-muted/10 border-r py-1 px-2 min-w-[80px] w-20 align-middle">
-                      <div className="font-medium text-[11px] leading-tight truncate max-w-[72px]">{emp.name.split(" ")[0]}</div>
-                      <div className="text-[9px] text-muted-foreground truncate max-w-[72px]">{emp.name.split(" ").slice(1).join(" ")}</div>
+                    <td className="sticky left-0 z-10 bg-background border-r px-1 py-1 align-middle"
+                        style={{ backgroundImage: ri % 2 !== 0 ? "color-mix(in srgb, var(--muted) 5%, transparent)" : undefined }}>
+                      <div className="text-[10px] font-semibold leading-tight truncate">
+                        {emp.name.split(" ")[0]}
+                      </div>
+                      <div className="text-[9px] text-muted-foreground leading-tight truncate">
+                        {emp.name.split(" ").slice(1).join(" ")}
+                      </div>
                     </td>
                     {/* Day cells */}
                     {mobileGridDays.map((d, ci) => {
-                      const ds       = format(d, "yyyy-MM-dd");
-                      const isToday  = ds === todayStr;
-                      const dow      = d.getDay();
-                      const isWeekend = dow === 0 || dow === 6;
-                      const cellShifts = mobileShiftMap[`${emp.userId}::${ds}`] ?? [];
+                      const ds     = format(d, "yyyy-MM-dd");
+                      const isToday = ds === todayStr;
+                      const dow    = d.getDay();
+                      const isWkend = dow === 0 || dow === 6;
+                      const shifts = mobileShiftMap[`${emp.userId}::${ds}`] ?? [];
+
+                      // Abbreviate: "08:00" → "8A", "16:00" → "4P"
+                      function abbr(t: string) {
+                        return fmt12(t)
+                          .replace(":00 AM", "A")
+                          .replace(":00 PM", "P")
+                          .replace(" AM", "A")
+                          .replace(" PM", "P");
+                      }
 
                       return (
                         <td
                           key={ci}
-                          className={`p-0.5 align-top min-w-[52px] w-[52px] border-r ${
-                            isToday ? "bg-primary/5" : isWeekend ? "bg-muted/20" : ""
+                          className={`p-0.5 align-top border-r ${
+                            isToday ? "bg-primary/5" : isWkend ? "bg-muted/20" : ""
                           }`}
                         >
-                          <div className="space-y-0.5">
-                            {cellShifts.map((s) => (
+                          {shifts.length > 0 ? (
+                            shifts.map((s) => (
                               <button
                                 key={s.id}
                                 onClick={() => setEditShift(s)}
-                                className={`w-full rounded border px-0.5 py-1 leading-tight text-left transition-colors hover:opacity-80 ${
+                                className={`w-full rounded text-center py-1 leading-none text-white hover:opacity-85 active:scale-95 transition-all block ${
                                   s.armed === "Armed"
-                                    ? "bg-red-50 border-red-200 text-red-900 dark:bg-red-950 dark:border-red-800 dark:text-red-100"
-                                    : "bg-blue-50 border-blue-200 text-blue-900 dark:bg-blue-950 dark:border-blue-800 dark:text-blue-100"
+                                    ? "bg-red-500 dark:bg-red-700"
+                                    : "bg-blue-500 dark:bg-blue-700"
                                 }`}
                                 data-testid={`mobile-cell-${s.id}`}
                               >
-                                <div className="font-semibold text-[10px] whitespace-nowrap">{fmt12(s.shiftStart)}</div>
-                                <div className="text-[9px] opacity-75 whitespace-nowrap">{fmt12(s.shiftEnd)}</div>
-                                <div className="flex items-center gap-0.5 mt-0.5">
-                                  {s.armed === "Armed"
-                                    ? <Shield className="w-2 h-2 shrink-0" />
-                                    : <ShieldOff className="w-2 h-2 shrink-0" />}
-                                </div>
+                                <div className="text-[9px] font-bold">{abbr(s.shiftStart)}</div>
+                                <div className="text-[8px] opacity-80">{abbr(s.shiftEnd)}</div>
                               </button>
-                            ))}
-                            {isPrivileged && cellShifts.length === 0 && (
-                              <button
-                                onClick={() => openBuilder(d, emp.userId)}
-                                className="w-full h-10 rounded border border-dashed border-border/50 text-muted-foreground/40 hover:border-primary hover:text-primary flex items-center justify-center transition-colors"
-                                data-testid={`mobile-add-${emp.userId}-${ci}`}
-                              >
-                                <Plus className="w-2.5 h-2.5" />
-                              </button>
-                            )}
-                          </div>
+                            ))
+                          ) : isPrivileged ? (
+                            <button
+                              onClick={() => openBuilder(d, emp.userId)}
+                              className="w-full rounded border border-dashed border-border/40 hover:border-primary hover:bg-primary/5 flex items-center justify-center transition-colors"
+                              style={{ minHeight: "36px" }}
+                              data-testid={`mobile-add-${emp.userId}-${ci}`}
+                            >
+                              <Plus className="w-2.5 h-2.5 text-muted-foreground/40" />
+                            </button>
+                          ) : (
+                            <div className="w-full" style={{ minHeight: "36px" }} />
+                          )}
                         </td>
                       );
                     })}
@@ -1061,22 +1121,19 @@ export default function SchedulePage() {
             </table>
           </div>
 
-          {/* Jump to today */}
-          {format(mobileGridAnchor, "yyyy-'W'II") !== format(startOfWeek(new Date(), { weekStartsOn: 1 }), "yyyy-'W'II") && (
-            <button
-              onClick={() => setMobileGridAnchor(startOfWeek(new Date(), { weekStartsOn: 1 }))}
-              className="w-full mt-2 text-xs text-primary font-medium text-center py-2 border-t"
-              data-testid="button-mobile-today"
-            >
-              Jump to current week
-            </button>
-          )}
-
           {/* Legend */}
-          <div className="flex items-center gap-4 px-4 py-2 text-[10px] text-muted-foreground border-t">
-            <div className="flex items-center gap-1"><Shield className="w-3 h-3 text-red-500" /> Armed</div>
-            <div className="flex items-center gap-1"><ShieldOff className="w-3 h-3 text-blue-500" /> Unarmed</div>
-            {isPrivileged && <div className="flex items-center gap-1"><Plus className="w-3 h-3" /> Tap + to add</div>}
+          <div className="flex items-center justify-center gap-5 px-4 py-2 text-[10px] text-muted-foreground border-t bg-muted/10">
+            <span className="flex items-center gap-1.5">
+              <span className="inline-block w-2.5 h-2.5 rounded bg-red-500" /> Armed
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="inline-block w-2.5 h-2.5 rounded bg-blue-500" /> Unarmed
+            </span>
+            {isPrivileged && (
+              <span className="flex items-center gap-1.5">
+                <Plus className="w-2.5 h-2.5" /> Tap to add
+              </span>
+            )}
           </div>
         </div>
 
