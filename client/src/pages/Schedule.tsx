@@ -650,10 +650,14 @@ export default function SchedulePage() {
   const [viewMode, setViewMode] = useState<ViewMode>("week");
   const [anchor,   setAnchor]   = useState<Date>(() => todayAnchor("week"));
 
-  // Mobile roster-grid state (independent week anchor, Mon-first)
+  // Admin mobile roster-grid state (independent week anchor, Mon-first)
   const [mobileGridAnchor, setMobileGridAnchor] = useState<Date>(
     () => startOfWeek(new Date(), { weekStartsOn: 1 })
   );
+
+  // Employee mobile calendar state
+  const [empCalAnchor, setEmpCalAnchor] = useState<Date>(() => startOfMonth(new Date()));
+  const [empPeriod,    setEmpPeriod]    = useState<1 | 2>(() => new Date().getDate() <= 15 ? 1 : 2);
 
   const days     = useMemo(() => getRangeDays(anchor, viewMode), [anchor, viewMode]);
   const label    = rangeLabel(days, viewMode);
@@ -745,6 +749,59 @@ export default function SchedulePage() {
   const mobileIsCurrentWeek =
     format(mobileGridAnchor, "yyyy-MM-dd") ===
     format(startOfWeek(new Date(), { weekStartsOn: 1 }), "yyyy-MM-dd");
+
+  // ── Employee personal calendar computed values ─────────────────────────
+  // 42-cell Mon-first grid for the employee's selected month
+  const empCalGrid = useMemo(() => {
+    const gs = startOfWeek(empCalAnchor, { weekStartsOn: 1 });
+    return Array.from({ length: 42 }, (_, i) => addDays(gs, i));
+  }, [empCalAnchor]);
+
+  const empPeriodBounds = useMemo(() => {
+    const yr = empCalAnchor.getFullYear();
+    const mo = empCalAnchor.getMonth();
+    if (empPeriod === 1) return {
+      start: format(new Date(yr, mo, 1), "yyyy-MM-dd"),
+      end:   format(new Date(yr, mo, 15), "yyyy-MM-dd"),
+      label: `P1  ·  ${format(empCalAnchor, "MMM")} 1 – 15`,
+    };
+    const lastDay = new Date(yr, mo + 1, 0).getDate();
+    return {
+      start: format(new Date(yr, mo, 16), "yyyy-MM-dd"),
+      end:   format(new Date(yr, mo + 1, 0), "yyyy-MM-dd"),
+      label: `P2  ·  ${format(empCalAnchor, "MMM")} 16 – ${lastDay}`,
+    };
+  }, [empCalAnchor, empPeriod]);
+
+  // Shift lookup by date (all of the employee's loaded schedules)
+  const empShiftByDate = useMemo(() => {
+    const m: Record<string, Schedule[]> = {};
+    for (const s of schedules) {
+      if (!m[s.date]) m[s.date] = [];
+      m[s.date].push(s);
+    }
+    return m;
+  }, [schedules]);
+
+  // Shifts falling inside the selected period
+  const empPeriodShifts = useMemo(
+    () => schedules.filter((s) => s.date >= empPeriodBounds.start && s.date <= empPeriodBounds.end),
+    [schedules, empPeriodBounds]
+  );
+
+  const empTotalHours = empPeriodShifts.reduce((acc, s) => {
+    const [sh, sm] = s.shiftStart.split(":").map(Number);
+    const [eh, em] = s.shiftEnd.split(":").map(Number);
+    let mins = (eh * 60 + em) - (sh * 60 + sm);
+    if (mins < 0) mins += 24 * 60;
+    return acc + mins / 60;
+  }, 0);
+
+  const empTodayInCurrentMonth =
+    format(empCalAnchor, "yyyy-MM") === format(new Date(), "yyyy-MM");
+
+  // Abbreviate time for employee calendar chips: "08:00" → "8A", "16:00" → "4P"
+  const empAbbr = (t: string) => fmt12(t).replace(":00 AM","A").replace(":00 PM","P").replace(" AM","A").replace(" PM","P");
 
   // Shift map for mobile: eid::date → Schedule[]
   const mobileShiftMap = useMemo(() => {
@@ -959,8 +1016,11 @@ export default function SchedulePage() {
           </table>
         </div>
 
-        {/* ── Mobile roster grid ───────────────────────────────────────────── */}
+        {/* ── Mobile views (admin: roster grid | employee: personal calendar) ── */}
         <div className="lg:hidden -mx-4">
+
+        {/* ═══════════════════ ADMIN / PRIVILEGED: roster grid ══════════════ */}
+        {isPrivileged && (<>
 
           {/* Period banner */}
           <div className="bg-primary text-primary-foreground text-center py-1.5 px-4">
@@ -1069,13 +1129,7 @@ export default function SchedulePage() {
                       const shifts = mobileShiftMap[`${emp.userId}::${ds}`] ?? [];
 
                       // Abbreviate: "08:00" → "8A", "16:00" → "4P"
-                      function abbr(t: string) {
-                        return fmt12(t)
-                          .replace(":00 AM", "A")
-                          .replace(":00 PM", "P")
-                          .replace(" AM", "A")
-                          .replace(" PM", "P");
-                      }
+                      const abbr = (t: string) => fmt12(t).replace(":00 AM","A").replace(":00 PM","P").replace(" AM","A").replace(" PM","P");
 
                       return (
                         <td
@@ -1135,6 +1189,150 @@ export default function SchedulePage() {
               </span>
             )}
           </div>
+        </>)}
+
+        {/* ═══════════════ EMPLOYEE: clean personal calendar ══════════════════ */}
+        {!isPrivileged && (
+            <>
+              {/* Month navigation header */}
+              <div className="flex items-center bg-primary text-primary-foreground select-none">
+                <button
+                  onClick={() => setEmpCalAnchor((a) => subMonths(a, 1))}
+                  className="p-3 hover:bg-white/10 active:bg-white/20 transition-colors"
+                  data-testid="button-emp-prev-month"
+                >
+                  <ChevronLeft className="w-5 h-5" />
+                </button>
+                <div className="flex-1 text-center">
+                  <p className="text-[15px] font-bold tracking-wide">{format(empCalAnchor, "MMMM yyyy")}</p>
+                  {!empTodayInCurrentMonth && (
+                    <button
+                      onClick={() => setEmpCalAnchor(startOfMonth(new Date()))}
+                      className="text-[10px] opacity-80 underline underline-offset-2"
+                      data-testid="button-emp-today"
+                    >
+                      Back to today
+                    </button>
+                  )}
+                </div>
+                <button
+                  onClick={() => setEmpCalAnchor((a) => addMonths(a, 1))}
+                  className="p-3 hover:bg-white/10 active:bg-white/20 transition-colors"
+                  data-testid="button-emp-next-month"
+                >
+                  <ChevronRight className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Period selector tabs */}
+              <div className="flex border-b bg-background">
+                {([1, 2] as const).map((p) => {
+                  const yr = empCalAnchor.getFullYear();
+                  const mo = empCalAnchor.getMonth();
+                  const tabLabel = p === 1
+                    ? `P1  ·  1 – 15 ${format(empCalAnchor, "MMM")}`
+                    : `P2  ·  16 – ${new Date(yr, mo + 1, 0).getDate()} ${format(empCalAnchor, "MMM")}`;
+                  return (
+                    <button
+                      key={p}
+                      onClick={() => setEmpPeriod(p)}
+                      className={`flex-1 py-2.5 text-[12px] font-semibold transition-colors border-b-2 ${
+                        empPeriod === p
+                          ? "border-primary text-primary"
+                          : "border-transparent text-muted-foreground hover:text-foreground"
+                      }`}
+                      data-testid={`button-emp-period-${p}`}
+                    >
+                      {tabLabel}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Day-of-week headers */}
+              <div className="grid grid-cols-7 bg-muted/20 border-b">
+                {["Mo","Tu","We","Th","Fr","Sa","Su"].map((d) => (
+                  <div key={d} className="text-center py-1.5 text-[10px] font-bold uppercase text-muted-foreground">
+                    {d}
+                  </div>
+                ))}
+              </div>
+
+              {/* Calendar grid */}
+              <div className="grid grid-cols-7 bg-background">
+                {empCalGrid.map((d, i) => {
+                  const ds        = format(d, "yyyy-MM-dd");
+                  const inMonth   = format(d, "yyyy-MM") === format(empCalAnchor, "yyyy-MM");
+                  const inPeriod  = ds >= empPeriodBounds.start && ds <= empPeriodBounds.end;
+                  const isToday   = ds === todayStr;
+                  const dow       = d.getDay();
+                  const isWkend   = dow === 0 || dow === 6;
+                  const dayShifts = empShiftByDate[ds] ?? [];
+
+                  return (
+                    <div
+                      key={i}
+                      className={`min-h-[60px] p-1 border-b border-r border-border/20 ${
+                        !inMonth   ? "bg-muted/10 opacity-40"
+                        : !inPeriod ? "bg-muted/10 opacity-60"
+                        : isToday  ? "bg-primary/8"
+                        : isWkend  ? "bg-muted/20"
+                        : "bg-background"
+                      }`}
+                    >
+                      {/* Day number */}
+                      <div className={`text-[11px] font-semibold leading-none mb-1 ${
+                        isToday   ? "text-primary"
+                        : !inMonth || !inPeriod ? "text-muted-foreground"
+                        : isWkend ? "text-muted-foreground/70"
+                        : "text-foreground"
+                      }`}>
+                        {isToday ? (
+                          <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-primary text-primary-foreground text-[10px] font-bold">
+                            {format(d, "d")}
+                          </span>
+                        ) : format(d, "d")}
+                      </div>
+                      {/* Shift chips */}
+                      {dayShifts.map((s) => (
+                        <div
+                          key={s.id}
+                          className={`w-full rounded text-center text-white text-[8px] font-semibold py-0.5 mb-0.5 leading-snug ${
+                            s.armed === "Armed" ? "bg-red-500" : "bg-blue-500"
+                          }`}
+                          data-testid={`emp-shift-${s.id}`}
+                        >
+                          <div>{empAbbr(s.shiftStart)}</div>
+                          <div className="opacity-80">{empAbbr(s.shiftEnd)}</div>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Period summary bar */}
+              <div className="flex items-center justify-between px-4 py-3 bg-muted/10 border-t">
+                <div>
+                  <p className="text-[11px] font-bold text-foreground">{empPeriodBounds.label}</p>
+                  <p className="text-[10px] text-muted-foreground mt-0.5">
+                    {empPeriodShifts.length} shift{empPeriodShifts.length !== 1 ? "s" : ""}
+                    {empTotalHours > 0 ? `  ·  ${empTotalHours % 1 === 0 ? empTotalHours : empTotalHours.toFixed(1)} hrs` : ""}
+                  </p>
+                </div>
+                {/* Armed / Unarmed legend */}
+                <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
+                  <span className="flex items-center gap-1">
+                    <span className="w-2.5 h-2.5 rounded inline-block bg-red-500" /> Armed
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <span className="w-2.5 h-2.5 rounded inline-block bg-blue-500" /> Unarmed
+                  </span>
+                </div>
+              </div>
+            </>
+        )}
+
         </div>
 
         {/* ── Summary card ─────────────────────────────────────────────────── */}

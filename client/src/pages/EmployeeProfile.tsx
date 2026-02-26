@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useParams, Link } from "wouter";
 import { Layout } from "@/components/Layout";
 import { useUsers, useUpdateUser } from "@/hooks/use-users";
@@ -19,7 +20,7 @@ import {
   ChevronLeft, User, Banknote, ShieldCheck, Baby, CreditCard,
   PlusCircle, Edit2, Trash2, TrendingDown, TrendingUp,
   Clock, DollarSign, Calendar, GraduationCap, Briefcase,
-  Info, Phone, Mail, MapPin, LayoutDashboard, CalendarDays, Shield, Building2,
+  Info, Phone, Mail, MapPin, LayoutDashboard, CalendarDays, Shield, Building2, Radio,
 } from "lucide-react";
 import { format, differenceInYears, differenceInMonths, addYears, parseISO, isAfter, startOfDay } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
@@ -153,6 +154,12 @@ export default function EmployeeProfile() {
   const { mutateAsync: createSchedule, isPending: addingSchedule } = useCreateSchedule(userId ?? "");
   const { mutateAsync: updateSchedule } = useUpdateSchedule(userId ?? "");
   const { mutateAsync: deleteSchedule } = useDeleteSchedule(userId ?? "");
+
+  // Call signs for this employee (matched by userId or a call sign entry where callSign === userId)
+  const { data: allCallSigns = [] } = useQuery<{ id: number; callSign: string; location: string }[]>({
+    queryKey: ["/api/call-signs"],
+  });
+  const empCallSign = allCallSigns.find((cs) => cs.callSign === userId);
 
   const EMPTY_SCHED: Partial<InsertSchedule> = { date: format(new Date(), "yyyy-MM-dd"), shiftStart: "06:00", shiftEnd: "14:00", location: "", armed: "Unarmed", client: "", notes: "" };
   const [schedModal, setSchedModal] = useState<Partial<InsertSchedule> & { id?: number } | null>(null);
@@ -288,8 +295,35 @@ export default function EmployeeProfile() {
                 <span className={`text-xs font-medium ${mono ? "font-mono" : ""} ${cap ? "capitalize" : ""}`}>{value}</span>
               </div>
             ))}
+            {/* Call Sign */}
+            <div className="flex items-start gap-1.5 border-t border-border pt-2">
+              <Radio className="w-3 h-3 mt-0.5 shrink-0 text-primary" />
+              <div className="min-w-0">
+                <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Call Sign</div>
+                <div className="text-xs font-semibold font-mono">
+                  {empCallSign ? empCallSign.callSign : "—"}
+                </div>
+                {empCallSign?.location && (
+                  <div className="text-[10px] text-muted-foreground mt-0.5">{empCallSign.location}</div>
+                )}
+              </div>
+            </div>
+            {/* Assigned Locations */}
+            {emp.geo && emp.geo.length > 0 && (
+              <div className="flex items-start gap-1.5">
+                <MapPin className="w-3 h-3 mt-0.5 shrink-0 text-primary" />
+                <div className="min-w-0">
+                  <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Assigned Locations</div>
+                  <div className="flex flex-wrap gap-1 mt-0.5">
+                    {emp.geo.map((loc) => (
+                      <span key={loc} className="text-[10px] bg-muted px-1.5 py-0.5 rounded font-medium">{loc}</span>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
             {emp.email && (
-              <div className="flex items-center gap-1.5 text-xs text-muted-foreground pt-1">
+              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                 <Mail className="w-3 h-3 shrink-0" /><span className="truncate">{emp.email}</span>
               </div>
             )}
