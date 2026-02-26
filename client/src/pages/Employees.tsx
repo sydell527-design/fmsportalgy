@@ -1024,10 +1024,22 @@ export function EmployeeFormDialog({
             </div>
             <div className="flex gap-2">
               <Button type="button" variant="outline" onClick={onClose} data-testid="button-cancel-employee">Cancel</Button>
-              {tab !== "deductions"
-                ? <Button type="button" onClick={() => setTab(tab === "personal" ? "pay" : "deductions")} data-testid="button-next-tab">Next →</Button>
-                : <Button type="submit" disabled={creating || updating} data-testid="button-submit-employee">{creating || updating ? "Saving..." : user ? "Save Changes" : "Create Profile"}</Button>
-              }
+              {user ? (
+                /* Editing: Save available on every tab + optional Next */
+                <>
+                  {tab !== "deductions" && (
+                    <Button type="button" variant="ghost" onClick={() => setTab(tab === "personal" ? "pay" : "deductions")} data-testid="button-next-tab">Next →</Button>
+                  )}
+                  <Button type="submit" disabled={creating || updating} data-testid="button-submit-employee">
+                    {creating || updating ? "Saving..." : "Save Changes"}
+                  </Button>
+                </>
+              ) : (
+                /* Creating: navigate through tabs, submit only on last tab */
+                tab !== "deductions"
+                  ? <Button type="button" onClick={() => setTab(tab === "personal" ? "pay" : "deductions")} data-testid="button-next-tab">Next →</Button>
+                  : <Button type="submit" disabled={creating || updating} data-testid="button-submit-employee">{creating || updating ? "Creating..." : "Create Profile"}</Button>
+              )}
             </div>
           </div>
         </form>
