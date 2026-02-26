@@ -9,7 +9,7 @@ import {
 } from "date-fns";
 import {
   X, Plus, Search, ChevronDown, Save, Loader2,
-  Trash2, Upload, FileSpreadsheet,
+  Trash2, Upload, FileSpreadsheet, Download, FileText, Printer,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -386,9 +386,113 @@ export function RosterBuilder({ open, onClose, employees, onSaved }: Props) {
 
   const [agencyRosters, setAgencyRosters] = useState<AgencyRoster[]>([]);
   const [activeAgency,  setActiveAgency]  = useState<string>("");
-  const [saving,    setSaving]    = useState(false);
-  const [importing, setImporting] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [saving,     setSaving]    = useState(false);
+  const [importing,  setImporting] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
+  const fileInputRef  = useRef<HTMLInputElement>(null);
+  const exportRef     = useRef<HTMLDivElement>(null);
+
+  // Close export dropdown on outside click
+  useEffect(() => {
+    const fn = (e: MouseEvent) => {
+      if (exportRef.current && !exportRef.current.contains(e.target as Node)) setExportOpen(false);
+    };
+    document.addEventListener("mousedown", fn);
+    return () => document.removeEventListener("mousedown", fn);
+  }, []);
+
+  // Build a 2-D array from the current active roster tab for export
+  function buildRosterData(): (string | number)[][] {
+    const periodLabel = fmsPeriod(anchor, activePeriod).label;
+    const header: string[] = ["Name", "Position", "Call Sign", "Location", ...days.map((d) => format(d, "EEE d MMM"))];
+    const rows = activeRows.map((row) => [
+      row.name,
+      row.pos,
+      row.callSign,
+      row.location,
+      ...days.map((d) => row.cells[format(d, "yyyy-MM-dd")] ?? ""),
+    ]);
+    return [
+      [`${activeAgency} Roster — ${periodLabel}`],
+      [],
+      header,
+      ...rows,
+    ];
+  }
+
+  // Excel export using xlsx (already installed)
+  async function exportExcel() {
+    setExportOpen(false);
+    const XLSX = await import("xlsx");
+    const data = buildRosterData();
+    const ws = XLSX.utils.aoa_to_sheet(data);
+    // Auto-width columns
+    const colWidths = data.reduce<number[]>((acc, row) => {
+      row.forEach((cell, i) => { acc[i] = Math.max(acc[i] ?? 6, String(cell).length + 2); });
+      return acc;
+    }, []);
+    ws["!cols"] = colWidths.map((w) => ({ wch: w }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, (activeAgency || "Roster").slice(0, 31));
+    XLSX.writeFile(wb, `${activeAgency || "Roster"}_Roster_${format(days[0] ?? new Date(), "yyyy-MM-dd")}.xlsx`);
+    toast({ title: "Excel exported", description: `${activeAgency} roster downloaded as .xlsx` });
+  }
+
+  // CSV export
+  function exportCSV() {
+    setExportOpen(false);
+    const data = buildRosterData();
+    const csv = data
+      .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(","))
+      .join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url  = URL.createObjectURL(blob);
+    const a    = Object.assign(document.createElement("a"), { href: url, download: `${activeAgency || "Roster"}_Roster_${format(days[0] ?? new Date(), "yyyy-MM-dd")}.csv` });
+    a.click();
+    URL.revokeObjectURL(url);
+    toast({ title: "CSV exported", description: `${activeAgency} roster downloaded as .csv` });
+  }
+
+  // Build an HTML table string for print / Word
+  function buildHtmlTable(): string {
+    const data = buildRosterData();
+    const title = data[0][0] as string;
+    const header = data[2] as string[];
+    const body   = data.slice(3);
+    const thStyle = `style="background:#1d4ed8;color:#fff;padding:6px 10px;text-align:left;white-space:nowrap;font-size:11px;border:1px solid #1e40af"`;
+    const tdStyle = (i: number, light: boolean) =>
+      `style="padding:5px 10px;font-size:11px;border:1px solid #d1d5db;background:${light ? "#f8fafc" : "#fff"}"`;
+    const headerRow = `<tr>${header.map((h) => `<th ${thStyle}>${h}</th>`).join("")}</tr>`;
+    const bodyRows  = body.map((row, ri) =>
+      `<tr>${row.map((cell, ci) => `<td ${tdStyle(ci, ri % 2 === 0)}>${cell}</td>`).join("")}</tr>`
+    ).join("");
+    return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${title}</title>
+<style>body{font-family:Arial,sans-serif;margin:20px}h2{color:#1d4ed8;margin-bottom:12px}table{border-collapse:collapse;width:100%}@media print{@page{size:landscape}}</style>
+</head><body><h2>${title}</h2><table>${headerRow}${bodyRows}</table></body></html>`;
+  }
+
+  // PDF — open print dialog in a new window
+  function exportPDF() {
+    setExportOpen(false);
+    const w = window.open("", "_blank", "width=1100,height=800");
+    if (!w) { toast({ title: "Popup blocked", description: "Allow popups to export PDF.", variant: "destructive" }); return; }
+    w.document.write(buildHtmlTable());
+    w.document.close();
+    w.onload = () => { w.print(); };
+    toast({ title: "Print dialog opened", description: "Use 'Save as PDF' in the print dialog." });
+  }
+
+  // Word — download an HTML file that Word opens natively
+  function exportWord() {
+    setExportOpen(false);
+    const html = buildHtmlTable();
+    const blob = new Blob([html], { type: "application/msword;charset=utf-8" });
+    const url  = URL.createObjectURL(blob);
+    const a    = Object.assign(document.createElement("a"), { href: url, download: `${activeAgency || "Roster"}_Roster_${format(days[0] ?? new Date(), "yyyy-MM-dd")}.doc` });
+    a.click();
+    URL.revokeObjectURL(url);
+    toast({ title: "Word document exported", description: `${activeAgency} roster downloaded as .doc` });
+  }
 
   // Call sign registry from the database
   const { data: callSignRegistry = [], refetch: refetchCallSigns } =
@@ -752,6 +856,71 @@ export function RosterBuilder({ open, onClose, employees, onSaved }: Props) {
             {saving ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <Save className="w-4 h-4 mr-1" />}
             {activeAgency ? `Save ${activeAgency}` : "Save Roster"}
           </Button>
+
+          {/* ── Download / Print dropdown ──────────────────────────────────── */}
+          <div ref={exportRef} className="relative" data-testid="export-dropdown-container">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setExportOpen((o) => !o)}
+              disabled={activeRows.length === 0 || !activeAgency}
+              data-testid="button-export-open"
+            >
+              <Download className="w-4 h-4 mr-1" />
+              Download
+              <ChevronDown className="w-3 h-3 ml-1 opacity-60" />
+            </Button>
+            {exportOpen && (
+              <div className="absolute right-0 top-full mt-1 z-50 min-w-[170px] rounded-md border border-border bg-background shadow-lg py-1">
+                <button
+                  className="w-full flex items-center gap-2.5 px-3 py-2 text-sm hover:bg-muted transition-colors"
+                  onClick={exportExcel}
+                  data-testid="button-export-excel"
+                >
+                  <FileSpreadsheet className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <div className="text-left">
+                    <div className="font-medium">Excel (.xlsx)</div>
+                    <div className="text-[10px] text-muted-foreground">Open in Microsoft Excel</div>
+                  </div>
+                </button>
+                <button
+                  className="w-full flex items-center gap-2.5 px-3 py-2 text-sm hover:bg-muted transition-colors"
+                  onClick={exportCSV}
+                  data-testid="button-export-csv"
+                >
+                  <FileSpreadsheet className="w-4 h-4 text-blue-500 shrink-0" />
+                  <div className="text-left">
+                    <div className="font-medium">CSV (.csv)</div>
+                    <div className="text-[10px] text-muted-foreground">Compatible with Excel &amp; Sheets</div>
+                  </div>
+                </button>
+                <div className="border-t border-border my-1" />
+                <button
+                  className="w-full flex items-center gap-2.5 px-3 py-2 text-sm hover:bg-muted transition-colors"
+                  onClick={exportWord}
+                  data-testid="button-export-word"
+                >
+                  <FileText className="w-4 h-4 text-blue-700 shrink-0" />
+                  <div className="text-left">
+                    <div className="font-medium">Word (.doc)</div>
+                    <div className="text-[10px] text-muted-foreground">Open in Microsoft Word</div>
+                  </div>
+                </button>
+                <button
+                  className="w-full flex items-center gap-2.5 px-3 py-2 text-sm hover:bg-muted transition-colors"
+                  onClick={exportPDF}
+                  data-testid="button-export-pdf"
+                >
+                  <Printer className="w-4 h-4 text-red-500 shrink-0" />
+                  <div className="text-left">
+                    <div className="font-medium">Print / PDF</div>
+                    <div className="text-[10px] text-muted-foreground">Print or save as PDF</div>
+                  </div>
+                </button>
+              </div>
+            )}
+          </div>
+
           <button onClick={onClose} className="p-2 rounded hover:bg-muted transition-colors" data-testid="button-roster-close">
             <X className="w-5 h-5" />
           </button>
