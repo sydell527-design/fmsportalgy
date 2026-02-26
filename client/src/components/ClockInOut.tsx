@@ -126,10 +126,6 @@ export function ClockInOut() {
       toast({ title: "Work location required", description: "Please select your work location.", variant: "destructive" });
       return;
     }
-    if (!selectedPost) {
-      toast({ title: "Post number required", description: "Please select your post number.", variant: "destructive" });
-      return;
-    }
     if (!isWithinFence()) {
       const dist = distanceFromZone ?? "?";
       toast({
@@ -153,7 +149,7 @@ export function ClockInOut() {
         reg: 0, ot: 0, brk: 0,
         notes: "", edited: false, hist: [],
       } as any);
-      toast({ title: "Clocked in!", description: `${selectedZone} · ${selectedPost}` });
+      toast({ title: "Clocked in!", description: selectedPost ? `${selectedZone} · ${selectedPost}` : selectedZone });
     } catch (err: any) {
       toast({ title: "Clock in failed", description: err.message, variant: "destructive" });
     }
@@ -288,7 +284,7 @@ export function ClockInOut() {
                 {selectedZone && (
                   <div className="mt-3">
                     <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide mb-1.5 flex items-center gap-1.5">
-                      <ShieldCheck className="w-3.5 h-3.5" /> Post Number
+                      <ShieldCheck className="w-3.5 h-3.5" /> Post Number <span className="font-normal text-muted-foreground">(optional)</span>
                     </p>
                     <select
                       className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm disabled:opacity-50"
@@ -412,15 +408,15 @@ export function ClockInOut() {
                 size="lg"
                 className="w-full"
                 onClick={handleClockIn}
-                disabled={isCreating || !locationEnabled || !selectedZone || !selectedPost || gpsStatus === "locating"}
+                disabled={isCreating || !locationEnabled || !selectedZone || gpsStatus === "locating"}
                 data-testid="button-clock-in"
               >
                 <LogIn className="w-5 h-5 mr-2" />
                 {isCreating ? "Processing..." : "Clock In"}
               </Button>
-              {(!locationEnabled || !selectedZone || !selectedPost) && (
+              {(!locationEnabled || !selectedZone) && (
                 <p className="text-xs text-muted-foreground text-center">
-                  {!selectedZone ? "Select location first" : !selectedPost ? "Select post number" : "Enable location first"}
+                  {!selectedZone ? "Select location first" : "Enable location first"}
                 </p>
               )}
             </>
