@@ -544,12 +544,19 @@ export function RosterBuilder({ open, onClose, employees, onSaved }: Props) {
     }));
   }
 
-  // Fill an entire row with a preset
-  function fillRow(eid: string, code: string) {
+  // Fill an entire row with a preset.
+  // Codes ending with "|W" mean "weekdays only" — weekends get "Off".
+  function fillRow(eid: string, rawCode: string) {
+    const weekdaysOnly = rawCode.endsWith("|W");
+    const code = weekdaysOnly ? rawCode.slice(0, -2) : rawCode;
     updateActiveRows((prev) => prev.map((r) => {
       if (r.eid !== eid) return r;
       const cells: Record<string, string> = {};
-      days.forEach((d) => { cells[format(d, "yyyy-MM-dd")] = code; });
+      days.forEach((d) => {
+        const dow = d.getDay(); // 0 = Sun, 6 = Sat
+        const isWeekend = dow === 0 || dow === 6;
+        cells[format(d, "yyyy-MM-dd")] = weekdaysOnly && isWeekend ? "Off" : code;
+      });
       return { ...r, cells, customTimes: {} };
     }));
   }
@@ -925,7 +932,14 @@ export function RosterBuilder({ open, onClose, employees, onSaved }: Props) {
                           data-testid={`select-fill-row-${row.eid}`}
                         >
                           <option value="">Fill…</option>
-                          {SHIFT_PRESETS.map((p) => <option key={p.code} value={p.code}>{p.label}</option>)}
+                          <optgroup label="All Days">
+                            {SHIFT_PRESETS.map((p) => <option key={p.code} value={p.code}>{p.label}</option>)}
+                          </optgroup>
+                          <optgroup label="Weekdays Only (W)">
+                            {SHIFT_PRESETS.filter((p) => p.code !== "Off").map((p) => (
+                              <option key={`${p.code}|W`} value={`${p.code}|W`}>{p.label} W</option>
+                            ))}
+                          </optgroup>
                         </select>
                         <button
                           onClick={() => clearRow(row.eid)}
