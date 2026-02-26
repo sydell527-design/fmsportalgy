@@ -196,6 +196,7 @@ export default function Timesheets() {
           if (!empRaw) error = "Missing employee name";
           else if (!dateStr) error = "Missing or invalid date";
           else if (!ciRaw) error = "Missing clock-in time";
+          else if (!coRaw) error = "Missing clock-out time";
 
           return {
             rowNum: i + 2,
@@ -979,13 +980,13 @@ export default function Timesheets() {
               <div className="text-sm text-blue-800">
                 <p className="font-semibold mb-1">Accepted column headers (flexible naming):</p>
                 <div className="grid grid-cols-2 gap-x-6 gap-y-0.5 text-xs">
-                  <span><strong>Full Name / Employee</strong> — required</span>
-                  <span><strong>Date / Work Date</strong> — required (yyyy-MM-dd)</span>
-                  <span><strong>Clock In / In / Start Time</strong> — required (HH:mm)</span>
-                  <span><strong>Clock Out / Out / End Time</strong> — optional</span>
+                  <span><strong>Full Name / Employee</strong> — <span className="text-red-600 font-semibold">required</span></span>
+                  <span><strong>Date / Work Date</strong> — <span className="text-red-600 font-semibold">required</span> (yyyy-MM-dd)</span>
+                  <span><strong>Clock In / In / Start Time</strong> — <span className="text-red-600 font-semibold">required</span> (HH:mm)</span>
+                  <span><strong>Clock Out / Out / End Time</strong> — <span className="text-red-600 font-semibold">required</span> (HH:mm)</span>
                   <span><strong>Zone / Location</strong> — optional</span>
                   <span><strong>Post / Post Name</strong> — optional</span>
-                  <span><strong>Break / Break Minutes</strong> — optional (default 30)</span>
+                  <span><strong>Break / Break Minutes</strong> — optional (default 30 min)</span>
                   <span><strong>Notes / Remarks</strong> — optional</span>
                 </div>
               </div>
