@@ -99,10 +99,10 @@ export default function Timesheets() {
     notes?: string;
     matched: boolean;
     error?: string;
+    mergedFrom: number; // 1 = single row, >1 = merged from multiple rows in the file
   }
   const [bulkRows, setBulkRows] = useState<BulkRow[]>([]);
   const [bulkFileName, setBulkFileName] = useState("");
-  const [bulkDupMode, setBulkDupMode] = useState<"skip" | "update">("update");
   const [dedupeOpen, setDedupeOpen] = useState(false);
   const [dedupeRunning, setDedupeRunning] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -274,9 +274,34 @@ export default function Timesheets() {
             notes: notesRaw || undefined,
             matched: false,
             error,
+            mergedFrom: 1,
           };
         });
-        setBulkRows(parsed);
+
+        // ── Within-file dedup: merge rows with same employee+date+ci+co ──────
+        const mergeMap: Record<string, BulkRow> = {};
+        for (const row of parsed) {
+          if (row.error) {
+            // Keep error rows individually (can't merge without valid key fields)
+            mergeMap[`err-${row.rowNum}`] = row;
+            continue;
+          }
+          const key = `${row.empName.toLowerCase()}|${row.date}|${row.ci}|${row.co ?? ""}`;
+          if (mergeMap[key]) {
+            const ex = mergeMap[key];
+            // Take best break time
+            if ((row.brk ?? 0) > (ex.brk ?? 0)) ex.brk = row.brk;
+            // Fill in any blank optional fields from this row
+            if (!ex.zone  && row.zone)  ex.zone  = row.zone;
+            if (!ex.post  && row.post)  ex.post  = row.post;
+            if (!ex.notes && row.notes) ex.notes = row.notes;
+            ex.mergedFrom += 1;
+          } else {
+            mergeMap[key] = { ...row };
+          }
+        }
+
+        setBulkRows(Object.values(mergeMap));
         setBulkFileName(file.name);
       } catch {
         toast({ title: "Failed to parse file", description: "Ensure it is a valid Excel (.xlsx) or CSV file.", variant: "destructive" });
@@ -303,8 +328,7 @@ export default function Timesheets() {
 
       const existing = findDuplicateTs(row);
       if (existing) {
-        if (bulkDupMode === "skip") { skippedDups++; continue; }
-        // Update mode: patch the existing record's mutable fields
+        // Auto-update: patch the existing record with any new/better values from the file
         try {
           const hours = row.ci && row.co ? calcHours(row.ci, row.co, row.brk) : { reg: existing.reg ?? 0, ot: existing.ot ?? 0 };
           await updateTimesheet({
@@ -318,7 +342,7 @@ export default function Timesheets() {
             edited: true,
           });
           updatedDups++;
-        } catch { /* individual update failure — skip */ }
+        } catch { /* skip on individual failure */ }
         continue;
       }
 
@@ -1665,55 +1689,28 @@ export default function Timesheets() {
             {/* Preview table */}
             {bulkRows.length > 0 && (
               <div>
-                {/* Summary + duplicate mode toggle */}
-                <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
-                  <p className="text-sm font-medium">
-                    {bulkRows.length} row{bulkRows.length !== 1 ? "s" : ""} parsed
-                    {" — "}
-                    <span className="text-green-700">
-                      {bulkRows.filter((r) => {
-                        if (r.error) return false;
-                        const u = users ?? [];
-                        const matched = u.some(x => x.name.toLowerCase() === r.empName.toLowerCase() || x.userId.toLowerCase() === r.empName.toLowerCase());
-                        if (!matched) return false;
-                        return !findDuplicateTs(r);
-                      }).length} new
-                    </span>
-                    {(() => {
-                      const dupCount = bulkRows.filter(r => {
-                        if (r.error) return false;
-                        const u = users ?? [];
-                        if (!u.some(x => x.name.toLowerCase() === r.empName.toLowerCase() || x.userId.toLowerCase() === r.empName.toLowerCase())) return false;
-                        return !!findDuplicateTs(r);
-                      }).length;
-                      return dupCount > 0 ? (
-                        <span className="text-amber-600"> · {dupCount} duplicate{dupCount !== 1 ? "s" : ""}</span>
-                      ) : null;
-                    })()}
-                    {" · "}
-                    <span className="text-red-600">
-                      {bulkRows.filter((r) => {
-                        if (r.error) return true;
-                        const u = users ?? [];
-                        return !u.some(x => x.name.toLowerCase() === r.empName.toLowerCase() || x.userId.toLowerCase() === r.empName.toLowerCase());
-                      }).length} issues
-                    </span>
-                  </p>
-                  {/* Duplicate handling toggle */}
-                  <div className="flex items-center gap-1 text-xs border border-border rounded overflow-hidden">
-                    <span className="px-2 py-1 text-muted-foreground bg-muted/40 border-r border-border">On duplicate:</span>
-                    <button
-                      className={`px-3 py-1 transition-colors ${bulkDupMode === "skip" ? "bg-primary text-primary-foreground" : "hover:bg-muted/60 text-muted-foreground"}`}
-                      onClick={() => setBulkDupMode("skip")}
-                      data-testid="dup-mode-skip"
-                    >Skip</button>
-                    <button
-                      className={`px-3 py-1 transition-colors ${bulkDupMode === "update" ? "bg-primary text-primary-foreground" : "hover:bg-muted/60 text-muted-foreground"}`}
-                      onClick={() => setBulkDupMode("update")}
-                      data-testid="dup-mode-update"
-                    >Update</button>
-                  </div>
-                </div>
+                {/* Smart summary — computed automatically */}
+                {(() => {
+                  const u = users ?? [];
+                  let newCount = 0, updateCount = 0, mergedCount = 0, errorCount = 0;
+                  for (const r of bulkRows) {
+                    if (r.error) { errorCount++; continue; }
+                    const matched = u.some(x => x.name.toLowerCase() === r.empName.toLowerCase() || x.userId.toLowerCase() === r.empName.toLowerCase());
+                    if (!matched) { errorCount++; continue; }
+                    if (r.mergedFrom > 1) mergedCount++;
+                    if (findDuplicateTs(r)) updateCount++;
+                    else newCount++;
+                  }
+                  return (
+                    <div className="flex flex-wrap items-center gap-3 mb-2 text-sm">
+                      <span className="text-muted-foreground font-medium">{bulkRows.length} unique record{bulkRows.length !== 1 ? "s" : ""} identified</span>
+                      {newCount    > 0 && <span className="text-green-700 font-medium">✓ {newCount} new</span>}
+                      {updateCount > 0 && <span className="text-blue-600 font-medium">↻ {updateCount} will update</span>}
+                      {mergedCount > 0 && <span className="text-amber-600 font-medium">⊕ {mergedCount} merged from file</span>}
+                      {errorCount  > 0 && <span className="text-red-600 font-medium">✕ {errorCount} cannot process</span>}
+                    </div>
+                  );
+                })()}
                 <div className="rounded-md border border-border overflow-auto max-h-72">
                   <table className="w-full text-xs">
                     <thead className="bg-muted/60 sticky top-0">
@@ -1734,14 +1731,16 @@ export default function Timesheets() {
                       {bulkRows.map((row) => {
                         const allU = users ?? [];
                         const matched = !row.error && allU.some((u) => u.name.toLowerCase() === row.empName.toLowerCase() || u.userId.toLowerCase() === row.empName.toLowerCase());
-                        const dup = matched ? findDuplicateTs(row) : null;
+                        const existing = matched ? findDuplicateTs(row) : null;
                         const hasIssue = !!row.error || !matched;
-                        const isDup = !!dup;
+                        const isMerged = row.mergedFrom > 1;
                         const rowBg = hasIssue
                           ? "bg-red-50 dark:bg-red-900/10"
-                          : isDup
-                            ? "bg-amber-50 dark:bg-amber-900/10"
-                            : "";
+                          : existing
+                            ? "bg-blue-50 dark:bg-blue-900/10"
+                            : isMerged
+                              ? "bg-amber-50 dark:bg-amber-900/10"
+                              : "";
                         return (
                           <tr key={row.rowNum} className={rowBg}>
                             <td className="px-3 py-1.5 text-muted-foreground">{row.rowNum}</td>
@@ -1755,14 +1754,16 @@ export default function Timesheets() {
                                 <span className="flex items-center gap-1 text-red-600">
                                   <AlertTriangle className="w-3.5 h-3.5" /> Employee not found
                                 </span>
-                              ) : isDup ? (
-                                <span className="flex items-center gap-1 text-amber-600">
+                              ) : existing ? (
+                                <span className="flex items-center gap-1 text-blue-600">
                                   <Info className="w-3.5 h-3.5" />
-                                  {bulkDupMode === "update" ? "Will update" : "Duplicate — skip"}
+                                  Update existing
+                                  {isMerged && <span className="ml-1 text-amber-600">(merged {row.mergedFrom} rows)</span>}
                                 </span>
                               ) : (
                                 <span className="flex items-center gap-1 text-green-700">
-                                  <CheckCircle className="w-3.5 h-3.5" /> New
+                                  <CheckCircle className="w-3.5 h-3.5" />
+                                  New{isMerged ? ` (merged ${row.mergedFrom} rows)` : ""}
                                 </span>
                               )}
                             </td>
