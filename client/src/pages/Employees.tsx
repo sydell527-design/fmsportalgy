@@ -578,6 +578,7 @@ export function EmployeeFormDialog({
 
   const availableLocations = (geofences ?? []).filter((g) => g.active).map((g) => g.name);
   const [tab, setTab] = useState<"personal" | "pay" | "deductions">("personal");
+  const [salaryCalcInput, setSalaryCalcInput] = useState("");
 
   const initPayConfig = (): PayConfig => ({
     ...DEFAULT_PAY_CONFIG,
@@ -784,11 +785,62 @@ export function EmployeeFormDialog({
                   <div className="space-y-1.5">
                     {formData.cat === "Time" ? (<>
                       <Label>Hourly Rate (GYD)</Label>
-                      <Input type="number" min={0} value={formData.hourlyRate} onChange={(e) => setFormData({ ...formData, hourlyRate: Number(e.target.value) })} data-testid="input-employee-hourly" />
+                      <Input type="number" min={0} step="0.01" value={formData.hourlyRate} onChange={(e) => { setSalaryCalcInput(""); setFormData({ ...formData, hourlyRate: Number(e.target.value) }); }} data-testid="input-employee-hourly" />
                       <p className="text-xs text-muted-foreground">≈ {fmt(formData.hourlyRate * 173.33)}/mo</p>
+                      <div className="mt-3 pt-3 border-t border-border/50 space-y-1.5">
+                        <Label className="text-xs font-medium text-muted-foreground">
+                          Calculate from {pc.frequency === "biweekly" ? "bi-weekly" : pc.frequency === "weekly" ? "weekly" : "monthly"} salary
+                        </Label>
+                        <div className="flex gap-2 items-center">
+                          <Input
+                            type="number"
+                            min={0}
+                            placeholder={`Enter ${pc.frequency === "biweekly" ? "bi-weekly" : pc.frequency === "weekly" ? "weekly" : "monthly"} amount…`}
+                            value={salaryCalcInput}
+                            onChange={(e) => {
+                              setSalaryCalcInput(e.target.value);
+                              const amount = Number(e.target.value);
+                              const hrs = pc.frequency === "biweekly" ? 80 : pc.frequency === "weekly" ? 40 : 173.33;
+                              if (amount > 0) setFormData((prev) => ({ ...prev, hourlyRate: Math.round((amount / hrs) * 100) / 100 }));
+                            }}
+                            data-testid="input-salary-calc"
+                          />
+                          <span className="text-xs text-muted-foreground whitespace-nowrap shrink-0">
+                            {pc.frequency === "biweekly" ? "bi-wk" : pc.frequency === "weekly" ? "wk" : "mo"}
+                          </span>
+                        </div>
+                        {salaryCalcInput && Number(salaryCalcInput) > 0 && (
+                          <p className="text-xs text-emerald-600 font-medium">
+                            → GYD {(Number(salaryCalcInput) / (pc.frequency === "biweekly" ? 80 : pc.frequency === "weekly" ? 40 : 173.33)).toFixed(2)}/hr
+                          </p>
+                        )}
+                      </div>
                     </>) : (<>
-                      <Label>Monthly Salary (GYD)</Label>
-                      <Input type="number" min={0} value={formData.salary} onChange={(e) => setFormData({ ...formData, salary: Number(e.target.value) })} data-testid="input-employee-salary" />
+                      <Label>
+                        {pc.frequency === "biweekly" ? "Bi-weekly" : pc.frequency === "weekly" ? "Weekly" : "Monthly"} Salary (GYD)
+                      </Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        placeholder={`Enter ${pc.frequency === "biweekly" ? "bi-weekly" : pc.frequency === "weekly" ? "weekly" : "monthly"} amount…`}
+                        value={salaryCalcInput || (formData.salary > 0 ? String(
+                          pc.frequency === "biweekly" ? Math.round(formData.salary / 2.1665)
+                          : pc.frequency === "weekly" ? Math.round(formData.salary / 4.333)
+                          : formData.salary
+                        ) : "")}
+                        onChange={(e) => {
+                          setSalaryCalcInput(e.target.value);
+                          const amount = Number(e.target.value);
+                          const monthly = pc.frequency === "biweekly" ? Math.round(amount * 2.1665)
+                            : pc.frequency === "weekly" ? Math.round(amount * 4.333)
+                            : amount;
+                          setFormData((prev) => ({ ...prev, salary: monthly }));
+                        }}
+                        data-testid="input-employee-salary"
+                      />
+                      {pc.frequency !== "monthly" && formData.salary > 0 && (
+                        <p className="text-xs text-muted-foreground">≈ {fmt(formData.salary)}/mo</p>
+                      )}
                     </>)}
                   </div>
 
