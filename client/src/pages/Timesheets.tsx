@@ -206,7 +206,7 @@ export default function Timesheets() {
             co: coRaw || undefined,
             zone: zoneRaw || undefined,
             post: postRaw || undefined,
-            brk: parseInt(brkRaw) || 30,
+            brk: parseInt(brkRaw) || 0,
             notes: notesRaw || undefined,
             matched: false,
             error,
@@ -986,7 +986,7 @@ export default function Timesheets() {
                   <span><strong>Clock Out / Out / End Time</strong> — <span className="text-red-600 font-semibold">required</span> (HH:mm)</span>
                   <span><strong>Zone / Location</strong> — optional</span>
                   <span><strong>Post / Post Name</strong> — optional</span>
-                  <span><strong>Break / Break Minutes</strong> — optional (default 30 min)</span>
+                  <span><strong>Break / Break Minutes</strong> — optional</span>
                   <span><strong>Notes / Remarks</strong> — optional</span>
                 </div>
               </div>
