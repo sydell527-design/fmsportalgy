@@ -24,7 +24,6 @@ function buildTimesheetUrl(filters: TimesheetFilters = {}): string {
 
 export function useTimesheets(filters: TimesheetFilters = {}) {
   const url = buildTimesheetUrl(filters);
-  // Use a stable key that includes the filters so different filter combos cache separately
   const queryKey = [api.timesheets.list.path, filters];
   return useQuery<Timesheet[]>({
     queryKey,
@@ -68,6 +67,38 @@ export function useUpdateTimesheet() {
       });
       if (!res.ok) throw new Error("Failed to update timesheet");
       return api.timesheets.update.responses[200].parse(await res.json());
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: [api.timesheets.list.path] }),
+  });
+}
+
+export function useDeleteTimesheet() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: number) => {
+      const url = buildUrl(api.timesheets.delete.path, { id });
+      const res = await fetch(url, { method: "DELETE", credentials: "include" });
+      if (!res.ok) throw new Error("Failed to delete timesheet");
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: [api.timesheets.list.path] }),
+  });
+}
+
+export function useBulkCreateTimesheets() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (records: InsertTimesheet[]) => {
+      const res = await fetch(api.timesheets.bulkCreate.path, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(records),
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({ message: "Upload failed" }));
+        throw new Error(body.message ?? "Upload failed");
+      }
+      return res.json();
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: [api.timesheets.list.path] }),
   });

@@ -30,7 +30,9 @@ export interface IStorage {
   getTimesheets(filters?: TimesheetFilters): Promise<Timesheet[]>;
   getTimesheet(id: number): Promise<Timesheet | undefined>;
   createTimesheet(ts: InsertTimesheet): Promise<Timesheet>;
+  bulkCreateTimesheets(records: InsertTimesheet[]): Promise<Timesheet[]>;
   updateTimesheet(id: number, updates: Partial<InsertTimesheet>): Promise<Timesheet>;
+  deleteTimesheet(id: number): Promise<void>;
 
   getRequests(): Promise<Request[]>;
   getRequest(id: number): Promise<Request | undefined>;
@@ -104,9 +106,15 @@ export class DatabaseStorage implements IStorage {
     const [t] = await db.insert(timesheets).values(ts).returning();
     return t;
   }
+  async bulkCreateTimesheets(records: InsertTimesheet[]) {
+    return db.insert(timesheets).values(records).returning();
+  }
   async updateTimesheet(id: number, updates: Partial<InsertTimesheet>) {
     const [t] = await db.update(timesheets).set(updates).where(eq(timesheets.id, id)).returning();
     return t;
+  }
+  async deleteTimesheet(id: number) {
+    await db.delete(timesheets).where(eq(timesheets.id, id));
   }
 
   async getRequests() { return db.select().from(requests); }

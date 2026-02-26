@@ -68,6 +68,16 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       res.status(500).json({ message: "Server error" });
     }
   });
+  app.post(api.timesheets.bulkCreate.path, async (req, res) => {
+    try {
+      const input = api.timesheets.bulkCreate.input.parse(req.body);
+      const created = await storage.bulkCreateTimesheets(input);
+      res.status(201).json(created);
+    } catch (err) {
+      if (err instanceof z.ZodError) return res.status(400).json({ message: err.errors[0].message });
+      res.status(500).json({ message: "Server error" });
+    }
+  });
   app.put(api.timesheets.update.path, async (req, res) => {
     try {
       const id = Number(req.params.id);
@@ -75,6 +85,15 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       res.json(await storage.updateTimesheet(id, input));
     } catch (err) {
       if (err instanceof z.ZodError) return res.status(400).json({ message: err.errors[0].message });
+      res.status(500).json({ message: "Server error" });
+    }
+  });
+  app.delete(api.timesheets.delete.path, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      await storage.deleteTimesheet(id);
+      res.status(204).send();
+    } catch (err) {
       res.status(500).json({ message: "Server error" });
     }
   });

@@ -31,7 +31,9 @@ export const api = {
   timesheets: {
     list: { method: "GET" as const, path: "/api/timesheets" as const, responses: { 200: z.array(z.custom<typeof timesheets.$inferSelect>()) } },
     create: { method: "POST" as const, path: "/api/timesheets" as const, input: insertTimesheetSchema, responses: { 201: z.custom<typeof timesheets.$inferSelect>(), 400: z.object({ message: z.string() }) } },
+    bulkCreate: { method: "POST" as const, path: "/api/timesheets/bulk" as const, input: z.array(insertTimesheetSchema), responses: { 201: z.array(z.custom<typeof timesheets.$inferSelect>()), 400: z.object({ message: z.string() }) } },
     update: { method: "PUT" as const, path: "/api/timesheets/:id" as const, input: insertTimesheetSchema.partial(), responses: { 200: z.custom<typeof timesheets.$inferSelect>(), 400: z.object({ message: z.string() }), 404: z.object({ message: z.string() }) } },
+    delete: { method: "DELETE" as const, path: "/api/timesheets/:id" as const, responses: { 204: z.null() } },
   },
   requests: {
     list: { method: "GET" as const, path: "/api/requests" as const, responses: { 200: z.array(z.custom<typeof requests.$inferSelect>()) } },

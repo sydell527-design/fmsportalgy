@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, useRef, useCallback } from "react";
 import { Layout } from "@/components/Layout";
-import { useTimesheets, useUpdateTimesheet } from "@/hooks/use-timesheets";
+import { useTimesheets, useUpdateTimesheet, useDeleteTimesheet, useBulkCreateTimesheets } from "@/hooks/use-timesheets";
 import { useUsers } from "@/hooks/use-users";
 import { useAuth } from "@/hooks/use-auth";
 import { useGeofences } from "@/hooks/use-geofences";
@@ -14,10 +14,13 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   Clock, MapPin, PenLine, AlertTriangle, CheckCircle2,
   XCircle, ChevronDown, ChevronUp, Lock, ShieldCheck, Edit2, CalendarDays, ChevronLeft, ChevronRight,
+  Trash2, Upload, FileSpreadsheet, CheckCircle, XCircle as XCircleIcon, Info,
 } from "lucide-react";
 import { format, startOfMonth, endOfMonth, subMonths, addMonths } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import type { Timesheet } from "@shared/schema";
+import type { InsertTimesheet } from "@shared/routes";
+import * as XLSX from "xlsx";
 
 function haversineMetres(lat1: number, lng1: number, lat2: number, lng2: number) {
   const R = 6371000;
@@ -77,6 +80,28 @@ export default function Timesheets() {
   const { data: users } = useUsers();
   const { data: geofences } = useGeofences();
   const { mutateAsync: updateTimesheet } = useUpdateTimesheet();
+  const { mutateAsync: deleteTimesheet, isPending: isDeleting } = useDeleteTimesheet();
+  const { mutateAsync: bulkCreate, isPending: isBulkUploading } = useBulkCreateTimesheets();
+
+  // Bulk upload dialog state
+  const [bulkOpen, setBulkOpen] = useState(false);
+  interface BulkRow {
+    rowNum: number;
+    eid?: string;
+    empName: string;
+    date: string;
+    ci: string;
+    co?: string;
+    zone?: string;
+    post?: string;
+    brk: number;
+    notes?: string;
+    matched: boolean;
+    error?: string;
+  }
+  const [bulkRows, setBulkRows] = useState<BulkRow[]>([]);
+  const [bulkFileName, setBulkFileName] = useState("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Detect zone mismatch: returns metres if gOut is outside the clock-in zone
   const getZoneMismatch = (ts: Timesheet): number | null => {
@@ -107,6 +132,147 @@ export default function Timesheets() {
   // Admin override edit modal
   const [adminEditModal, setAdminEditModal] = useState<Timesheet | null>(null);
   const [adminForm, setAdminForm] = useState({ ci: "", co: "", brk: "30", notes: "", reason: "" });
+
+  const parseExcelFile = useCallback((file: File) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const data = new Uint8Array(e.target!.result as ArrayBuffer);
+        const wb = XLSX.read(data, { type: "array", cellDates: true });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const rows: Record<string, unknown>[] = XLSX.utils.sheet_to_json(ws, { raw: false, defval: "" });
+
+        const normalize = (h: string) => h.toString().toLowerCase().replace(/[\s_\-\/]/g, "");
+        const findCol = (row: Record<string, unknown>, ...aliases: string[]): string => {
+          for (const key of Object.keys(row)) {
+            if (aliases.map(normalize).includes(normalize(key))) return String(row[key] ?? "").trim();
+          }
+          return "";
+        };
+        const parseTime = (raw: string): string => {
+          if (!raw) return "";
+          const cleaned = raw.trim();
+          if (/^\d{1,2}:\d{2}(:\d{2})?(\s*(AM|PM))?$/i.test(cleaned)) {
+            const parts = cleaned.match(/^(\d{1,2}):(\d{2}).*?(AM|PM)?$/i);
+            if (parts) {
+              let h = parseInt(parts[1]);
+              const m = parseInt(parts[2]);
+              const ampm = parts[3]?.toUpperCase();
+              if (ampm === "PM" && h < 12) h += 12;
+              if (ampm === "AM" && h === 12) h = 0;
+              return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+            }
+          }
+          return cleaned.substring(0, 5);
+        };
+        const parseDate = (raw: string): string => {
+          if (!raw) return "";
+          const cleaned = raw.trim();
+          // yyyy-MM-dd
+          if (/^\d{4}-\d{2}-\d{2}$/.test(cleaned)) return cleaned;
+          // MM/DD/YYYY or DD/MM/YYYY — try both, prefer ISO
+          const slash = cleaned.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+          if (slash) {
+            const [, a, b, y] = slash;
+            const m = parseInt(a) > 12 ? `${y}-${b.padStart(2, "0")}-${a.padStart(2, "0")}` : `${y}-${a.padStart(2, "0")}-${b.padStart(2, "0")}`;
+            return m;
+          }
+          // Date serial from Excel (xlsx with raw:false returns strings)
+          return cleaned;
+        };
+
+        const parsed: BulkRow[] = rows.map((row, i) => {
+          const empRaw = findCol(row, "Full Name", "Name", "Employee Name", "Employee", "EID", "Employee ID", "Staff");
+          const dateRaw = findCol(row, "Date", "Work Date", "Shift Date", "Day");
+          const ciRaw = parseTime(findCol(row, "Clock In", "In", "Start", "Time In", "ClockIn", "Start Time"));
+          const coRaw = parseTime(findCol(row, "Clock Out", "Out", "End", "Time Out", "ClockOut", "End Time"));
+          const zoneRaw = findCol(row, "Zone", "Location", "Site");
+          const postRaw = findCol(row, "Post", "Position", "Post Name");
+          const brkRaw = findCol(row, "Break", "Break Minutes", "Breaks", "Brk");
+          const notesRaw = findCol(row, "Notes", "Note", "Remarks", "Comment");
+          const dateStr = parseDate(dateRaw);
+
+          let error: string | undefined;
+          if (!empRaw) error = "Missing employee name";
+          else if (!dateStr) error = "Missing or invalid date";
+          else if (!ciRaw) error = "Missing clock-in time";
+
+          return {
+            rowNum: i + 2,
+            empName: empRaw,
+            date: dateStr,
+            ci: ciRaw,
+            co: coRaw || undefined,
+            zone: zoneRaw || undefined,
+            post: postRaw || undefined,
+            brk: parseInt(brkRaw) || 30,
+            notes: notesRaw || undefined,
+            matched: false,
+            error,
+          };
+        });
+        setBulkRows(parsed);
+        setBulkFileName(file.name);
+      } catch {
+        toast({ title: "Failed to parse file", description: "Ensure it is a valid Excel (.xlsx) or CSV file.", variant: "destructive" });
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  }, [toast]);
+
+  const handleBulkUpload = async () => {
+    const allUsers = users ?? [];
+    const records: InsertTimesheet[] = [];
+    let unmatchedCount = 0;
+    let seq = 0;
+    for (const row of bulkRows) {
+      if (row.error) continue;
+      const empSearch = row.empName.toLowerCase();
+      const found = allUsers.find((u) =>
+        u.name.toLowerCase() === empSearch ||
+        u.userId.toLowerCase() === empSearch
+      );
+      if (!found) { unmatchedCount++; continue; }
+      const hours = row.ci && row.co ? calcHours(row.ci, row.co, row.brk) : { reg: 0, ot: 0 };
+      seq++;
+      records.push({
+        tsId: `TS-${Date.now()}-${Math.random().toString(36).slice(2, 7)}-${seq}`,
+        eid: found.userId,
+        date: row.date,
+        ci: row.ci,
+        co: row.co ?? null,
+        brk: row.brk,
+        zone: row.zone ?? null,
+        post: row.post ?? null,
+        reg: hours.reg,
+        ot: hours.ot,
+        notes: row.notes ?? null,
+        status: "pending_first_approval",
+        disputed: false,
+        disputeNote: null,
+        eSig: null,
+        f1Sig: null,
+        f2Sig: null,
+        gIn: null,
+        gOut: null,
+        edited: false,
+        hist: [],
+      });
+    }
+    if (records.length === 0) {
+      toast({ title: "No valid records to upload", description: unmatchedCount > 0 ? `${unmatchedCount} employees not matched.` : "Fix row errors first.", variant: "destructive" });
+      return;
+    }
+    try {
+      await bulkCreate(records);
+      toast({ title: `${records.length} timesheets uploaded`, description: unmatchedCount > 0 ? `${unmatchedCount} rows skipped (employee not found).` : undefined });
+      setBulkOpen(false);
+      setBulkRows([]);
+      setBulkFileName("");
+    } catch (err: unknown) {
+      toast({ title: "Upload failed", description: err instanceof Error ? err.message : "Please try again.", variant: "destructive" });
+    }
+  };
 
   if (!user) return null;
 
@@ -307,7 +473,7 @@ export default function Timesheets() {
 
       {/* ── Tab bar (Full Access & Supervisors only) ──────────────────────── */}
       {hasTeamView && (
-        <div className="flex border-b border-border mb-5">
+        <div className="flex items-center border-b border-border mb-5">
           <button
             onClick={() => setTsTab("mine")}
             className={`px-5 py-2.5 text-sm font-medium border-b-2 transition-colors ${
@@ -336,6 +502,21 @@ export default function Timesheets() {
               <span className="ml-2 text-xs bg-muted text-muted-foreground rounded-full px-1.5 py-0.5">{teamTs.length}</span>
             )}
           </button>
+
+          {/* Admin-only bulk upload — shown when on General tab */}
+          {isFullAccess && tsTab === "general" && (
+            <div className="ml-auto pb-1">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => { setBulkRows([]); setBulkFileName(""); setBulkOpen(true); }}
+                data-testid="button-bulk-upload"
+              >
+                <Upload className="w-3.5 h-3.5 mr-1.5" />
+                Bulk Upload
+              </Button>
+            </div>
+          )}
         </div>
       )}
 
@@ -446,6 +627,28 @@ export default function Timesheets() {
                     {canAdminEdit(ts) && (
                       <Button size="sm" variant="outline" className="text-muted-foreground" onClick={() => openAdminEdit(ts)} data-testid={`button-admin-edit-${ts.id}`}>
                         <Edit2 className="w-3.5 h-3.5 mr-1" /> Edit
+                      </Button>
+                    )}
+
+                    {/* Admin delete — General tab only */}
+                    {isFullAccess && tsTab === "general" && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                        disabled={isDeleting}
+                        onClick={async () => {
+                          if (!window.confirm(`Delete this timesheet record for ${format(new Date(ts.date + "T00:00:00"), "MMM d, yyyy")}? This cannot be undone.`)) return;
+                          try {
+                            await deleteTimesheet(ts.id);
+                            toast({ title: "Timesheet deleted" });
+                          } catch {
+                            toast({ title: "Failed to delete", variant: "destructive" });
+                          }
+                        }}
+                        data-testid={`button-delete-ts-${ts.id}`}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
                       </Button>
                     )}
 
@@ -753,6 +956,170 @@ export default function Timesheets() {
               <Button variant="outline" onClick={() => setDisputeModal(null)}>Cancel</Button>
               <Button variant="destructive" onClick={submitDispute} disabled={!disputeData.reason || !disputeData.sigName.trim()} data-testid="button-submit-dispute">
                 <AlertTriangle className="w-4 h-4 mr-1.5" /> Submit Dispute
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Bulk Upload Dialog ─────────────────────────────────────────────── */}
+      <Dialog open={bulkOpen} onOpenChange={(o) => { if (!o) { setBulkOpen(false); } }}>
+        <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileSpreadsheet className="w-5 h-5 text-primary" />
+              Bulk Timesheet Upload
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-5 mt-2">
+            {/* Instructions */}
+            <div className="rounded-md border border-blue-200 bg-blue-50 px-4 py-3 flex items-start gap-3">
+              <Info className="w-4 h-4 text-blue-500 shrink-0 mt-0.5" />
+              <div className="text-sm text-blue-800">
+                <p className="font-semibold mb-1">Accepted column headers (flexible naming):</p>
+                <div className="grid grid-cols-2 gap-x-6 gap-y-0.5 text-xs">
+                  <span><strong>Full Name / Employee</strong> — required</span>
+                  <span><strong>Date / Work Date</strong> — required (yyyy-MM-dd)</span>
+                  <span><strong>Clock In / In / Start Time</strong> — required (HH:mm)</span>
+                  <span><strong>Clock Out / Out / End Time</strong> — optional</span>
+                  <span><strong>Zone / Location</strong> — optional</span>
+                  <span><strong>Post / Post Name</strong> — optional</span>
+                  <span><strong>Break / Break Minutes</strong> — optional (default 30)</span>
+                  <span><strong>Notes / Remarks</strong> — optional</span>
+                </div>
+              </div>
+            </div>
+
+            {/* File picker */}
+            <div className="flex items-center gap-3">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".xlsx,.xls,.csv"
+                className="hidden"
+                data-testid="input-bulk-file"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) parseExcelFile(file);
+                  e.target.value = "";
+                }}
+              />
+              <Button
+                variant="outline"
+                onClick={() => fileInputRef.current?.click()}
+                data-testid="button-choose-file"
+              >
+                <Upload className="w-4 h-4 mr-2" />
+                {bulkFileName ? "Change File" : "Choose File (.xlsx / .csv)"}
+              </Button>
+              {bulkFileName && (
+                <span className="text-sm text-muted-foreground flex items-center gap-1.5">
+                  <FileSpreadsheet className="w-4 h-4" />
+                  {bulkFileName}
+                </span>
+              )}
+            </div>
+
+            {/* Preview table */}
+            {bulkRows.length > 0 && (
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-sm font-medium">
+                    {bulkRows.length} row{bulkRows.length !== 1 ? "s" : ""} parsed
+                    {" — "}
+                    <span className="text-green-700">
+                      {bulkRows.filter((r) => {
+                        if (r.error) return false;
+                        const allUsers = users ?? [];
+                        return allUsers.some((u) => u.name.toLowerCase() === r.empName.toLowerCase() || u.userId.toLowerCase() === r.empName.toLowerCase());
+                      }).length} ready
+                    </span>
+                    {" · "}
+                    <span className="text-red-600">
+                      {bulkRows.filter((r) => {
+                        if (r.error) return true;
+                        const allUsers = users ?? [];
+                        return !allUsers.some((u) => u.name.toLowerCase() === r.empName.toLowerCase() || u.userId.toLowerCase() === r.empName.toLowerCase());
+                      }).length} issues
+                    </span>
+                  </p>
+                </div>
+                <div className="rounded-md border border-border overflow-auto max-h-72">
+                  <table className="w-full text-xs">
+                    <thead className="bg-muted/60 sticky top-0">
+                      <tr>
+                        <th className="px-3 py-2 text-left font-semibold text-muted-foreground">Row</th>
+                        <th className="px-3 py-2 text-left font-semibold text-muted-foreground">Status</th>
+                        <th className="px-3 py-2 text-left font-semibold text-muted-foreground">Employee</th>
+                        <th className="px-3 py-2 text-left font-semibold text-muted-foreground">Date</th>
+                        <th className="px-3 py-2 text-left font-semibold text-muted-foreground">In</th>
+                        <th className="px-3 py-2 text-left font-semibold text-muted-foreground">Out</th>
+                        <th className="px-3 py-2 text-left font-semibold text-muted-foreground">Zone</th>
+                        <th className="px-3 py-2 text-left font-semibold text-muted-foreground">Post</th>
+                        <th className="px-3 py-2 text-left font-semibold text-muted-foreground">Brk</th>
+                        <th className="px-3 py-2 text-left font-semibold text-muted-foreground">Notes</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border">
+                      {bulkRows.map((row) => {
+                        const allUsers = users ?? [];
+                        const matched = !row.error && allUsers.some((u) => u.name.toLowerCase() === row.empName.toLowerCase() || u.userId.toLowerCase() === row.empName.toLowerCase());
+                        const hasIssue = !!row.error || !matched;
+                        return (
+                          <tr key={row.rowNum} className={hasIssue ? "bg-red-50 dark:bg-red-900/10" : ""}>
+                            <td className="px-3 py-1.5 text-muted-foreground">{row.rowNum}</td>
+                            <td className="px-3 py-1.5">
+                              {row.error ? (
+                                <span className="flex items-center gap-1 text-red-600">
+                                  <XCircleIcon className="w-3.5 h-3.5" />
+                                  <span>{row.error}</span>
+                                </span>
+                              ) : matched ? (
+                                <span className="flex items-center gap-1 text-green-700">
+                                  <CheckCircle className="w-3.5 h-3.5" /> Ready
+                                </span>
+                              ) : (
+                                <span className="flex items-center gap-1 text-amber-600">
+                                  <AlertTriangle className="w-3.5 h-3.5" /> Employee not found
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-3 py-1.5 font-medium">{row.empName}</td>
+                            <td className="px-3 py-1.5">{row.date}</td>
+                            <td className="px-3 py-1.5">{row.ci}</td>
+                            <td className="px-3 py-1.5">{row.co ?? "—"}</td>
+                            <td className="px-3 py-1.5">{row.zone ?? "—"}</td>
+                            <td className="px-3 py-1.5">{row.post ?? "—"}</td>
+                            <td className="px-3 py-1.5">{row.brk}m</td>
+                            <td className="px-3 py-1.5 max-w-[120px] truncate">{row.notes ?? "—"}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {bulkRows.length === 0 && bulkFileName === "" && (
+              <div className="text-center py-10 border-2 border-dashed border-border rounded-md text-muted-foreground text-sm">
+                No file selected. Choose an Excel or CSV file to preview records before uploading.
+              </div>
+            )}
+
+            <div className="flex gap-2 justify-end pt-2">
+              <Button variant="outline" onClick={() => setBulkOpen(false)}>Cancel</Button>
+              <Button
+                onClick={handleBulkUpload}
+                disabled={bulkRows.length === 0 || isBulkUploading}
+                data-testid="button-confirm-bulk-upload"
+              >
+                {isBulkUploading ? (
+                  <span className="flex items-center gap-1.5"><Upload className="w-4 h-4 animate-bounce" /> Uploading…</span>
+                ) : (
+                  <span className="flex items-center gap-1.5"><Upload className="w-4 h-4" /> Upload Timesheets</span>
+                )}
               </Button>
             </div>
           </div>
