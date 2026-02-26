@@ -1,4 +1,5 @@
 import { useState, useMemo, useRef, useEffect } from "react";
+import { RosterBuilder } from "@/components/RosterBuilder";
 import { Layout } from "@/components/Layout";
 import { useAuth } from "@/hooks/use-auth";
 import { useUsers } from "@/hooks/use-users";
@@ -647,6 +648,7 @@ export default function SchedulePage() {
   const [gridSearch, setGridSearch] = useState("");
 
   // Dialog state
+  const [rosterOpen,    setRosterOpen]    = useState(false);
   const [builderOpen,   setBuilderOpen]   = useState(false);
   const [builderDefEid, setBuilderDefEid] = useState<string | undefined>();
   const [builderDefDate,setBuilderDefDate]= useState<string | undefined>();
@@ -748,9 +750,14 @@ export default function SchedulePage() {
             </p>
           </div>
           {isPrivileged && (
-            <Button onClick={() => openBuilder()} data-testid="button-add-schedule">
-              <Plus className="w-4 h-4 mr-2" /> Schedule Builder
-            </Button>
+            <div className="flex gap-2">
+              <Button onClick={() => setRosterOpen(true)} data-testid="button-roster-builder">
+                <Plus className="w-4 h-4 mr-2" /> Roster Builder
+              </Button>
+              <Button variant="outline" onClick={() => openBuilder()} data-testid="button-add-schedule" size="sm">
+                Single Shift
+              </Button>
+            </div>
           )}
         </div>
 
@@ -979,6 +986,14 @@ export default function SchedulePage() {
           </Card>
         )}
       </div>
+
+      {/* ── Roster Builder (full screen) ──────────────────────────────────────── */}
+      <RosterBuilder
+        open={rosterOpen}
+        onClose={() => setRosterOpen(false)}
+        employees={activeEmployees}
+        onSaved={refreshSchedules}
+      />
 
       {/* ── Dialogs ───────────────────────────────────────────────────────────── */}
       <BuilderDialog
