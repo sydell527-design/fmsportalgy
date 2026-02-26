@@ -3,6 +3,7 @@ import { useParams, Link } from "wouter";
 import { Layout } from "@/components/Layout";
 import { useUsers, useUpdateUser } from "@/hooks/use-users";
 import { useTimesheets } from "@/hooks/use-timesheets";
+import { EmployeeFormDialog } from "@/pages/Employees";
 import { useChildren, useCreateChild, useUpdateChild, useDeleteChild } from "@/hooks/use-children";
 import { useLoans, useCreateLoan, useUpdateLoan, useDeleteLoan } from "@/hooks/use-loans";
 import { useAuth } from "@/hooks/use-auth";
@@ -137,6 +138,7 @@ export default function EmployeeProfile() {
   const { mutateAsync: deleteLoan  } = useDeleteLoan(userId);
 
   const [tab, setTab] = useState<Tab>("overview");
+  const [editOpen, setEditOpen] = useState(false);
   const [childModal, setChildModal] = useState<Partial<EmployeeChild> | null>(null);
   const [loanModal,  setLoanModal]  = useState<Partial<EmployeeLoan>  | null>(null);
 
@@ -222,6 +224,16 @@ export default function EmployeeProfile() {
               </div>
             </div>
           </Card>
+
+          {/* Edit button */}
+          <Button
+            variant="outline"
+            className="w-full gap-2"
+            onClick={() => setEditOpen(true)}
+            data-testid="button-edit-employee-profile"
+          >
+            <Edit2 className="w-4 h-4" /> Edit Profile
+          </Button>
 
           {/* Quick stats */}
           <Card className="p-4 space-y-2">
@@ -664,6 +676,178 @@ export default function EmployeeProfile() {
           )}
         </div>{/* end right panel */}
       </div>{/* end landscape flex */}
+
+      {/* Edit Employee dialog */}
+      {editOpen && (
+        <EmployeeFormDialog
+          user={emp}
+          onClose={() => setEditOpen(false)}
+          onCreated={() => setEditOpen(false)}
+        />
+      )}
+
+      {/* ── Child / Dependent modal ─────────────────────────────────────── */}
+      <Dialog open={childModal !== null} onOpenChange={(o) => { if (!o) setChildModal(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{childModal?.id ? "Edit Dependent" : "Add Dependent"}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 pt-2">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>First Name <span className="text-destructive">*</span></Label>
+                <Input
+                  value={childModal?.firstName ?? ""}
+                  onChange={(e) => setChildModal((m) => m ? { ...m, firstName: e.target.value } : m)}
+                  placeholder="First name"
+                  data-testid="input-child-firstname"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Last Name</Label>
+                <Input
+                  value={childModal?.lastName ?? ""}
+                  onChange={(e) => setChildModal((m) => m ? { ...m, lastName: e.target.value } : m)}
+                  placeholder="Last name"
+                  data-testid="input-child-lastname"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Date of Birth <span className="text-destructive">*</span></Label>
+                <Input
+                  type="date"
+                  value={childModal?.dob ?? ""}
+                  onChange={(e) => setChildModal((m) => m ? { ...m, dob: e.target.value } : m)}
+                  data-testid="input-child-dob"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Relationship</Label>
+                <select
+                  value={childModal?.relationship ?? "biological"}
+                  onChange={(e) => setChildModal((m) => m ? { ...m, relationship: e.target.value } : m)}
+                  className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm"
+                  data-testid="select-child-relationship"
+                >
+                  <option value="biological">Biological</option>
+                  <option value="adopted">Adopted</option>
+                  <option value="stepchild">Stepchild</option>
+                  <option value="ward">Ward</option>
+                </select>
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label>School / Institution (if 18–25)</Label>
+              <Input
+                value={childModal?.school ?? ""}
+                onChange={(e) => setChildModal((m) => m ? { ...m, school: e.target.value } : m)}
+                placeholder="Leave blank if not applicable"
+                data-testid="input-child-school"
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="child-active"
+                checked={childModal?.active ?? true}
+                onChange={(e) => setChildModal((m) => m ? { ...m, active: e.target.checked } : m)}
+                className="rounded border-input"
+                data-testid="checkbox-child-active"
+              />
+              <Label htmlFor="child-active">Active (receives allowance)</Label>
+            </div>
+            <div className="flex justify-end gap-2 pt-2 border-t border-border">
+              <Button variant="outline" onClick={() => setChildModal(null)} data-testid="button-cancel-child">Cancel</Button>
+              <Button onClick={handleSaveChild} disabled={addingChild} data-testid="button-save-child">
+                {addingChild ? "Saving…" : "Save Dependent"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Loan modal ──────────────────────────────────────────────────── */}
+      <Dialog open={loanModal !== null} onOpenChange={(o) => { if (!o) setLoanModal(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{loanModal?.id ? "Edit Loan" : "Add Loan"}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 pt-2">
+            <div className="space-y-1.5">
+              <Label>Description <span className="text-destructive">*</span></Label>
+              <Input
+                value={loanModal?.description ?? ""}
+                onChange={(e) => setLoanModal((m) => m ? { ...m, description: e.target.value } : m)}
+                placeholder="e.g. Staff Advance, Credit Union Loan"
+                data-testid="input-loan-description"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Principal (GYD) <span className="text-destructive">*</span></Label>
+                <Input
+                  type="number" min={0}
+                  value={loanModal?.principal ?? ""}
+                  onChange={(e) => setLoanModal((m) => m ? { ...m, principal: Number(e.target.value) } : m)}
+                  placeholder="0"
+                  data-testid="input-loan-principal"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Monthly Payment (GYD) <span className="text-destructive">*</span></Label>
+                <Input
+                  type="number" min={0}
+                  value={loanModal?.monthlyPayment ?? ""}
+                  onChange={(e) => setLoanModal((m) => m ? { ...m, monthlyPayment: Number(e.target.value) } : m)}
+                  placeholder="0"
+                  data-testid="input-loan-monthly-payment"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Start Date</Label>
+                <Input
+                  type="date"
+                  value={loanModal?.startDate ?? today()}
+                  onChange={(e) => setLoanModal((m) => m ? { ...m, startDate: e.target.value } : m)}
+                  data-testid="input-loan-start-date"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Status</Label>
+                <select
+                  value={loanModal?.status ?? "active"}
+                  onChange={(e) => setLoanModal((m) => m ? { ...m, status: e.target.value } : m)}
+                  className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm"
+                  data-testid="select-loan-status"
+                >
+                  <option value="active">Active</option>
+                  <option value="suspended">Suspended</option>
+                  <option value="paid">Paid Off</option>
+                </select>
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Notes</Label>
+              <Input
+                value={loanModal?.notes ?? ""}
+                onChange={(e) => setLoanModal((m) => m ? { ...m, notes: e.target.value } : m)}
+                placeholder="Optional notes"
+                data-testid="input-loan-notes"
+              />
+            </div>
+            <div className="flex justify-end gap-2 pt-2 border-t border-border">
+              <Button variant="outline" onClick={() => setLoanModal(null)} data-testid="button-cancel-loan">Cancel</Button>
+              <Button onClick={handleSaveLoan} disabled={addingLoan} data-testid="button-save-loan">
+                {addingLoan ? "Saving…" : "Save Loan"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </Layout>
   );
 }

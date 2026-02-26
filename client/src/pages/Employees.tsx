@@ -558,7 +558,7 @@ function sel(value: string, onChange: (v: string) => void, opts: [string, string
   );
 }
 
-function EmployeeFormDialog({
+export function EmployeeFormDialog({
   user,
   onClose,
   onCreated,
