@@ -172,6 +172,7 @@ export const schedules = pgTable("schedules", {
   shiftStart: text("shift_start").notNull(),    // HH:mm  e.g. "06:00"
   shiftEnd: text("shift_end").notNull(),        // HH:mm  e.g. "14:00"
   location: text("location"),                   // from FMS_LOCATIONS
+  callSign: text("call_sign"),                  // Post call sign e.g. Neptune P1
   armed: text("armed"),                         // Unarmed / Armed
   client: text("client"),                       // Caricom / EU / UN / ...
   notes: text("notes"),

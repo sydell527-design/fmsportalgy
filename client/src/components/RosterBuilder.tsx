@@ -8,13 +8,13 @@ import {
   startOfMonth, endOfMonth, addMonths, subMonths, getDate, getDaysInMonth,
 } from "date-fns";
 import {
-  X, Plus, Search, ChevronDown, Save, Loader2, Shield, ShieldOff,
+  X, Plus, Search, ChevronDown, Save, Loader2,
   Trash2, RefreshCw, MapPin,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { FMS_LOCATIONS, CLIENT_AGENCIES, type ClientAgency, type ArmedStatus } from "@shared/schema";
+import { FMS_LOCATIONS } from "@shared/schema";
 
 // ── Shift presets (from actual FMS schedule formats) ──────────────────────────
 interface ShiftPreset {
@@ -263,9 +263,8 @@ export function RosterBuilder({ open, onClose, employees, onSaved }: Props) {
   const [dateFrom, setDateFrom] = useState(initPeriod.from);
   const [dateTo,   setDateTo]   = useState(initPeriod.to);
 
+  const [callSign,  setCallSign]  = useState("");
   const [location,  setLocation]  = useState("");
-  const [client,    setClient]    = useState<ClientAgency | "">("");
-  const [armed,     setArmed]     = useState<ArmedStatus>("Unarmed");
   const [rows,      setRows]      = useState<EmpRow[]>([]);
   const [saving,    setSaving]    = useState(false);
 
@@ -292,9 +291,8 @@ export function RosterBuilder({ open, onClose, employees, onSaved }: Props) {
       setActivePeriod(init.p);
       setDateFrom(init.from);
       setDateTo(init.to);
+      setCallSign("");
       setLocation("");
-      setClient("");
-      setArmed("Unarmed");
       setRows([]);
     }
   }, [open]);
@@ -365,9 +363,8 @@ export function RosterBuilder({ open, onClose, employees, onSaved }: Props) {
           date:       dateStr,
           shiftStart: times.start,
           shiftEnd:   times.end,
-          armed,
-          location:   location || null,
-          client:     client   || null,
+          location:   location  || null,
+          callSign:   callSign  || null,
           notes:      null,
           createdBy:  user?.userId ?? "",
         });
@@ -509,11 +506,46 @@ export function RosterBuilder({ open, onClose, employees, onSaved }: Props) {
         {/* ── Left sidebar ─────────────────────────────────────────────────── */}
         <aside className="w-64 border-r flex flex-col shrink-0 overflow-y-auto bg-muted/20">
           <div className="p-3 space-y-3">
+
+            {/* Call Sign */}
+            <div className="space-y-1">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Call Sign</p>
+              <input
+                type="text"
+                value={callSign}
+                onChange={(e) => setCallSign(e.target.value)}
+                placeholder="e.g. Neptune P1"
+                className="flex h-8 w-full rounded-md border border-input bg-background px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+                data-testid="input-roster-callsign"
+              />
+            </div>
+
+            {/* Location */}
+            <div className="space-y-1">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-1">
+                <MapPin className="w-3 h-3" />Location
+              </p>
+              <select
+                className="flex h-8 w-full rounded-md border border-input bg-background px-2 py-1 text-xs"
+                value={location}
+                onChange={(e) => setLocation(e.target.value)}
+                data-testid="select-roster-location"
+              >
+                <option value="">— Select location —</option>
+                {FMS_LOCATIONS.map((l) => <option key={l} value={l}>{l}</option>)}
+              </select>
+            </div>
+
+            {/* Divider */}
+            <div className="border-t" />
+
+            {/* Add Employee */}
             <div>
               <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1.5">Add Employee</p>
               <EmpCombo employees={availableEmps} onAdd={addEmployee} />
             </div>
 
+            {/* On Roster list */}
             {rows.length > 0 && (
               <div>
                 <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1.5">On Roster ({rows.length})</p>
@@ -532,55 +564,6 @@ export function RosterBuilder({ open, onClose, employees, onSaved }: Props) {
                 </div>
               </div>
             )}
-
-            <div className="border-t pt-3 space-y-3">
-              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Apply to All</p>
-
-              <div className="space-y-1">
-                <Label className="text-xs">Armed Status</Label>
-                <div className="flex gap-1.5">
-                  {(["Unarmed", "Armed"] as ArmedStatus[]).map((a) => (
-                    <button key={a} type="button" onClick={() => setArmed(a)}
-                      className={`flex-1 py-1 rounded border text-xs font-medium transition-colors flex items-center justify-center gap-1 ${
-                        armed === a
-                          ? a === "Armed" ? "bg-red-600 text-white border-red-600" : "bg-blue-600 text-white border-blue-600"
-                          : "bg-background border-input hover:bg-muted"
-                      }`}
-                      data-testid={`button-roster-armed-${a.toLowerCase()}`}
-                    >
-                      {a === "Armed" ? <Shield className="w-3 h-3" /> : <ShieldOff className="w-3 h-3" />}
-                      {a}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="space-y-1">
-                <Label className="text-xs flex items-center gap-1"><MapPin className="w-3 h-3" />Location</Label>
-                <select
-                  className="flex h-8 w-full rounded-md border border-input bg-background px-2 py-1 text-xs"
-                  value={location}
-                  onChange={(e) => setLocation(e.target.value)}
-                  data-testid="select-roster-location"
-                >
-                  <option value="">— Select location —</option>
-                  {FMS_LOCATIONS.map((l) => <option key={l} value={l}>{l}</option>)}
-                </select>
-              </div>
-
-              <div className="space-y-1">
-                <Label className="text-xs">Client / Agency</Label>
-                <select
-                  className="flex h-8 w-full rounded-md border border-input bg-background px-2 py-1 text-xs"
-                  value={client}
-                  onChange={(e) => setClient(e.target.value as ClientAgency | "")}
-                  data-testid="select-roster-client"
-                >
-                  <option value="">— Select client —</option>
-                  {CLIENT_AGENCIES.map((c) => <option key={c} value={c}>{c}</option>)}
-                </select>
-              </div>
-            </div>
           </div>
         </aside>
 
