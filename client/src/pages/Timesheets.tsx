@@ -118,25 +118,32 @@ export default function Timesheets() {
   const displayTs = hasTeamView ? (tsTab === "mine" ? myTs : teamTs) : visible;
 
   const empName = (eid: string) => users?.find((u) => u.userId === eid)?.name ?? eid;
-  const empAv = (eid: string) => users?.find((u) => u.userId === eid)?.av ?? eid.slice(0, 2);
+  const empAv   = (eid: string) => users?.find((u) => u.userId === eid)?.av ?? eid.slice(0, 2);
+  const empData = (eid: string) => users?.find((u) => u.userId === eid);
+
+  // Shift in progress — works for ANY timesheet, any viewer
+  const isShiftInProgress = (ts: Timesheet) =>
+    ts.status === "pending_employee" && !!ts.ci && !ts.co;
 
   // Employee can only review/sign AFTER clock-out
   const canEmployeeReview = (ts: Timesheet) =>
     ts.eid === user.userId && ts.status === "pending_employee" && !!ts.co;
 
-  // Timesheet is in-progress (clocked in, not out yet)
+  // Legacy alias for own in-progress check
   const isInProgress = (ts: Timesheet) =>
-    ts.eid === user.userId && ts.status === "pending_employee" && !!ts.ci && !ts.co;
+    ts.eid === user.userId && isShiftInProgress(ts);
 
   const canManagerSign = (ts: Timesheet) => {
+    if (isShiftInProgress(ts)) return false; // block while shift running
     const emp = users?.find((u) => u.userId === ts.eid);
     if (ts.status === "pending_first_approval" && emp?.fa === user.pos) return true;
     if (ts.status === "pending_second_approval" && emp?.sa === user.pos) return true;
     return false;
   };
-  // Full access users can sign at any approval stage
+  // Full access users can sign at any approval stage (but not while shift is running)
   const canAdminSign = (ts: Timesheet) =>
-    isFullAccess && (ts.status === "pending_first_approval" || ts.status === "pending_second_approval");
+    isFullAccess && !isShiftInProgress(ts) &&
+    (ts.status === "pending_first_approval" || ts.status === "pending_second_approval");
 
   // Full access users or JGM can override-edit any locked timesheet
   const canAdminEdit = (ts: Timesheet) =>
@@ -321,9 +328,11 @@ export default function Timesheets() {
       ) : (
         <div className="space-y-3">
           {displayTs.map((ts) => {
-            const expanded = expandedId === ts.id;
-            const inProgress = isInProgress(ts);
-            const isLocked = ts.status !== "pending_employee";
+            const expanded    = expandedId === ts.id;
+            const inProgress  = isInProgress(ts);
+            const shiftActive = isShiftInProgress(ts);
+            const isLocked    = ts.status !== "pending_employee";
+            const emp         = empData(ts.eid);
 
             return (
               <Card key={ts.id} className="overflow-hidden" data-testid={`ts-card-${ts.id}`}>
@@ -341,7 +350,7 @@ export default function Timesheets() {
                         <span className="font-semibold text-sm">{empName(ts.eid)}</span>
                       )}
                       <span className="text-sm text-muted-foreground">{ts.date}</span>
-                      {inProgress ? (
+                      {shiftActive ? (
                         <span className="text-xs px-2 py-0.5 rounded border bg-blue-50 text-blue-600 border-blue-200 font-medium animate-pulse">
                           ● Shift in progress
                         </span>
@@ -375,9 +384,14 @@ export default function Timesheets() {
                       </>
                     )}
 
-                    {/* In-progress notice for employee */}
-                    {inProgress && user.role === "employee" && (
+                    {/* In-progress notices */}
+                    {inProgress && (
                       <span className="text-xs text-muted-foreground italic">Sign-off available after clock-out</span>
+                    )}
+                    {shiftActive && !inProgress && (hasTeamView) && (
+                      <span className="text-xs text-amber-600 font-medium flex items-center gap-1">
+                        <Clock className="w-3 h-3" /> Awaiting clock-out — signatures locked
+                      </span>
                     )}
 
                     {/* Approver actions */}
@@ -412,21 +426,85 @@ export default function Timesheets() {
                   </div>
                 </div>
 
-                {/* Expanded: signatures & audit */}
+                {/* Expanded: signatures & staged approval chain */}
                 {expanded && (
-                  <div className="border-t border-border bg-muted/20 px-5 py-4 space-y-2">
-                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Approval Chain & Signatures</p>
-                    <SigBlock sig={ts.eSig} label="Employee Sign-off" />
-                    <SigBlock sig={ts.f1Sig} label="1st Approver" />
-                    <SigBlock sig={ts.f2Sig} label="2nd Approver" />
+                  <div className="border-t border-border bg-muted/20 px-5 py-4 space-y-3">
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Approval Chain & Signatures</p>
+
+                    {/* ── STAGE PROMPT BANNER ─────────────────────────────── */}
+                    {shiftActive && (
+                      <div className="rounded-md border border-blue-200 bg-blue-50 px-4 py-3 flex items-start gap-3">
+                        <Clock className="w-4 h-4 text-blue-500 shrink-0 mt-0.5" />
+                        <div>
+                          <p className="text-sm font-semibold text-blue-800">Shift still in progress</p>
+                          <p className="text-xs text-blue-700 mt-0.5">
+                            {ts.eid === user.userId
+                              ? "Your shift hasn't ended yet. Once you clock out, you'll be prompted to review and sign. Signatures from your approvers will follow."
+                              : `${empName(ts.eid)} is still clocked in. The signing chain will begin automatically once they clock out and self-sign.`
+                            }
+                          </p>
+                          <div className="mt-2 flex items-center gap-2 text-xs text-blue-600">
+                            <span className="font-semibold">Next step:</span>
+                            <span>{ts.eid === user.userId ? "Clock out to unlock signing" : "Wait for employee to clock out"}</span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {ts.status === "pending_first_approval" && (
+                      <div className="rounded-md border border-yellow-200 bg-yellow-50 px-4 py-3 flex items-start gap-3">
+                        <PenLine className="w-4 h-4 text-yellow-600 shrink-0 mt-0.5" />
+                        <div>
+                          <p className="text-sm font-semibold text-yellow-800">Awaiting 1st Approval</p>
+                          <p className="text-xs text-yellow-700 mt-0.5">
+                            {empName(ts.eid)} has reviewed and signed their timesheet.{" "}
+                            <strong>{emp?.fa ?? "1st Approver"}</strong> is now required to sign.
+                          </p>
+                          <div className="mt-1 text-xs text-yellow-700">
+                            <span className="font-semibold">Next step:</span> 2nd Approver ({emp?.sa ?? "—"}) will be prompted after this signature.
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {ts.status === "pending_second_approval" && (
+                      <div className="rounded-md border border-purple-200 bg-purple-50 px-4 py-3 flex items-start gap-3">
+                        <PenLine className="w-4 h-4 text-purple-600 shrink-0 mt-0.5" />
+                        <div>
+                          <p className="text-sm font-semibold text-purple-800">Awaiting 2nd Approval</p>
+                          <p className="text-xs text-purple-700 mt-0.5">
+                            1st approval is complete.{" "}
+                            <strong>{emp?.sa ?? "2nd Approver"}</strong> must now provide the final sign-off to fully approve this timesheet.
+                          </p>
+                          <div className="mt-1 text-xs text-purple-700">
+                            <span className="font-semibold">Final step:</span> Approval will be complete once this signature is applied.
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {ts.status === "approved" && (
+                      <div className="rounded-md border border-green-200 bg-green-50 px-4 py-2 flex items-center gap-3">
+                        <CheckCircle2 className="w-4 h-4 text-green-600 shrink-0" />
+                        <p className="text-xs text-green-800 font-medium">Fully approved — all three signatures complete.</p>
+                      </div>
+                    )}
+
+                    {/* ── SIGNATURE BLOCKS ──────────────────────────────── */}
+                    <div className="space-y-1 pl-1">
+                      <SigBlock sig={ts.eSig} label="① Employee Sign-off" />
+                      <SigBlock sig={ts.f1Sig} label={`② 1st Approver (${emp?.fa ?? "—"})`} />
+                      <SigBlock sig={ts.f2Sig} label={`③ 2nd Approver (${emp?.sa ?? "—"})`} />
+                    </div>
+
                     {ts.disputed && ts.disputeNote && (
-                      <div className="mt-2 p-3 rounded border border-orange-200 bg-orange-50 text-xs text-orange-800">
+                      <div className="p-3 rounded border border-orange-200 bg-orange-50 text-xs text-orange-800">
                         <p className="font-semibold mb-1">Dispute Details</p>
                         <p>{ts.disputeNote}</p>
                       </div>
                     )}
                     {ts.notes && (
-                      <div className="mt-2 p-3 rounded border border-border bg-background text-xs">
+                      <div className="p-3 rounded border border-border bg-background text-xs">
                         <p className="text-muted-foreground font-medium mb-0.5">Notes</p>
                         <p className="whitespace-pre-wrap">{ts.notes}</p>
                       </div>
