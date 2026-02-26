@@ -3,7 +3,10 @@ import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
-import { format, eachDayOfInterval, parseISO, startOfWeek, addWeeks } from "date-fns";
+import {
+  format, eachDayOfInterval, parseISO,
+  startOfMonth, endOfMonth, addMonths, subMonths, getDate, getDaysInMonth,
+} from "date-fns";
 import {
   X, Plus, Search, ChevronDown, Save, Loader2, Shield, ShieldOff,
   Trash2, RefreshCw, MapPin,
@@ -221,6 +224,31 @@ function Cell({ code, customTime, onUpdate }: {
   );
 }
 
+// ── FMS bi-monthly period helpers ─────────────────────────────────────────────
+// Period 1: 1st – 15th | Period 2: 16th – last day of month
+function fmsPeriod(anchor: Date, p: 1 | 2): { from: string; to: string; label: string } {
+  const som = startOfMonth(anchor);
+  if (p === 1) {
+    return {
+      from:  format(som, "yyyy-MM-dd"),
+      to:    format(new Date(anchor.getFullYear(), anchor.getMonth(), 15), "yyyy-MM-dd"),
+      label: `Period 1 · ${format(som, "MMM d")}–15`,
+    };
+  }
+  return {
+    from:  format(new Date(anchor.getFullYear(), anchor.getMonth(), 16), "yyyy-MM-dd"),
+    to:    format(endOfMonth(anchor), "yyyy-MM-dd"),
+    label: `Period 2 · ${format(som, "MMM")} 16–${getDaysInMonth(anchor)}`,
+  };
+}
+
+function currentFmsPeriod(): { from: string; to: string; p: 1 | 2; anchor: Date } {
+  const now = new Date();
+  const p: 1 | 2 = getDate(now) <= 15 ? 1 : 2;
+  const { from, to } = fmsPeriod(now, p);
+  return { from, to, p, anchor: now };
+}
+
 // ── Main RosterBuilder ────────────────────────────────────────────────────────
 export function RosterBuilder({ open, onClose, employees, onSaved }: Props) {
   const { user }  = useAuth();
@@ -228,23 +256,42 @@ export function RosterBuilder({ open, onClose, employees, onSaved }: Props) {
   const qc        = useQueryClient();
   const todayStr  = format(new Date(), "yyyy-MM-dd");
 
-  // Period
-  const defaultStart = format(startOfWeek(new Date(), { weekStartsOn: 1 }), "yyyy-MM-dd");
-  const defaultEnd   = format(addWeeks(startOfWeek(new Date(), { weekStartsOn: 1 }), 2), "yyyy-MM-dd");
+  // FMS period state — default to whichever period contains today
+  const initPeriod = currentFmsPeriod();
+  const [anchor,   setAnchor]   = useState<Date>(initPeriod.anchor);
+  const [activePeriod, setActivePeriod] = useState<1 | 2>(initPeriod.p);
+  const [dateFrom, setDateFrom] = useState(initPeriod.from);
+  const [dateTo,   setDateTo]   = useState(initPeriod.to);
 
-  const [dateFrom,  setDateFrom]  = useState(defaultStart);
-  const [dateTo,    setDateTo]    = useState(defaultEnd);
   const [location,  setLocation]  = useState("");
   const [client,    setClient]    = useState<ClientAgency | "">("");
   const [armed,     setArmed]     = useState<ArmedStatus>("Unarmed");
   const [rows,      setRows]      = useState<EmpRow[]>([]);
   const [saving,    setSaving]    = useState(false);
 
+  // Apply a period button
+  function applyPeriod(p: 1 | 2, a: Date = anchor) {
+    const pd = fmsPeriod(a, p);
+    setActivePeriod(p);
+    setDateFrom(pd.from);
+    setDateTo(pd.to);
+  }
+
+  // Navigate months
+  function goMonth(dir: 1 | -1) {
+    const next = dir === 1 ? addMonths(anchor, 1) : subMonths(anchor, 1);
+    setAnchor(next);
+    applyPeriod(activePeriod, next);
+  }
+
   // Reset when opened
   useEffect(() => {
     if (open) {
-      setDateFrom(defaultStart);
-      setDateTo(defaultEnd);
+      const init = currentFmsPeriod();
+      setAnchor(init.anchor);
+      setActivePeriod(init.p);
+      setDateFrom(init.from);
+      setDateTo(init.to);
       setLocation("");
       setClient("");
       setArmed("Unarmed");
@@ -359,16 +406,76 @@ export function RosterBuilder({ open, onClose, employees, onSaved }: Props) {
     <div className="fixed inset-0 z-50 bg-background flex flex-col" data-testid="roster-builder">
       {/* ── Top bar ────────────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between px-4 py-3 border-b bg-background shrink-0 gap-4">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
           <h2 className="text-lg font-bold">Roster Builder</h2>
-          <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
-            <span>Period:</span>
-            <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)}
-              className="border rounded px-2 py-1 text-sm h-8" />
-            <span>→</span>
-            <input type="date" value={dateTo} min={dateFrom} onChange={(e) => setDateTo(e.target.value)}
-              className="border rounded px-2 py-1 text-sm h-8" />
-            <span className="text-xs text-muted-foreground">({days.length} days)</span>
+
+          {/* FMS bi-monthly period selector */}
+          <div className="flex items-center gap-1 border rounded-lg p-1 bg-muted/40">
+            {/* Prev month */}
+            <button
+              type="button"
+              onClick={() => goMonth(-1)}
+              className="px-2 py-1 rounded text-xs hover:bg-background font-medium"
+              data-testid="button-roster-prev-month"
+            >‹</button>
+
+            {/* Month label */}
+            <span className="px-2 text-xs font-semibold text-muted-foreground min-w-[60px] text-center">
+              {format(anchor, "MMM yyyy")}
+            </span>
+
+            {/* Period 1 button — 1st to 15th */}
+            <button
+              type="button"
+              onClick={() => applyPeriod(1)}
+              className={`px-3 py-1 rounded text-xs font-semibold transition-colors ${
+                activePeriod === 1
+                  ? "bg-primary text-primary-foreground shadow"
+                  : "hover:bg-background text-muted-foreground"
+              }`}
+              data-testid="button-roster-period1"
+            >
+              P1 · 1–15
+            </button>
+
+            {/* Period 2 button — 16th to end */}
+            <button
+              type="button"
+              onClick={() => applyPeriod(2)}
+              className={`px-3 py-1 rounded text-xs font-semibold transition-colors ${
+                activePeriod === 2
+                  ? "bg-primary text-primary-foreground shadow"
+                  : "hover:bg-background text-muted-foreground"
+              }`}
+              data-testid="button-roster-period2"
+            >
+              P2 · 16–{getDaysInMonth(anchor)}
+            </button>
+
+            {/* Next month */}
+            <button
+              type="button"
+              onClick={() => goMonth(1)}
+              className="px-2 py-1 rounded text-xs hover:bg-background font-medium"
+              data-testid="button-roster-next-month"
+            >›</button>
+          </div>
+
+          {/* Period label + day count */}
+          <span className="text-xs text-muted-foreground">
+            {format(parseISO(dateFrom), "d MMM")} – {format(parseISO(dateTo), "d MMM yyyy")}
+            <span className="ml-1 opacity-60">({days.length} days)</span>
+          </span>
+
+          {/* Custom override */}
+          <div className="flex items-center gap-1">
+            <input type="date" value={dateFrom}
+              onChange={(e) => { setDateFrom(e.target.value); setActivePeriod(0 as any); }}
+              className="border rounded px-2 py-1 text-xs h-7" />
+            <span className="text-xs text-muted-foreground">→</span>
+            <input type="date" value={dateTo} min={dateFrom}
+              onChange={(e) => { setDateTo(e.target.value); setActivePeriod(0 as any); }}
+              className="border rounded px-2 py-1 text-xs h-7" />
           </div>
         </div>
 
