@@ -138,6 +138,7 @@ export default function Timesheets() {
   const [signAllOpen, setSignAllOpen] = useState(false);
   const [signAllName, setSignAllName] = useState("");
   const [signAllPending, setSignAllPending] = useState(false);
+  const [signAllEmpId,  setSignAllEmpId]  = useState<string | null>(null);
 
   // Employee timesheet drawer (General tab)
   const [viewEmpId, setViewEmpId] = useState<string | null>(null);
@@ -458,7 +459,7 @@ export default function Timesheets() {
 
   const submitSignAll = async () => {
     if (!signAllName.trim()) return;
-    const signable = teamTs.filter((ts) => canAdminSign(ts));
+    const signable = teamTs.filter((ts) => canAdminSign(ts) && (!signAllEmpId || ts.eid === signAllEmpId));
     if (signable.length === 0) return;
     setSignAllPending(true);
     const sigObj = { name: signAllName.trim(), time: format(new Date(), "yyyy-MM-dd HH:mm"), ip: "web" };
@@ -479,6 +480,7 @@ export default function Timesheets() {
     setSignAllPending(false);
     setSignAllOpen(false);
     setSignAllName("");
+    setSignAllEmpId(null);
     if (failed === 0) {
       toast({ title: `${signed} timesheet${signed !== 1 ? "s" : ""} approved` });
     } else {
@@ -1216,7 +1218,7 @@ export default function Timesheets() {
 
               <div className="space-y-3 mt-2">
                 {/* Summary bar */}
-                <div className="flex flex-wrap gap-3 text-xs text-muted-foreground border-b border-border pb-3">
+                <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground border-b border-border pb-3">
                   <span><strong className="text-foreground">{empTs.length}</strong> record{empTs.length !== 1 ? "s" : ""}</span>
                   <span>Reg: <strong className="text-foreground">{Math.round(empTs.reduce((s, t) => s + (t.reg ?? 0), 0) * 10) / 10}h</strong></span>
                   {empTs.reduce((s, t) => s + (t.ot ?? 0), 0) > 0 && (
@@ -1226,6 +1228,25 @@ export default function Timesheets() {
                   <span className="text-yellow-700">{empTs.filter(t => t.status === "pending_first_approval" || t.status === "pending_second_approval").length} pending</span>
                   {empTs.filter(t => t.disputed).length > 0 && (
                     <span className="text-orange-600">{empTs.filter(t => t.disputed).length} disputed</span>
+                  )}
+                  {/* Sign All button — only for signers when there are signable records */}
+                  {isFullAccess && empTs.filter(t => canAdminSign(t)).length > 0 && (
+                    <Button
+                      size="sm"
+                      className="ml-auto"
+                      onClick={() => {
+                        setSignAllEmpId(viewEmpId);
+                        setSignAllName(user.name);
+                        setSignAllOpen(true);
+                      }}
+                      data-testid="button-dialog-sign-all"
+                    >
+                      <PenSquare className="w-3.5 h-3.5 mr-1.5" />
+                      Sign All
+                      <span className="ml-1.5 bg-white/20 text-white text-xs rounded-full px-1.5 py-0">
+                        {empTs.filter(t => canAdminSign(t)).length}
+                      </span>
+                    </Button>
                   )}
                 </div>
 
@@ -1323,19 +1344,24 @@ export default function Timesheets() {
       })()}
 
       {/* ── Sign All Dialog ───────────────────────────────────────────────── */}
-      <Dialog open={signAllOpen} onOpenChange={(o) => { if (!o && !signAllPending) { setSignAllOpen(false); setSignAllName(""); } }}>
+      {(() => {
+        const signAllTarget = teamTs.filter(ts => canAdminSign(ts) && (!signAllEmpId || ts.eid === signAllEmpId));
+        const signAllEmpName = signAllEmpId ? (empData(signAllEmpId)?.name ?? signAllEmpId) : null;
+        return (
+      <Dialog open={signAllOpen} onOpenChange={(o) => { if (!o && !signAllPending) { setSignAllOpen(false); setSignAllName(""); setSignAllEmpId(null); } }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <PenSquare className="w-5 h-5 text-primary" />
-              Sign All Pending Timesheets
+              {signAllEmpName ? `Sign All — ${signAllEmpName}` : "Sign All Pending Timesheets"}
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4 mt-2">
             <div className="rounded-md border border-border bg-muted/30 p-4 text-sm space-y-1">
               <p>
                 <span className="text-muted-foreground">Timesheets to approve:</span>{" "}
-                <strong>{teamTs.filter((ts) => canAdminSign(ts)).length}</strong>
+                <strong>{signAllTarget.length}</strong>
+                {signAllEmpName && <span className="text-muted-foreground"> for {signAllEmpName}</span>}
               </p>
               <p className="text-xs text-muted-foreground mt-1">
                 Each timesheet awaiting your signature will be advanced one stage. Timesheets at 1st sign-off will move to 2nd, and those at 2nd will be fully approved.
@@ -1378,6 +1404,8 @@ export default function Timesheets() {
           </div>
         </DialogContent>
       </Dialog>
+        );
+      })()}
 
       {/* ── Bulk Upload Dialog ─────────────────────────────────────────────── */}
       <Dialog open={bulkOpen} onOpenChange={(o) => { if (!o) { setBulkOpen(false); } }}>
