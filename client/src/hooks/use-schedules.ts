@@ -61,3 +61,28 @@ export function useDeleteSchedule(eid: string) {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["/api/schedules", eid] }),
   });
 }
+
+// Deletes any schedule by id and invalidates all schedule queries (for admin views)
+export function useDeleteAnySchedule() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => apiRequest("DELETE", `/api/schedules/${id}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["/api/schedules"] });
+    },
+  });
+}
+
+// Bulk-clears schedules for a list of eids and optional date range
+export function useClearSchedules() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ eids, startDate, endDate }: { eids: string[]; startDate?: string; endDate?: string }) => {
+      const params = new URLSearchParams({ eids: eids.join(",") });
+      if (startDate) params.set("startDate", startDate);
+      if (endDate)   params.set("endDate",   endDate);
+      return apiRequest("DELETE", `/api/schedules?${params}`);
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["/api/schedules"] }),
+  });
+}

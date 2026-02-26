@@ -64,6 +64,7 @@ export interface IStorage {
   createSchedule(s: InsertSchedule): Promise<Schedule>;
   updateSchedule(id: number, updates: Partial<InsertSchedule>): Promise<Schedule>;
   deleteSchedule(id: number): Promise<void>;
+  clearSchedules(eids: string[], startDate?: string, endDate?: string): Promise<number>;
 
   getCallSigns(): Promise<CallSign[]>;
   importCallSigns(records: InsertCallSign[]): Promise<number>;
@@ -236,6 +237,17 @@ export class DatabaseStorage implements IStorage {
   }
   async deleteSchedule(id: number) {
     await db.delete(schedules).where(eq(schedules.id, id));
+  }
+  async clearSchedules(eids: string[], startDate?: string, endDate?: string) {
+    if (!eids.length) return 0;
+    let q = db.delete(schedules).where(inArray(schedules.eid, eids));
+    if (startDate && endDate) {
+      q = db.delete(schedules).where(
+        and(inArray(schedules.eid, eids), gte(schedules.date, startDate), lte(schedules.date, endDate))
+      );
+    }
+    const result = await q;
+    return (result as any).rowCount ?? 0;
   }
 
   async getCallSigns() {

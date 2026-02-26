@@ -262,6 +262,16 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     try { await storage.deleteSchedule(Number(req.params.id)); res.status(204).send(); }
     catch { res.status(500).json({ message: "Server error" }); }
   });
+  // Bulk clear: DELETE /api/schedules?eids=...&startDate=...&endDate=...
+  app.delete("/api/schedules", async (req, res) => {
+    try {
+      const eids = req.query.eids ? String(req.query.eids).split(",").filter(Boolean) : [];
+      const startDate = req.query.startDate ? String(req.query.startDate) : undefined;
+      const endDate   = req.query.endDate   ? String(req.query.endDate)   : undefined;
+      const count = await storage.clearSchedules(eids, startDate, endDate);
+      res.json({ deleted: count });
+    } catch { res.status(500).json({ message: "Server error" }); }
+  });
 
   // ── Call Sign Registry ──────────────────────────────────────────────────────
   app.get("/api/call-signs", async (_req, res) => {

@@ -3,7 +3,7 @@ import { RosterBuilder } from "@/components/RosterBuilder";
 import { Layout } from "@/components/Layout";
 import { useAuth } from "@/hooks/use-auth";
 import { useUsers } from "@/hooks/use-users";
-import { useTeamSchedules, useSchedules, useDeleteSchedule } from "@/hooks/use-schedules";
+import { useTeamSchedules, useSchedules, useDeleteSchedule, useDeleteAnySchedule, useClearSchedules } from "@/hooks/use-schedules";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
@@ -676,6 +676,13 @@ export default function SchedulePage() {
   const [editShift,     setEditShift]     = useState<Schedule | null>(null);
   const [deleteTarget,  setDeleteTarget]  = useState<Schedule | null>(null);
 
+  // Admin desktop view: agency roster (default) or employee grid
+  const [adminDesktopView, setAdminDesktopView] = useState<"agency" | "employee">("agency");
+  const [clearConfirm, setClearConfirm] = useState(false);
+
+  const deleteAny   = useDeleteAnySchedule();
+  const clearSched  = useClearSchedules();
+
   const activeEmployees = useMemo(
     () => allUsers.filter((u) => u.status === "active"),
     [allUsers]
@@ -716,6 +723,24 @@ export default function SchedulePage() {
     }
     return m;
   }, [visibleSchedules]);
+
+  // Agency roster map: `${client.toLowerCase()}::${date}` → Schedule[]
+  const agencyMap = useMemo(() => {
+    const m: Record<string, Schedule[]> = {};
+    for (const s of schedules) {
+      const key = `${(s.client ?? "").toLowerCase()}::${s.date}`;
+      if (!m[key]) m[key] = [];
+      m[key].push(s);
+    }
+    return m;
+  }, [schedules]);
+
+  // eid → display name lookup
+  const userMap = useMemo(() => {
+    const m: Record<string, string> = {};
+    for (const u of allUsers) m[u.userId] = u.name;
+    return m;
+  }, [allUsers]);
 
   // Mobile grid days — 7 days Mon-first from anchor
   const mobileGridDays = useMemo(
@@ -879,11 +904,38 @@ export default function SchedulePage() {
         {/* ── Controls row (admins/supervisors only) ───────────────────────── */}
         {isPrivileged && (
           <div className="flex flex-col gap-3">
-            {/* View mode */}
+            {/* Top row: view-mode tabs + Agency/Employee toggle + Clear */}
             <div className="flex items-center gap-2 flex-wrap">
               <button className={modeBtnCls("week")}       onClick={() => switchMode("week")}       data-testid="button-view-week">Week</button>
               <button className={modeBtnCls("fortnight")}  onClick={() => switchMode("fortnight")}  data-testid="button-view-fortnight">Fortnight</button>
               <button className={modeBtnCls("month")}      onClick={() => switchMode("month")}      data-testid="button-view-month">Month</button>
+
+              <div className="flex items-center rounded-md border border-border overflow-hidden ml-2">
+                <button
+                  onClick={() => setAdminDesktopView("agency")}
+                  className={`px-3 py-1.5 text-xs font-medium transition-colors ${adminDesktopView === "agency" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted"}`}
+                  data-testid="button-view-agency"
+                >
+                  Agency View
+                </button>
+                <button
+                  onClick={() => setAdminDesktopView("employee")}
+                  className={`px-3 py-1.5 text-xs font-medium border-l border-border transition-colors ${adminDesktopView === "employee" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted"}`}
+                  data-testid="button-view-employee"
+                >
+                  Employee View
+                </button>
+              </div>
+
+              <Button
+                variant="outline"
+                size="sm"
+                className="ml-auto text-destructive hover:bg-destructive/10 border-destructive/40"
+                onClick={() => setClearConfirm(true)}
+                data-testid="button-clear-all"
+              >
+                <Trash2 className="w-3.5 h-3.5 mr-1.5" /> Clear Period
+              </Button>
             </div>
 
             {/* Navigation + search */}
@@ -901,21 +953,146 @@ export default function SchedulePage() {
                 </Button>
               </div>
 
-              <div className="relative sm:ml-auto">
-                <Search className="absolute left-2.5 top-2.5 w-4 h-4 text-muted-foreground pointer-events-none" />
-                <Input
-                  value={gridSearch}
-                  onChange={(e) => setGridSearch(e.target.value)}
-                  placeholder="Filter grid by name…"
-                  className="pl-8 w-52"
-                  data-testid="input-grid-search"
-                />
-              </div>
+              {adminDesktopView === "employee" && (
+                <div className="relative sm:ml-auto">
+                  <Search className="absolute left-2.5 top-2.5 w-4 h-4 text-muted-foreground pointer-events-none" />
+                  <Input
+                    value={gridSearch}
+                    onChange={(e) => setGridSearch(e.target.value)}
+                    placeholder="Filter grid by name…"
+                    className="pl-8 w-52"
+                    data-testid="input-grid-search"
+                  />
+                </div>
+              )}
             </div>
           </div>
         )}
 
-        {/* ── Desktop grid ─────────────────────────────────────────────────── */}
+        {/* ── Clear confirmation dialog ─────────────────────────────────────── */}
+        <Dialog open={clearConfirm} onOpenChange={setClearConfirm}>
+          <DialogContent className="max-w-sm">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-destructive">
+                <Trash2 className="w-4 h-4" /> Clear Schedule
+              </DialogTitle>
+              <DialogDescription>
+                This will permanently delete all schedules in the current period ({label}). This cannot be undone.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="outline" onClick={() => setClearConfirm(false)}>Cancel</Button>
+              <Button
+                variant="destructive"
+                disabled={clearSched.isPending}
+                onClick={async () => {
+                  await clearSched.mutateAsync({
+                    eids: teamEids,
+                    startDate: rangeStart,
+                    endDate: rangeEnd,
+                  });
+                  setClearConfirm(false);
+                  toast({ title: "Schedule cleared", description: `All shifts in ${label} have been removed.` });
+                }}
+                data-testid="button-confirm-clear"
+              >
+                {clearSched.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : null}
+                Yes, Clear All
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* ── Desktop: Agency Roster View ──────────────────────────────────── */}
+        {adminDesktopView === "agency" && (
+        <div className="hidden lg:block overflow-x-auto">
+          <table className="w-full border-collapse text-sm">
+            <thead>
+              <tr className="border-b border-border">
+                <th className="text-left py-2 pr-3 pl-2 font-semibold text-foreground w-36 shrink-0 sticky left-0 bg-background z-10 border-r border-border/40">
+                  <div className="flex items-center gap-1.5 text-xs uppercase tracking-wide text-muted-foreground">
+                    <MapPin className="w-3.5 h-3.5" /> Agency
+                  </div>
+                </th>
+                {days.map((d, i) => {
+                  const isToday = format(d, "yyyy-MM-dd") === todayStr;
+                  return (
+                    <th key={i} className={`text-center py-1.5 px-1 font-medium ${colMin} ${isToday ? "text-primary" : "text-muted-foreground"}`}>
+                      <div className={`flex flex-col items-center rounded-md px-0.5 py-0.5 ${isToday ? "bg-primary/10" : ""}`}>
+                        <span className="text-[9px] uppercase tracking-wide">{format(d, "EEE")}</span>
+                        <span className={`text-xs font-bold ${isToday ? "text-primary" : ""}`}>{format(d, "d")}</span>
+                      </div>
+                    </th>
+                  );
+                })}
+              </tr>
+            </thead>
+            <tbody>
+              {CLIENT_AGENCIES.map((agency) => (
+                <tr key={agency} className="border-t border-border/40 hover:bg-muted/5 group">
+                  <td className="py-2 pr-2 pl-2 align-top sticky left-0 bg-background group-hover:bg-muted/5 z-10 border-r border-border/40 min-w-[130px]">
+                    <div className="font-semibold text-sm">{agency}</div>
+                  </td>
+                  {days.map((d, i) => {
+                    const dateStr   = format(d, "yyyy-MM-dd");
+                    const key       = `${agency.toLowerCase()}::${dateStr}`;
+                    const cellShifts = agencyMap[key] ?? [];
+                    const isToday   = dateStr === todayStr;
+                    return (
+                      <td key={i} className={`py-1 px-1 align-top ${colMin} ${isToday ? "bg-primary/5" : ""}`}>
+                        <div className="space-y-1">
+                          {cellShifts.map((s) => (
+                            <div
+                              key={s.id}
+                              className={`rounded px-1.5 py-1 text-[11px] leading-tight border flex items-start justify-between gap-0.5 ${
+                                s.armed === "Armed"
+                                  ? "bg-red-50 border-red-200 text-red-900 dark:bg-red-950 dark:border-red-800 dark:text-red-100"
+                                  : "bg-blue-50 border-blue-200 text-blue-900 dark:bg-blue-950 dark:border-blue-800 dark:text-blue-100"
+                              }`}
+                              data-testid={`agency-cell-${s.id}`}
+                            >
+                              <div className="min-w-0">
+                                <div className="font-semibold truncate max-w-[90px]">{userMap[s.eid] ?? s.eid}</div>
+                                <div className="opacity-80 whitespace-nowrap">{fmt12(s.shiftStart)} – {fmt12(s.shiftEnd)}</div>
+                                <div className="flex items-center gap-0.5 mt-0.5 opacity-70">
+                                  {s.armed === "Armed" ? <Shield className="w-2.5 h-2.5 shrink-0" /> : <ShieldOff className="w-2.5 h-2.5 shrink-0" />}
+                                  <span>{s.armed ?? "Unarmed"}</span>
+                                </div>
+                              </div>
+                              {isPrivileged && (
+                                <button
+                                  onClick={() => deleteAny.mutate(s.id)}
+                                  className="shrink-0 w-4 h-4 rounded hover:bg-black/10 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity mt-0.5"
+                                  title="Delete shift"
+                                  data-testid={`button-delete-agency-shift-${s.id}`}
+                                >
+                                  <Trash2 className="w-2.5 h-2.5" />
+                                </button>
+                              )}
+                            </div>
+                          ))}
+                          {isPrivileged && (
+                            <button
+                              onClick={() => openBuilder(d)}
+                              className="w-full rounded border border-dashed border-border/60 text-muted-foreground/60 hover:border-primary hover:text-primary py-0.5 flex items-center justify-center transition-colors opacity-0 group-hover:opacity-100"
+                              data-testid={`button-add-agency-${agency}-${i}`}
+                            >
+                              <Plus className="w-2.5 h-2.5" />
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        )}
+
+        {/* ── Desktop: Employee Grid View ───────────────────────────────────── */}
+        {adminDesktopView === "employee" && (
         <div className="hidden lg:block overflow-x-auto">
           <table className="w-full border-collapse text-sm">
             <thead>
@@ -1012,6 +1189,7 @@ export default function SchedulePage() {
             </tbody>
           </table>
         </div>
+        )}
 
         {/* ── Mobile views (admin: roster grid | employee: personal calendar) ── */}
         <div className="lg:hidden -mx-4">
