@@ -1,6 +1,6 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { Layout } from "@/components/Layout";
-import { useTimesheets, useUpdateTimesheet, useDeleteTimesheet, useBulkCreateTimesheets } from "@/hooks/use-timesheets";
+import { useTimesheets, useUpdateTimesheet, useDeleteTimesheet, useBulkCreateTimesheets, useDedupTimesheets } from "@/hooks/use-timesheets";
 import { useUsers } from "@/hooks/use-users";
 import { useAuth } from "@/hooks/use-auth";
 import { useGeofences } from "@/hooks/use-geofences";
@@ -103,40 +103,8 @@ export default function Timesheets() {
   }
   const [bulkRows, setBulkRows] = useState<BulkRow[]>([]);
   const [bulkFileName, setBulkFileName] = useState("");
-  const [dedupeOpen, setDedupeOpen] = useState(false);
-  const [dedupeRunning, setDedupeRunning] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const getDuplicateGroups = () => {
-    const groups: Record<string, Timesheet[]> = {};
-    for (const ts of teamTs) {
-      const key = `${ts.eid}|${ts.date}|${ts.ci ?? ""}|${ts.co ?? ""}`;
-      if (!groups[key]) groups[key] = [];
-      groups[key].push(ts);
-    }
-    return Object.values(groups).filter(g => g.length > 1);
-  };
-
-  const handleDedupe = async () => {
-    const dupGroups = getDuplicateGroups();
-    if (dupGroups.length === 0) return;
-    setDedupeRunning(true);
-    let removed = 0;
-    for (const group of dupGroups) {
-      // Keep the record with the highest brk value; tie-break on lowest id (earliest)
-      const sorted = [...group].sort((a, b) => {
-        if ((b.brk ?? 0) !== (a.brk ?? 0)) return (b.brk ?? 0) - (a.brk ?? 0);
-        return a.id - b.id;
-      });
-      const toDelete = sorted.slice(1);
-      for (const ts of toDelete) {
-        try { await deleteTimesheet(ts.id); removed++; } catch { /* skip */ }
-      }
-    }
-    setDedupeRunning(false);
-    setDedupeOpen(false);
-    toast({ title: `${removed} duplicate record${removed !== 1 ? "s" : ""} removed` });
-  };
+  const dedupMutation = useDedupTimesheets();
 
   const findDuplicateTs = (row: BulkRow): Timesheet | null => {
     const allUsers = users ?? [];
@@ -392,6 +360,21 @@ export default function Timesheets() {
       toast({ title: "Upload failed", description: err instanceof Error ? err.message : "Please try again.", variant: "destructive" });
     }
   };
+
+  // Auto-clean duplicates on mount for full-access users (server handles batch delete efficiently)
+  useEffect(() => {
+    const role = user?.role;
+    if (role === "admin" || role === "manager") {
+      dedupMutation.mutate(undefined, {
+        onSuccess: ({ removed }) => {
+          if (removed > 0) {
+            toast({ title: `${removed} duplicate record${removed !== 1 ? "s" : ""} automatically removed` });
+          }
+        },
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.role]);
 
   if (!user) return null;
 
@@ -656,7 +639,6 @@ export default function Timesheets() {
           {/* Admin-only toolbar — shown when on General tab */}
           {isFullAccess && tsTab === "general" && (() => {
             const signableCount = teamTs.filter((ts) => canAdminSign(ts)).length;
-            const dupCount = getDuplicateGroups().reduce((s, g) => s + g.length - 1, 0);
             return (
               <div className="ml-auto pb-1 flex items-center gap-2">
                 {signableCount > 0 && (
@@ -669,19 +651,6 @@ export default function Timesheets() {
                     <PenSquare className="w-3.5 h-3.5 mr-1.5" />
                     Sign All
                     <span className="ml-1.5 bg-white/20 text-white text-xs rounded-full px-1.5 py-0">{signableCount}</span>
-                  </Button>
-                )}
-                {dupCount > 0 && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="text-amber-700 border-amber-300 hover:bg-amber-50"
-                    onClick={() => setDedupeOpen(true)}
-                    data-testid="button-remove-duplicates"
-                  >
-                    <AlertTriangle className="w-3.5 h-3.5 mr-1.5" />
-                    Remove Duplicates
-                    <span className="ml-1.5 bg-amber-100 text-amber-700 text-xs rounded-full px-1.5 py-0">{dupCount}</span>
                   </Button>
                 )}
                 <Button
@@ -1521,67 +1490,6 @@ export default function Timesheets() {
           </div>
         </DialogContent>
       </Dialog>
-        );
-      })()}
-
-      {/* ── Remove Duplicates Dialog ──────────────────────────────────────── */}
-      {(() => {
-        const dupGroups = getDuplicateGroups();
-        const totalDups = dupGroups.reduce((s, g) => s + g.length - 1, 0);
-        return (
-          <Dialog open={dedupeOpen} onOpenChange={(o) => { if (!o && !dedupeRunning) setDedupeOpen(false); }}>
-            <DialogContent className="sm:max-w-md">
-              <DialogHeader>
-                <DialogTitle className="flex items-center gap-2">
-                  <AlertTriangle className="w-5 h-5 text-amber-600" />
-                  Remove Duplicate Timesheets
-                </DialogTitle>
-              </DialogHeader>
-              <div className="space-y-4 mt-2">
-                <div className="rounded-md border border-amber-200 bg-amber-50 p-4 text-sm space-y-2">
-                  <p>
-                    <span className="text-muted-foreground">Duplicate records found:</span>{" "}
-                    <strong>{totalDups}</strong> extra record{totalDups !== 1 ? "s" : ""} across{" "}
-                    <strong>{dupGroups.length}</strong> group{dupGroups.length !== 1 ? "s" : ""}
-                  </p>
-                  <p className="text-xs text-amber-800">
-                    For each group of duplicates (same employee, date, clock-in and clock-out), the record with the longest break time is kept. If break times are equal, the earliest record is kept.
-                  </p>
-                </div>
-                <div className="max-h-48 overflow-y-auto rounded border border-border divide-y divide-border text-xs">
-                  {dupGroups.map((group, i) => {
-                    const emp = empData(group[0].eid);
-                    const keep = [...group].sort((a, b) => {
-                      if ((b.brk ?? 0) !== (a.brk ?? 0)) return (b.brk ?? 0) - (a.brk ?? 0);
-                      return a.id - b.id;
-                    })[0];
-                    return (
-                      <div key={i} className="px-3 py-2 flex items-center justify-between">
-                        <span className="font-medium">{emp?.name ?? group[0].eid}</span>
-                        <span className="text-muted-foreground">{group[0].date} · {group[0].ci}–{group[0].co}</span>
-                        <span className="text-green-700">keep: {keep.brk}m brk · {group.length - 1} deleted</span>
-                      </div>
-                    );
-                  })}
-                </div>
-                <div className="flex gap-2 justify-end">
-                  <Button variant="outline" onClick={() => setDedupeOpen(false)} disabled={dedupeRunning}>Cancel</Button>
-                  <Button
-                    variant="destructive"
-                    onClick={handleDedupe}
-                    disabled={dedupeRunning}
-                    data-testid="button-confirm-dedupe"
-                  >
-                    {dedupeRunning ? (
-                      <span className="flex items-center gap-1.5"><Loader2 className="w-4 h-4 animate-spin" /> Removing…</span>
-                    ) : (
-                      <span className="flex items-center gap-1.5"><Trash2 className="w-4 h-4" /> Remove {totalDups} Duplicate{totalDups !== 1 ? "s" : ""}</span>
-                    )}
-                  </Button>
-                </div>
-              </div>
-            </DialogContent>
-          </Dialog>
         );
       })()}
 

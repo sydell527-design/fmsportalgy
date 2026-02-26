@@ -8,7 +8,7 @@ import {
   type EmployeeChild, type InsertEmployeeChild,
   type EmployeeLoan, type InsertEmployeeLoan,
 } from "@shared/schema";
-import { eq, and, gte, lte, desc } from "drizzle-orm";
+import { eq, and, gte, lte, desc, inArray } from "drizzle-orm";
 
 export interface TimesheetFilters {
   startDate?: string;   // "YYYY-MM-DD"
@@ -33,6 +33,7 @@ export interface IStorage {
   bulkCreateTimesheets(records: InsertTimesheet[]): Promise<Timesheet[]>;
   updateTimesheet(id: number, updates: Partial<InsertTimesheet>): Promise<Timesheet>;
   deleteTimesheet(id: number): Promise<void>;
+  dedupTimesheets(): Promise<number>;
 
   getRequests(): Promise<Request[]>;
   getRequest(id: number): Promise<Request | undefined>;
@@ -115,6 +116,30 @@ export class DatabaseStorage implements IStorage {
   }
   async deleteTimesheet(id: number) {
     await db.delete(timesheets).where(eq(timesheets.id, id));
+  }
+
+  async dedupTimesheets(): Promise<number> {
+    const all = await db.select().from(timesheets);
+    const groups: Record<string, typeof all> = {};
+    for (const ts of all) {
+      const key = `${ts.eid}|${ts.date}|${ts.ci ?? ""}|${ts.co ?? ""}`;
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(ts);
+    }
+    const toDelete: number[] = [];
+    for (const group of Object.values(groups)) {
+      if (group.length <= 1) continue;
+      // Keep the record with highest brk; tie-break on lowest id (earliest)
+      const sorted = [...group].sort((a, b) => {
+        if ((b.brk ?? 0) !== (a.brk ?? 0)) return (b.brk ?? 0) - (a.brk ?? 0);
+        return a.id - b.id;
+      });
+      for (const ts of sorted.slice(1)) toDelete.push(ts.id);
+    }
+    if (toDelete.length > 0) {
+      await db.delete(timesheets).where(inArray(timesheets.id, toDelete));
+    }
+    return toDelete.length;
   }
 
   async getRequests() { return db.select().from(requests); }

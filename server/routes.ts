@@ -97,6 +97,14 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       res.status(500).json({ message: "Server error" });
     }
   });
+  app.post("/api/timesheets/dedup", async (_req, res) => {
+    try {
+      const removed = await storage.dedupTimesheets();
+      res.json({ removed });
+    } catch (err) {
+      res.status(500).json({ message: "Server error" });
+    }
+  });
 
   // ── REQUESTS ──────────────────────────────────────────────────────────────
   app.get(api.requests.list.path, async (_req, res) => res.json(await storage.getRequests()));

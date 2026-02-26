@@ -84,6 +84,21 @@ export function useDeleteTimesheet() {
   });
 }
 
+export function useDedupTimesheets() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (): Promise<{ removed: number }> => {
+      const res = await fetch("/api/timesheets/dedup", {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Dedup failed");
+      return res.json();
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: [api.timesheets.list.path] }),
+  });
+}
+
 export function useBulkCreateTimesheets() {
   const queryClient = useQueryClient();
   return useMutation({
