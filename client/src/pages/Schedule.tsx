@@ -800,9 +800,6 @@ export default function SchedulePage() {
   const empTodayInCurrentMonth =
     format(empCalAnchor, "yyyy-MM") === format(new Date(), "yyyy-MM");
 
-  // Abbreviate time for employee calendar chips: "08:00" → "8A", "16:00" → "4P"
-  const empAbbr = (t: string) => fmt12(t).replace(":00 AM","A").replace(":00 PM","P").replace(" AM","A").replace(" PM","P");
-
   // Shift map for mobile: eid::date → Schedule[]
   const mobileShiftMap = useMemo(() => {
     const m: Record<string, Schedule[]> = {};
@@ -1297,13 +1294,14 @@ export default function SchedulePage() {
                       {dayShifts.map((s) => (
                         <div
                           key={s.id}
-                          className={`w-full rounded text-center text-white text-[8px] font-semibold py-0.5 mb-0.5 leading-snug ${
+                          className={`w-full rounded text-center text-white text-[7px] font-semibold py-0.5 mb-0.5 leading-tight ${
                             s.armed === "Armed" ? "bg-red-500" : "bg-blue-500"
                           }`}
                           data-testid={`emp-shift-${s.id}`}
                         >
-                          <div>{empAbbr(s.shiftStart)}</div>
-                          <div className="opacity-80">{empAbbr(s.shiftEnd)}</div>
+                          <div>{fmt12(s.shiftStart)}</div>
+                          <div className="opacity-70">to</div>
+                          <div className="opacity-80">{fmt12(s.shiftEnd)}</div>
                         </div>
                       ))}
                     </div>
