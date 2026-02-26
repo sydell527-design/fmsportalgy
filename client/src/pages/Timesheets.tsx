@@ -138,6 +138,9 @@ export default function Timesheets() {
   const [signAllName, setSignAllName] = useState("");
   const [signAllPending, setSignAllPending] = useState(false);
 
+  // Employee timesheet drawer (General tab)
+  const [viewEmpId, setViewEmpId] = useState<string | null>(null);
+
   const parseExcelFile = useCallback((file: File) => {
     const reader = new FileReader();
     reader.onload = (e) => {
@@ -573,9 +576,94 @@ export default function Timesheets() {
 
       {isLoading ? (
         <div className="text-center py-12 text-muted-foreground text-sm">Loading...</div>
-      ) : displayTs.length === 0 ? (
+      ) : (tsTab === "general" && hasTeamView ? teamTs.length === 0 : displayTs.length === 0) ? (
         <div className="text-center py-16 border-2 border-dashed border-border rounded-md text-muted-foreground text-sm">
           No timesheet records found.
+        </div>
+      ) : tsTab === "general" && hasTeamView ? (
+        /* ── Grouped employee view (General tab) ─────────────────────────── */
+        <div className="space-y-2">
+          {(() => {
+            const byEmp = teamTs.reduce<Record<string, Timesheet[]>>((acc, ts) => {
+              if (!acc[ts.eid]) acc[ts.eid] = [];
+              acc[ts.eid].push(ts);
+              return acc;
+            }, {});
+            return Object.entries(byEmp)
+              .sort(([, a], [, b]) => {
+                const pA = a.filter(t => canAdminSign(t)).length;
+                const pB = b.filter(t => canAdminSign(t)).length;
+                return pB - pA;
+              })
+              .map(([eid, records]) => {
+                const emp = empData(eid);
+                const dates = records.map(r => r.date).sort();
+                const dateFrom = dates[0];
+                const dateTo   = dates[dates.length - 1];
+                const totalReg = records.reduce((s, r) => s + (r.reg ?? 0), 0);
+                const totalOt  = records.reduce((s, r) => s + (r.ot ?? 0), 0);
+                const pendingCount   = records.filter(r => r.status === "pending_first_approval" || r.status === "pending_second_approval").length;
+                const approvedCount  = records.filter(r => r.status === "approved").length;
+                const disputedCount  = records.filter(r => r.disputed).length;
+                const inProgressCount = records.filter(r => isShiftInProgress(r)).length;
+                const signableCount  = records.filter(r => canAdminSign(r)).length;
+
+                return (
+                  <Card
+                    key={eid}
+                    className="overflow-hidden hover:shadow-sm transition-shadow cursor-pointer"
+                    onClick={() => setViewEmpId(eid)}
+                    data-testid={`emp-group-card-${eid}`}
+                  >
+                    <div className="p-4 flex items-center gap-4">
+                      {/* Avatar */}
+                      <div className="w-11 h-11 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-sm shrink-0">
+                        {emp?.av ?? eid.slice(0, 2).toUpperCase()}
+                      </div>
+
+                      {/* Info */}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex flex-wrap items-center gap-2 mb-1">
+                          <span className="font-semibold text-sm">{emp?.name ?? eid}</span>
+                          {emp?.dept && <span className="text-xs text-muted-foreground">{emp.dept}</span>}
+                          {signableCount > 0 && (
+                            <span className="text-xs px-2 py-0.5 rounded border bg-yellow-50 text-yellow-700 border-yellow-200 font-medium">
+                              {signableCount} awaiting signature
+                            </span>
+                          )}
+                          {disputedCount > 0 && (
+                            <span className="text-xs px-2 py-0.5 rounded border bg-orange-50 text-orange-700 border-orange-200 font-medium">
+                              {disputedCount} disputed
+                            </span>
+                          )}
+                          {inProgressCount > 0 && (
+                            <span className="text-xs px-2 py-0.5 rounded border bg-blue-50 text-blue-600 border-blue-200 font-medium animate-pulse">
+                              ● Shift in progress
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
+                          <span className="flex items-center gap-1">
+                            <CalendarDays className="w-3 h-3" />
+                            {dateFrom === dateTo
+                              ? format(new Date(dateFrom + "T00:00:00"), "MMM d, yyyy")
+                              : `${format(new Date(dateFrom + "T00:00:00"), "MMM d")} – ${format(new Date(dateTo + "T00:00:00"), "MMM d, yyyy")}`}
+                          </span>
+                          <span><strong className="text-foreground">{records.length}</strong> record{records.length !== 1 ? "s" : ""}</span>
+                          <span>Reg: <strong className="text-foreground">{Math.round(totalReg * 10) / 10}h</strong></span>
+                          {totalOt > 0 && <span>OT: <strong className="text-amber-600">{Math.round(totalOt * 10) / 10}h</strong></span>}
+                          {approvedCount > 0 && <span className="text-green-700">{approvedCount} approved</span>}
+                          {pendingCount > 0 && <span className="text-yellow-700">{pendingCount} pending</span>}
+                        </div>
+                      </div>
+
+                      {/* Chevron */}
+                      <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
+                    </div>
+                  </Card>
+                );
+              });
+          })()}
         </div>
       ) : (
         <div className="space-y-3">
@@ -1012,6 +1100,133 @@ export default function Timesheets() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* ── Employee Timesheets Dialog (General tab grouped view) ─────────── */}
+      {(() => {
+        const empTs = viewEmpId ? teamTs.filter(t => t.eid === viewEmpId) : [];
+        const emp   = viewEmpId ? empData(viewEmpId) : null;
+        return (
+          <Dialog open={!!viewEmpId} onOpenChange={(o) => { if (!o) { setViewEmpId(null); setExpandedId(null); } }}>
+            <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-sm shrink-0">
+                    {emp?.av ?? viewEmpId?.slice(0, 2).toUpperCase()}
+                  </div>
+                  <div>
+                    <span>{emp?.name ?? viewEmpId}</span>
+                    {emp && <span className="ml-2 text-sm font-normal text-muted-foreground">{emp.dept} · {emp.pos}</span>}
+                  </div>
+                </DialogTitle>
+              </DialogHeader>
+
+              <div className="space-y-3 mt-2">
+                {/* Summary bar */}
+                <div className="flex flex-wrap gap-3 text-xs text-muted-foreground border-b border-border pb-3">
+                  <span><strong className="text-foreground">{empTs.length}</strong> record{empTs.length !== 1 ? "s" : ""}</span>
+                  <span>Reg: <strong className="text-foreground">{Math.round(empTs.reduce((s, t) => s + (t.reg ?? 0), 0) * 10) / 10}h</strong></span>
+                  {empTs.reduce((s, t) => s + (t.ot ?? 0), 0) > 0 && (
+                    <span>OT: <strong className="text-amber-600">{Math.round(empTs.reduce((s, t) => s + (t.ot ?? 0), 0) * 10) / 10}h</strong></span>
+                  )}
+                  <span className="text-green-700">{empTs.filter(t => t.status === "approved").length} approved</span>
+                  <span className="text-yellow-700">{empTs.filter(t => t.status === "pending_first_approval" || t.status === "pending_second_approval").length} pending</span>
+                  {empTs.filter(t => t.disputed).length > 0 && (
+                    <span className="text-orange-600">{empTs.filter(t => t.disputed).length} disputed</span>
+                  )}
+                </div>
+
+                {/* Individual timesheet cards */}
+                {[...empTs].sort((a, b) => b.date.localeCompare(a.date)).map((ts) => {
+                  const expanded    = expandedId === ts.id;
+                  const shiftActive = isShiftInProgress(ts);
+
+                  return (
+                    <Card key={ts.id} className="overflow-hidden" data-testid={`emp-dialog-ts-${ts.id}`}>
+                      <div className="px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-3">
+                        {/* Date + status */}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex flex-wrap items-center gap-2 mb-1">
+                            <span className="text-sm font-medium">{format(new Date(ts.date + "T00:00:00"), "EEE, MMM d, yyyy")}</span>
+                            {shiftActive ? (
+                              <span className="text-xs px-2 py-0.5 rounded border bg-blue-50 text-blue-600 border-blue-200 font-medium animate-pulse">● In progress</span>
+                            ) : (
+                              <StatusBadge status={ts.status} disputed={ts.disputed} />
+                            )}
+                            {ts.edited && <span className="text-xs text-amber-500 font-medium">Edited</span>}
+                          </div>
+                          <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
+                            <span className="flex items-center gap-1"><Clock className="w-3 h-3" /> {ts.ci ?? "--"} – {ts.co ?? "--"}</span>
+                            <span>Reg: <strong className="text-foreground">{ts.reg}h</strong></span>
+                            {(ts.ot ?? 0) > 0 && <span>OT: <strong className="text-amber-600">{ts.ot}h</strong></span>}
+                            {ts.brk > 0 && <span>Brk: {ts.brk}m</span>}
+                            {ts.zone && <span className="flex items-center gap-1"><MapPin className="w-3 h-3" />{ts.zone}{ts.post ? ` · ${ts.post}` : ""}</span>}
+                            {ts.notes && <span className="italic truncate max-w-[200px]" title={ts.notes}>{ts.notes}</span>}
+                          </div>
+                        </div>
+
+                        {/* Actions */}
+                        <div className="flex items-center gap-1.5 flex-wrap shrink-0">
+                          {(canManagerSign(ts) || canAdminSign(ts)) && (
+                            <>
+                              <Button size="sm" onClick={() => { setApproverModal(ts); setApproverSigName(user.name); }} data-testid={`button-dialog-sign-${ts.id}`}>
+                                <PenLine className="w-3.5 h-3.5 mr-1" /> Sign
+                              </Button>
+                              <Button size="sm" variant="outline" className="text-red-600 border-red-200" onClick={() => submitReject(ts)}>
+                                <XCircle className="w-3.5 h-3.5 mr-1" /> Reject
+                              </Button>
+                            </>
+                          )}
+                          {(canAdminEdit(ts) || canSupervisorEdit(ts)) && (
+                            <Button size="sm" variant="outline" className="text-muted-foreground" onClick={() => openAdminEdit(ts)} data-testid={`button-dialog-edit-${ts.id}`}>
+                              <Edit2 className="w-3.5 h-3.5 mr-1" /> Edit
+                            </Button>
+                          )}
+                          {isFullAccess && (
+                            <Button size="sm" variant="ghost" className="text-destructive hover:bg-destructive/10"
+                              disabled={isDeleting}
+                              onClick={async () => {
+                                if (!window.confirm(`Delete this timesheet for ${format(new Date(ts.date + "T00:00:00"), "MMM d, yyyy")}? This cannot be undone.`)) return;
+                                try { await deleteTimesheet(ts.id); toast({ title: "Timesheet deleted" }); }
+                                catch { toast({ title: "Failed to delete", variant: "destructive" }); }
+                              }}
+                              data-testid={`button-dialog-delete-${ts.id}`}
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </Button>
+                          )}
+                          <Button size="sm" variant="ghost" onClick={() => setExpandedId(expanded ? null : ts.id)} data-testid={`button-dialog-expand-${ts.id}`}>
+                            {expanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                          </Button>
+                        </div>
+                      </div>
+
+                      {/* Expanded signature chain */}
+                      {expanded && (
+                        <div className="border-t border-border bg-muted/20 px-4 py-3 space-y-2">
+                          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Approval Chain</p>
+                          <SigBlock sig={ts.eSig}  label="Employee Signature" />
+                          <SigBlock sig={ts.f1Sig} label="1st Approver" />
+                          <SigBlock sig={ts.f2Sig} label="2nd Approver (Final)" />
+                          {ts.disputeNote && (
+                            <div className="text-xs text-orange-700 bg-orange-50 rounded p-2 mt-1">
+                              <strong>Dispute:</strong> {ts.disputeNote}
+                            </div>
+                          )}
+                          {ts.notes && (
+                            <div className="text-xs text-muted-foreground bg-muted/40 rounded p-2">
+                              <strong>Notes:</strong> {ts.notes}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </Card>
+                  );
+                })}
+              </div>
+            </DialogContent>
+          </Dialog>
+        );
+      })()}
 
       {/* ── Sign All Dialog ───────────────────────────────────────────────── */}
       <Dialog open={signAllOpen} onOpenChange={(o) => { if (!o && !signAllPending) { setSignAllOpen(false); setSignAllName(""); } }}>
