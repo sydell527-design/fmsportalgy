@@ -24,18 +24,24 @@ export interface PayrollResult {
   paye: number;
   netPay: number;
   approvedTimesheets: number;
+  pendingTimesheets: number;
+  totalTimesheets: number;
 }
 
 export function calcPayroll(employee: User, timesheets: Timesheet[], period: string): PayrollResult {
   const C = PAYROLL_CONSTANTS;
 
-  // Filter approved timesheets for this employee in the given period (YYYY-MM)
-  const approved = timesheets.filter(
-    (ts) => ts.eid === employee.userId && ts.status === "approved" && ts.date?.startsWith(period)
+  // All timesheets for this employee in the given period (YYYY-MM), excluding rejected
+  const periodTs = timesheets.filter(
+    (ts) => ts.eid === employee.userId && ts.date?.startsWith(period) && ts.status !== "rejected"
   );
 
-  const regularHours = approved.reduce((s, ts) => s + (ts.reg ?? 0), 0);
-  const otHours = approved.reduce((s, ts) => s + (ts.ot ?? 0), 0);
+  const approvedTimesheets = periodTs.filter((ts) => ts.status === "approved").length;
+  const pendingTimesheets = periodTs.filter((ts) => ts.status !== "approved").length;
+
+  // Calculate hours from all non-rejected timesheets (pending counts toward payroll estimate)
+  const regularHours = periodTs.reduce((s, ts) => s + (ts.reg ?? 0), 0);
+  const otHours = periodTs.reduce((s, ts) => s + (ts.ot ?? 0), 0);
 
   let regularPay = 0;
   let otPay = 0;
@@ -76,7 +82,9 @@ export function calcPayroll(employee: User, timesheets: Timesheet[], period: str
     employerNIS,
     paye,
     netPay,
-    approvedTimesheets: approved.length,
+    approvedTimesheets,
+    pendingTimesheets,
+    totalTimesheets: periodTs.length,
   };
 }
 

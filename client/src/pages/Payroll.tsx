@@ -26,7 +26,9 @@ export default function Payroll() {
   if (user?.role === "employee") return <Redirect to="/" />;
 
   const activeEmployees = (users ?? []).filter((u) => u.status === "active" && u.role !== "admin");
-  const results = activeEmployees.map((emp) => calcPayroll(emp, timesheets ?? [], period));
+  const allResults = activeEmployees.map((emp) => calcPayroll(emp, timesheets ?? [], period));
+  // Only show employees who have at least one timesheet record in the selected period
+  const results = allResults.filter((r) => r.totalTimesheets > 0);
 
   const totals = results.reduce(
     (acc, r) => ({
@@ -124,6 +126,13 @@ export default function Payroll() {
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
+              {results.length === 0 && (
+                <tr>
+                  <td colSpan={9} className="px-5 py-10 text-center text-muted-foreground text-sm">
+                    No timesheet records found for this period.
+                  </td>
+                </tr>
+              )}
               {results.map((r) => (
                 <tr key={r.employee.id} className="hover:bg-muted/20 transition-colors" data-testid={`payroll-row-${r.employee.userId}`}>
                   <td className="px-5 py-4">
@@ -148,9 +157,14 @@ export default function Payroll() {
                   <td className="px-5 py-4 text-right text-muted-foreground">{formatGYD(r.paye)}</td>
                   <td className="px-5 py-4 text-right font-bold text-green-600">{formatGYD(r.netPay)}</td>
                   <td className="px-5 py-4 text-center">
-                    <Badge variant={r.approvedTimesheets > 0 ? "default" : "secondary"} className="text-xs">
-                      {r.approvedTimesheets}
-                    </Badge>
+                    <div className="flex flex-col items-center gap-0.5">
+                      {r.approvedTimesheets > 0 && (
+                        <Badge variant="default" className="text-xs">{r.approvedTimesheets} approved</Badge>
+                      )}
+                      {r.pendingTimesheets > 0 && (
+                        <Badge variant="outline" className="text-xs text-yellow-700 border-yellow-300 bg-yellow-50">{r.pendingTimesheets} pending</Badge>
+                      )}
+                    </div>
                   </td>
                   <td className="px-5 py-4">
                     <Button size="sm" variant="ghost" onClick={() => setSelectedResult(r)} data-testid={`button-payslip-${r.employee.userId}`}>
@@ -232,6 +246,17 @@ export default function Payroll() {
                 <div className="flex justify-between border-b border-border pb-2">
                   <span className="text-muted-foreground">Pay Period</span>
                   <span className="font-medium">{selectedResult.period}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Timesheets</span>
+                  <span className="flex gap-1 items-center">
+                    {selectedResult.approvedTimesheets > 0 && (
+                      <Badge variant="default" className="text-xs">{selectedResult.approvedTimesheets} approved</Badge>
+                    )}
+                    {selectedResult.pendingTimesheets > 0 && (
+                      <Badge variant="outline" className="text-xs text-yellow-700 border-yellow-300 bg-yellow-50">{selectedResult.pendingTimesheets} pending</Badge>
+                    )}
+                  </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Regular Hours</span>
