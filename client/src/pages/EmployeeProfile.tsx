@@ -64,20 +64,26 @@ function computePayroll(emp: UserType, children: EmployeeChild[]) {
     (pc.uniformAllowance ?? 0) + (pc.riskAllowance ?? 0) + (pc.shiftAllowance ?? 0) +
     (pc.otherAllowances ?? []).reduce((s, x) => s + x.amount, 0);
   const gross = basic + allowances;
-  const nisBase     = Math.min(gross, GY_NIS_EMP_MAX);
-  const nisEmp      = pc.nisExempt ? 0 : Math.round(nisBase * GY_NIS_EMP);
-  const nisEmployer = pc.nisExempt ? 0 : Math.round(nisBase * GY_NIS_EMP_RATE);
-  const health      = pc.healthSurchargeExempt ? 0
+  const nisBase      = Math.min(gross, GY_NIS_EMP_MAX);
+  const nisEmpCalc   = pc.nisExempt ? 0 : Math.round(nisBase * GY_NIS_EMP);
+  const nisEmp       = (pc.nisEmployeeOverride != null) ? pc.nisEmployeeOverride : nisEmpCalc;
+  const nisEmpRateCalc = pc.nisExempt ? 0 : Math.round(nisBase * GY_NIS_EMP_RATE);
+  const nisEmployer  = (pc.nisEmployerOverride != null) ? pc.nisEmployerOverride : nisEmpRateCalc;
+  const healthCalc   = pc.healthSurchargeExempt ? 0
     : pc.healthSurchargeRate === "half" ? GY_HEALTH_HALF : GY_HEALTH_FULL;
+  const health       = (pc.healthSurchargeRate === "custom" && pc.healthSurchargeOverride != null)
+    ? (pc.healthSurchargeExempt ? 0 : pc.healthSurchargeOverride)
+    : healthCalc;
   const qualifying    = children.filter(isQualifyingChild).length;
   const childDeduct   = qualifying * GY_CHILD_ALLOW;
   const personalAllow = Math.max(GY_PERSONAL_ALLOW, Math.round(gross / 3));
   const chargeable    = pc.taxExempt ? 0
     : Math.max(0, gross - nisEmp - personalAllow - childDeduct);
-  const paye = pc.taxExempt ? 0
+  const payeCalc = pc.taxExempt ? 0
     : chargeable <= GY_TAX1_LIMIT
       ? Math.round(chargeable * GY_TAX1)
       : Math.round(GY_TAX1_LIMIT * GY_TAX1 + (chargeable - GY_TAX1_LIMIT) * GY_TAX2);
+  const paye = (pc.taxOverride != null) ? (pc.taxExempt ? 0 : pc.taxOverride) : payeCalc;
   const statutory = nisEmp + health + paye;
   const voluntary = (pc.creditUnion ?? 0) + (pc.loanRepayment ?? 0) +
     (pc.advancesRecovery ?? 0) + (pc.unionDues ?? 0) +

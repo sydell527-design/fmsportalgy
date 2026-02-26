@@ -136,15 +136,20 @@ export function calcPayroll(
   const grossPay = basicPay + otPay + allowances;
 
   // ── NIS ───────────────────────────────────────────────────────────────────
-  const nisBase    = Math.min(grossPay, C.NIS_CEILING_MONTHLY);
-  const employeeNIS = pc.nisExempt ? 0 : Math.round(nisBase * C.NIS_EMP_RATE);
-  const employerNIS = pc.nisExempt ? 0 : Math.round(nisBase * C.NIS_ER_RATE);
+  const nisBase         = Math.min(grossPay, C.NIS_CEILING_MONTHLY);
+  const employeeNISCalc = pc.nisExempt ? 0 : Math.round(nisBase * C.NIS_EMP_RATE);
+  const employeeNIS     = (pc.nisEmployeeOverride != null) ? pc.nisEmployeeOverride : employeeNISCalc;
+  const employerNISCalc = pc.nisExempt ? 0 : Math.round(nisBase * C.NIS_ER_RATE);
+  const employerNIS     = (pc.nisEmployerOverride != null) ? pc.nisEmployerOverride : employerNISCalc;
 
   // ── Health Surcharge ──────────────────────────────────────────────────────
-  const healthSurcharge = pc.healthSurchargeExempt ? 0
+  const healthSurchargeCalc = pc.healthSurchargeExempt ? 0
     : pc.healthSurchargeRate === "half"
       ? C.HEALTH_SURCHARGE_HALF
       : C.HEALTH_SURCHARGE_FULL;
+  const healthSurcharge = (pc.healthSurchargeRate === "custom" && pc.healthSurchargeOverride != null)
+    ? (pc.healthSurchargeExempt ? 0 : pc.healthSurchargeOverride)
+    : healthSurchargeCalc;
 
   // ── PAYE (Income Tax) — progressive ───────────────────────────────────────
   const empChildren       = allChildren.filter((ch) => ch.eid === employee.userId);
@@ -157,13 +162,14 @@ export function calcPayroll(
   const chargeableIncome = pc.taxExempt ? 0
     : Math.max(0, grossPay - employeeNIS - personalAllowance - childAllowance);
 
-  const paye = pc.taxExempt ? 0
+  const payeCalc = pc.taxExempt ? 0
     : chargeableIncome <= C.TAX_LOWER_LIMIT
       ? Math.round(chargeableIncome * C.TAX_LOWER_RATE)
       : Math.round(
           C.TAX_LOWER_LIMIT * C.TAX_LOWER_RATE +
           (chargeableIncome - C.TAX_LOWER_LIMIT) * C.TAX_UPPER_RATE
         );
+  const paye = (pc.taxOverride != null) ? (pc.taxExempt ? 0 : pc.taxOverride) : payeCalc;
 
   // ── Voluntary Deductions ──────────────────────────────────────────────────
   const creditUnion      = pc.creditUnion      ?? 0;

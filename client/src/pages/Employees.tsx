@@ -528,24 +528,30 @@ function gyCalc(basic: number, cat: string, pc: PayConfig) {
   const gross = monthlyBasic + allowances;
 
   const nisBase = Math.min(gross, GY_NIS_MAX_INSURABLE);
-  const nisEmployee = pc.nisExempt ? 0 : Math.round(nisBase * GY_NIS_EMPLOYEE_RATE);
-  const nisEmployer = pc.nisExempt ? 0 : Math.round(nisBase * GY_NIS_EMPLOYER_RATE);
-  const healthSurcharge = pc.healthSurchargeExempt ? 0
+  const nisEmployeeCalc = pc.nisExempt ? 0 : Math.round(nisBase * GY_NIS_EMPLOYEE_RATE);
+  const nisEmployee = (pc.nisEmployeeOverride != null) ? pc.nisEmployeeOverride : nisEmployeeCalc;
+  const nisEmployerCalc = pc.nisExempt ? 0 : Math.round(nisBase * GY_NIS_EMPLOYER_RATE);
+  const nisEmployer = (pc.nisEmployerOverride != null) ? pc.nisEmployerOverride : nisEmployerCalc;
+  const healthSurchargeCalc = pc.healthSurchargeExempt ? 0
     : pc.healthSurchargeRate === "half" ? GY_HEALTH_SURCHARGE_HALF : GY_HEALTH_SURCHARGE_FULL;
+  const healthSurcharge = (pc.healthSurchargeRate === "custom" && pc.healthSurchargeOverride != null)
+    ? (pc.healthSurchargeExempt ? 0 : pc.healthSurchargeOverride)
+    : healthSurchargeCalc;
   const personalAllow = Math.max(GY_PERSONAL_ALLOWANCE, Math.round(gross / 3));
   const chargeable = pc.taxExempt ? 0
     : Math.max(0, gross - nisEmployee - personalAllow);
-  const tax = pc.taxExempt ? 0
+  const taxCalc = pc.taxExempt ? 0
     : chargeable <= GY_TAX_LOWER_LIMIT
       ? Math.round(chargeable * GY_TAX_LOWER_RATE)
       : Math.round(GY_TAX_LOWER_LIMIT * GY_TAX_LOWER_RATE + (chargeable - GY_TAX_LOWER_LIMIT) * GY_TAX_UPPER_RATE);
+  const tax = (pc.taxOverride != null) ? (pc.taxExempt ? 0 : pc.taxOverride) : taxCalc;
 
   const statutory = nisEmployee + healthSurcharge + tax;
   const voluntary = (pc.creditUnion ?? 0) + (pc.loanRepayment ?? 0) +
     (pc.advancesRecovery ?? 0) + (pc.unionDues ?? 0) +
     (pc.otherDeductions ?? []).reduce((s, x) => s + x.amount, 0);
   const net = gross - statutory - voluntary;
-  return { gross, allowances, monthlyBasic, nisEmployee, nisEmployer, healthSurcharge, tax, statutory, voluntary, net, chargeable };
+  return { gross, allowances, monthlyBasic, nisEmployee, nisEmployer, nisEmployeeCalc, nisEmployerCalc, healthSurcharge, healthSurchargeCalc, tax, taxCalc, statutory, voluntary, net, chargeable };
 }
 
 function fmt(n: number) { return `GYD ${Math.round(n).toLocaleString("en-GY")}`; }
@@ -955,13 +961,43 @@ export function EmployeeFormDialog({
                         <p className="text-xs text-muted-foreground">Employee 5.6% · Employer 8.4% · Max {fmt(GY_NIS_MAX_INSURABLE)}/mo</p>
                       </div>
                       <label className="flex items-center gap-1.5 text-xs cursor-pointer shrink-0 mt-0.5">
-                        <input type="checkbox" checked={pc.nisExempt} onChange={(e) => setPc({ nisExempt: e.target.checked })} data-testid="checkbox-nis-exempt" /> Exempt
+                        <input type="checkbox" checked={pc.nisExempt} onChange={(e) => setPc({ nisExempt: e.target.checked, nisEmployeeOverride: undefined, nisEmployerOverride: undefined })} data-testid="checkbox-nis-exempt" /> Exempt
                       </label>
                     </div>
                     {!pc.nisExempt && calc.gross > 0 && (
-                      <div className="grid grid-cols-2 gap-2 text-xs bg-background rounded p-2 border border-border">
-                        <div><span className="text-muted-foreground">Employee:</span> <strong className="text-red-600">{fmt(calc.nisEmployee)}/mo</strong></div>
-                        <div><span className="text-muted-foreground">Employer:</span> <strong className="text-blue-600">{fmt(calc.nisEmployer)}/mo</strong></div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1">
+                          <Label className="text-xs text-muted-foreground">Employee/mo (GYD)</Label>
+                          <Input
+                            type="number" min={0}
+                            value={pc.nisEmployeeOverride ?? calc.nisEmployeeCalc}
+                            onChange={(e) => setPc({ nisEmployeeOverride: Number(e.target.value) })}
+                            className="h-8 text-sm text-red-600 font-medium"
+                            data-testid="input-nis-employee"
+                          />
+                          {pc.nisEmployeeOverride != null && pc.nisEmployeeOverride !== calc.nisEmployeeCalc && (
+                            <p className="text-xs text-muted-foreground flex items-center gap-1">
+                              Auto: {fmt(calc.nisEmployeeCalc)}
+                              <button type="button" className="text-primary underline" onClick={() => setPc({ nisEmployeeOverride: undefined })}>reset</button>
+                            </p>
+                          )}
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-xs text-muted-foreground">Employer/mo (GYD)</Label>
+                          <Input
+                            type="number" min={0}
+                            value={pc.nisEmployerOverride ?? calc.nisEmployerCalc}
+                            onChange={(e) => setPc({ nisEmployerOverride: Number(e.target.value) })}
+                            className="h-8 text-sm text-blue-600 font-medium"
+                            data-testid="input-nis-employer"
+                          />
+                          {pc.nisEmployerOverride != null && pc.nisEmployerOverride !== calc.nisEmployerCalc && (
+                            <p className="text-xs text-muted-foreground flex items-center gap-1">
+                              Auto: {fmt(calc.nisEmployerCalc)}
+                              <button type="button" className="text-primary underline" onClick={() => setPc({ nisEmployerOverride: undefined })}>reset</button>
+                            </p>
+                          )}
+                        </div>
                       </div>
                     )}
                   </div>
@@ -978,15 +1014,30 @@ export function EmployeeFormDialog({
                       </label>
                     </div>
                     {!pc.healthSurchargeExempt && (
-                      <div className="flex items-center gap-4">
-                        {(["full","half"] as const).map((r) => (
-                          <label key={r} className="flex items-center gap-1.5 text-xs cursor-pointer">
-                            <input type="radio" name="hsRate" checked={pc.healthSurchargeRate === r} onChange={() => setPc({ healthSurchargeRate: r })} data-testid={`radio-hs-${r}`} />
-                            {r === "full" ? "Full — GYD 1,200" : "Reduced — GYD 600"}
-                          </label>
-                        ))}
-                        {calc.gross > 0 && (
-                          <span className="ml-auto text-xs font-semibold text-red-600">{fmt(calc.healthSurcharge)}/mo</span>
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-4 flex-wrap">
+                          {(["full","half","custom"] as const).map((r) => (
+                            <label key={r} className="flex items-center gap-1.5 text-xs cursor-pointer">
+                              <input type="radio" name="hsRate" checked={pc.healthSurchargeRate === r} onChange={() => setPc({ healthSurchargeRate: r })} data-testid={`radio-hs-${r}`} />
+                              {r === "full" ? "Full — GYD 1,200" : r === "half" ? "Reduced — GYD 600" : "Custom"}
+                            </label>
+                          ))}
+                          {calc.gross > 0 && pc.healthSurchargeRate !== "custom" && (
+                            <span className="ml-auto text-xs font-semibold text-red-600">{fmt(calc.healthSurcharge)}/mo</span>
+                          )}
+                        </div>
+                        {pc.healthSurchargeRate === "custom" && (
+                          <div className="space-y-1">
+                            <Label className="text-xs text-muted-foreground">Custom amount/mo (GYD)</Label>
+                            <Input
+                              type="number" min={0}
+                              value={pc.healthSurchargeOverride ?? ""}
+                              onChange={(e) => setPc({ healthSurchargeOverride: e.target.value === "" ? undefined : Number(e.target.value) })}
+                              placeholder="Enter amount…"
+                              className="h-8 text-sm text-red-600 font-medium"
+                              data-testid="input-hs-custom"
+                            />
+                          </div>
                         )}
                       </div>
                     )}
@@ -1000,13 +1051,33 @@ export function EmployeeFormDialog({
                         <p className="text-xs text-muted-foreground">Personal allowance {fmt(GY_PERSONAL_ALLOWANCE)}/mo or ⅓ gross · {(GY_TAX_LOWER_RATE*100).toFixed(0)}% / {(GY_TAX_UPPER_RATE*100).toFixed(0)}%</p>
                       </div>
                       <label className="flex items-center gap-1.5 text-xs cursor-pointer shrink-0 mt-0.5">
-                        <input type="checkbox" checked={pc.taxExempt} onChange={(e) => setPc({ taxExempt: e.target.checked })} data-testid="checkbox-tax-exempt" /> Exempt
+                        <input type="checkbox" checked={pc.taxExempt} onChange={(e) => setPc({ taxExempt: e.target.checked, taxOverride: undefined })} data-testid="checkbox-tax-exempt" /> Exempt
                       </label>
                     </div>
                     {!pc.taxExempt && calc.gross > 0 && (
-                      <div className="grid grid-cols-2 gap-2 text-xs bg-background rounded p-2 border border-border">
-                        <div><span className="text-muted-foreground">Chargeable income:</span> <strong>{fmt(calc.chargeable)}/mo</strong></div>
-                        <div><span className="text-muted-foreground">PAYE deduction:</span> <strong className="text-red-600">{fmt(calc.tax)}/mo</strong></div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1">
+                          <Label className="text-xs text-muted-foreground">Chargeable income/mo</Label>
+                          <div className="h-8 flex items-center px-3 rounded-md border border-border bg-background text-sm font-medium">
+                            {fmt(calc.chargeable)}
+                          </div>
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-xs text-muted-foreground">PAYE deduction/mo (GYD)</Label>
+                          <Input
+                            type="number" min={0}
+                            value={pc.taxOverride ?? calc.taxCalc}
+                            onChange={(e) => setPc({ taxOverride: Number(e.target.value) })}
+                            className="h-8 text-sm text-red-600 font-medium"
+                            data-testid="input-paye-override"
+                          />
+                          {pc.taxOverride != null && pc.taxOverride !== calc.taxCalc && (
+                            <p className="text-xs text-muted-foreground flex items-center gap-1">
+                              Auto: {fmt(calc.taxCalc)}
+                              <button type="button" className="text-primary underline" onClick={() => setPc({ taxOverride: undefined })}>reset</button>
+                            </p>
+                          )}
+                        </div>
                       </div>
                     )}
                   </div>

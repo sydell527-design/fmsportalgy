@@ -39,9 +39,13 @@ export interface PayConfig {
   shiftAllowance: number;
   otherAllowances: Array<{ name: string; amount: number }>;
   nisExempt: boolean;
+  nisEmployeeOverride?: number;
+  nisEmployerOverride?: number;
   taxExempt: boolean;
+  taxOverride?: number;
   healthSurchargeExempt: boolean;
-  healthSurchargeRate: "full" | "half";
+  healthSurchargeRate: "full" | "half" | "custom";
+  healthSurchargeOverride?: number;
   creditUnion: number;
   loanRepayment: number;
   advancesRecovery: number;
