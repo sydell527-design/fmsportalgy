@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useCreateTimesheet, useTimesheets, useUpdateTimesheet } from "@/hooks/use-timesheets";
 import { useGeofences } from "@/hooks/use-geofences";
+import { useSchedules } from "@/hooks/use-schedules";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { MapPin, Clock, LogIn, LogOut, CheckCircle2, Navigation, AlertTriangle, PenLine, ShieldCheck, Car, Wifi, Shield, ShieldOff } from "lucide-react";
@@ -95,6 +96,7 @@ export function ClockInOut() {
   const todayDate = format(new Date(), "yyyy-MM-dd");
   const { data: timesheets } = useTimesheets({ startDate: todayDate, endDate: todayDate, eid: user?.userId });
   const { data: allGeofences } = useGeofences();
+  const { data: mySchedules = [] } = useSchedules(user?.userId);
   const { mutateAsync: createTimesheet, isPending: isCreating } = useCreateTimesheet();
   const { mutateAsync: updateTimesheet, isPending: isUpdating } = useUpdateTimesheet();
   const { toast } = useToast();
@@ -107,11 +109,17 @@ export function ClockInOut() {
   const [distanceFromZone, setDistanceFromZone] = useState<number | null>(null);
   const [locationEnabled, setLocationEnabled] = useState(false);
 
-  // ── New shift-metadata state ─────────────────────────────────────────────
-  const [dayStatus, setDayStatus] = useState<DayStatus>("On Day");
-  const [holidayType, setHolidayType] = useState<HolidayType | "">("");
-  const [armedStatus, setArmedStatus] = useState<ArmedStatus>("Unarmed");
   const [client, setClient] = useState<ClientAgency | "">("");
+
+  // ── Auto-detect day status and armed status from today's schedule ─────────
+  const todaySchedule = mySchedules.find((s) => s.date === todayDate) ?? null;
+  const dayStatus: DayStatus     = todaySchedule ? "On Day" : "Off Day";
+  const armedStatus: ArmedStatus =
+    (todaySchedule?.armed as ArmedStatus | undefined) ??
+    ((user as any)?.armed as ArmedStatus | undefined) ??
+    "Unarmed";
+  // Holiday type is not set at clock-in — manager applies it via timesheet edit
+  const holidayType: HolidayType | "" = "";
 
   useEffect(() => {
     const t = setInterval(() => setCurrentTime(new Date()), 1000);
@@ -400,50 +408,30 @@ export function ClockInOut() {
                 )}
               </div>
 
-              {/* Day Status */}
-              <div>
-                <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide mb-1.5">Day Status</p>
-                <select className={selectCls} value={dayStatus} onChange={(e) => { setDayStatus(e.target.value as DayStatus); setHolidayType(""); }} data-testid="select-day-status">
-                  {DAY_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
-                </select>
-                {dayStatus === "Holiday" && (
-                  <div className="mt-1.5">
-                    <select className={selectCls} value={holidayType} onChange={(e) => setHolidayType(e.target.value as HolidayType)} data-testid="select-holiday-type">
-                      <option value="">— Select holiday type —</option>
-                      {HOLIDAY_TYPES.map((h) => <option key={h} value={h}>{h}</option>)}
-                    </select>
-                  </div>
-                )}
-              </div>
-
-              {/* Armed / Unarmed toggle buttons */}
-              <div>
-                <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide mb-1.5">Armed Status</p>
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setArmedStatus("Unarmed")}
-                    data-testid="button-unarmed"
-                    className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-md border text-sm font-medium transition-colors ${
-                      armedStatus === "Unarmed"
-                        ? "bg-blue-600 text-white border-blue-600"
-                        : "border-border bg-background text-muted-foreground hover:bg-muted"
-                    }`}
-                  >
-                    <ShieldOff className="w-4 h-4" /> Unarmed
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setArmedStatus("Armed")}
-                    data-testid="button-armed"
-                    className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-md border text-sm font-medium transition-colors ${
-                      armedStatus === "Armed"
-                        ? "bg-red-600 text-white border-red-600"
-                        : "border-border bg-background text-muted-foreground hover:bg-muted"
-                    }`}
-                  >
-                    <Shield className="w-4 h-4" /> Armed
-                  </button>
+              {/* Auto-detected shift info (read-only) */}
+              <div className={`flex items-start gap-3 rounded-md border px-3 py-2.5 text-sm ${
+                dayStatus === "On Day"
+                  ? "bg-green-50 border-green-200 text-green-900"
+                  : "bg-amber-50 border-amber-200 text-amber-900"
+              }`} data-testid="shift-status-info">
+                <div className="mt-0.5 shrink-0">
+                  {dayStatus === "On Day"
+                    ? <CheckCircle2 className="w-4 h-4 text-green-600" />
+                    : <AlertTriangle className="w-4 h-4 text-amber-600" />}
+                </div>
+                <div className="space-y-0.5">
+                  <p className="font-semibold leading-tight">
+                    {dayStatus === "On Day" ? "Scheduled today — On Day" : "Not on schedule — Off Day"}
+                  </p>
+                  <p className="text-xs opacity-80">
+                    {armedStatus === "Armed"
+                      ? <><Shield className="w-3 h-3 inline mr-0.5" />Armed</>
+                      : <><ShieldOff className="w-3 h-3 inline mr-0.5" />Unarmed</>}
+                    {" · "}
+                    {todaySchedule
+                      ? `from schedule (${todaySchedule.shiftStart}–${todaySchedule.shiftEnd})`
+                      : `from profile default`}
+                  </p>
                 </div>
               </div>
 

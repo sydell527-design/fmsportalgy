@@ -766,6 +766,25 @@ export function EmployeeFormDialog({
                     ], "select-employee-mobility")}
                     <p className="text-[11px] text-muted-foreground leading-tight">Controls clock-out zone enforcement</p>
                   </div>
+                  <div className="space-y-1.5">
+                    <Label>Default Armed Status</Label>
+                    <div className="flex gap-2">
+                      {[["Unarmed","bg-blue-600","border-blue-600"],["Armed","bg-red-600","border-red-600"]].map(([val, bg, bdr]) => (
+                        <button
+                          key={val}
+                          type="button"
+                          onClick={() => setFormData((prev) => ({ ...prev, armed: val } as any))}
+                          className={`flex-1 py-1.5 rounded-md border text-xs font-medium transition-colors ${
+                            ((formData as any).armed ?? "Unarmed") === val
+                              ? `${bg} ${bdr} text-white`
+                              : "bg-background border-input text-muted-foreground hover:bg-muted"
+                          }`}
+                          data-testid={`button-default-armed-${val.toLowerCase()}`}
+                        >{val}</button>
+                      ))}
+                    </div>
+                    <p className="text-[11px] text-muted-foreground leading-tight">Used when no schedule entry exists for the day</p>
+                  </div>
                 </div>
 
                 <div className="space-y-2">

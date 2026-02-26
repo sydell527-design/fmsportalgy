@@ -24,6 +24,7 @@ export const users = pgTable("users", {
   geo: jsonb("geo").$type<string[]>(),
   av: text("av"),
   mobility: text("mobility").notNull().default("fixed"),
+  armed: text("armed").notNull().default("Unarmed"),
   payConfig: jsonb("pay_config").$type<PayConfig>(),
 });
 
