@@ -646,9 +646,13 @@ export default function SchedulePage() {
   const isSupervisor = (user?.pos ?? "").toLowerCase().includes("supervisor");
   const isPrivileged = user?.role === "admin" || user?.role === "manager" || isSupervisor;
 
-  // View mode + anchor
+  // View mode + anchor (desktop)
   const [viewMode, setViewMode] = useState<ViewMode>("week");
   const [anchor,   setAnchor]   = useState<Date>(() => todayAnchor("week"));
+
+  // Mobile calendar state (independent month view)
+  const [mobileCalDate,   setMobileCalDate]   = useState<Date>(() => new Date());
+  const [mobileCalAnchor, setMobileCalAnchor] = useState<Date>(() => startOfMonth(new Date()));
 
   const days     = useMemo(() => getRangeDays(anchor, viewMode), [anchor, viewMode]);
   const label    = rangeLabel(days, viewMode);
@@ -707,6 +711,35 @@ export default function SchedulePage() {
     }
     return m;
   }, [visibleSchedules]);
+
+  // Mobile calendar grid — 42 cells (6 weeks × 7 days), Mon-first
+  const mobileCalGridDays = useMemo(() => {
+    const gridStart = startOfWeek(mobileCalAnchor, { weekStartsOn: 1 });
+    return Array.from({ length: 42 }, (_, i) => addDays(gridStart, i));
+  }, [mobileCalAnchor]);
+
+  const mobileSelectedStr = format(mobileCalDate, "yyyy-MM-dd");
+
+  // Shifts for the selected mobile day (all employees for privileged, own for employees)
+  const mobileSelectedShifts = useMemo(
+    () => schedules.filter((s) =>
+      s.date === mobileSelectedStr &&
+      (isPrivileged || s.eid === user?.userId)
+    ),
+    [schedules, mobileSelectedStr, isPrivileged, user]
+  );
+
+  // Shift dots lookup for mobile grid: date → {armed, unarmed}
+  const mobileShiftDots = useMemo(() => {
+    const m: Record<string, { armed: number; unarmed: number }> = {};
+    for (const s of schedules) {
+      if (!isPrivileged && s.eid !== user?.userId) continue;
+      if (!m[s.date]) m[s.date] = { armed: 0, unarmed: 0 };
+      if (s.armed === "Armed") m[s.date].armed++;
+      else m[s.date].unarmed++;
+    }
+    return m;
+  }, [schedules, isPrivileged, user]);
 
   // Grid employee rows (filtered by search)
   const gridEmployees = useMemo(() => {
@@ -910,64 +943,198 @@ export default function SchedulePage() {
           </table>
         </div>
 
-        {/* ── Mobile cards ─────────────────────────────────────────────────── */}
-        <div className="lg:hidden space-y-4">
-          {days.map((d, di) => {
-            const dateStr   = format(d, "yyyy-MM-dd");
-            const isToday   = dateStr === todayStr;
-            const dayShifts = visibleSchedules.filter((s) => s.date === dateStr);
+        {/* ── Mobile calendar view ──────────────────────────────────────────── */}
+        <div className="lg:hidden">
 
-            return (
-              <div key={di}>
-                <div className={`flex items-center justify-between mb-2`}>
-                  <h3 className={`font-semibold text-sm ${isToday ? "text-primary" : "text-foreground"}`}>
-                    {format(d, "EEEE, MMM d")}
-                    {isToday && <span className="ml-2 text-xs bg-primary text-primary-foreground px-1.5 py-0.5 rounded-full">Today</span>}
-                  </h3>
-                  {isPrivileged && (
-                    <Button size="sm" variant="outline" onClick={() => openBuilder(d)} className="h-7 text-xs">
-                      <Plus className="w-3 h-3 mr-1" /> Add
-                    </Button>
-                  )}
-                </div>
-                {dayShifts.length === 0
-                  ? <p className="text-xs text-muted-foreground italic pl-1">No shifts scheduled</p>
-                  : (
-                    <div className="space-y-2">
-                      {dayShifts.map((s) => (
-                        <Card key={s.id} className={`p-3 border ${s.armed === "Armed" ? "border-red-200 bg-red-50" : "border-blue-200 bg-blue-50"}`}>
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="space-y-0.5">
-                              <div className="font-semibold text-sm">{empName(s.eid)}</div>
-                              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                                <Clock className="w-3 h-3" />{fmt12(s.shiftStart)} – {fmt12(s.shiftEnd)}
-                              </div>
-                              {s.location && <div className="flex items-center gap-1 text-xs text-muted-foreground"><MapPin className="w-3 h-3" />{s.location}</div>}
-                              <div className="flex items-center gap-1 text-xs font-medium">
-                                {s.armed === "Armed"
-                                  ? <><Shield className="w-3 h-3 text-red-600" /><span className="text-red-700">Armed</span></>
-                                  : <><ShieldOff className="w-3 h-3 text-blue-600" /><span className="text-blue-700">Unarmed</span></>}
-                                {s.client && <span className="text-muted-foreground ml-1">· {s.client}</span>}
-                              </div>
-                            </div>
-                            {isPrivileged && (
-                              <div className="flex gap-1 shrink-0">
-                                <button onClick={() => setEditShift(s)} className="p-1.5 hover:bg-white/60 rounded" data-testid={`button-edit-${s.id}`}>
-                                  <Edit2 className="w-3.5 h-3.5 text-muted-foreground" />
-                                </button>
-                                <button onClick={() => setDeleteTarget(s)} className="p-1.5 hover:bg-white/60 rounded" data-testid={`button-delete-${s.id}`}>
-                                  <Trash2 className="w-3.5 h-3.5 text-red-500" />
-                                </button>
-                              </div>
-                            )}
-                          </div>
-                        </Card>
-                      ))}
-                    </div>
-                  )}
+          {/* Calendar card */}
+          <Card className="overflow-hidden shadow-sm">
+            {/* Month nav header */}
+            <div className="flex items-center justify-between px-4 py-3 border-b bg-primary text-primary-foreground">
+              <button
+                className="p-1.5 rounded-full hover:bg-white/20 transition-colors"
+                onClick={() => setMobileCalAnchor((a) => subMonths(a, 1))}
+                data-testid="button-mobile-prev-month"
+              >
+                <ChevronLeft className="w-5 h-5" />
+              </button>
+              <div className="text-center">
+                <div className="font-bold text-base">{format(mobileCalAnchor, "MMMM yyyy")}</div>
+                <div className="text-xs opacity-80">{mobileSelectedShifts.length} shift{mobileSelectedShifts.length !== 1 ? "s" : ""} on {format(mobileCalDate, "MMM d")}</div>
               </div>
-            );
-          })}
+              <button
+                className="p-1.5 rounded-full hover:bg-white/20 transition-colors"
+                onClick={() => setMobileCalAnchor((a) => addMonths(a, 1))}
+                data-testid="button-mobile-next-month"
+              >
+                <ChevronRight className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Day-of-week headers */}
+            <div className="grid grid-cols-7 border-b bg-muted/30">
+              {["Mo","Tu","We","Th","Fr","Sa","Su"].map((d) => (
+                <div key={d} className="text-center text-[11px] font-semibold text-muted-foreground py-2">{d}</div>
+              ))}
+            </div>
+
+            {/* Calendar grid */}
+            <div className="grid grid-cols-7 gap-0 p-2">
+              {mobileCalGridDays.map((d, i) => {
+                const ds        = format(d, "yyyy-MM-dd");
+                const inMonth   = format(d, "M") === format(mobileCalAnchor, "M");
+                const isToday   = ds === todayStr;
+                const isSel     = ds === mobileSelectedStr;
+                const dots      = mobileShiftDots[ds];
+                const weekend   = d.getDay() === 0 || d.getDay() === 6;
+
+                return (
+                  <button
+                    key={i}
+                    onClick={() => {
+                      setMobileCalDate(d);
+                      // Jump anchor if user taps adjacent-month day
+                      if (!inMonth) setMobileCalAnchor(startOfMonth(d));
+                    }}
+                    data-testid={`mobile-cal-day-${ds}`}
+                    className={`relative flex flex-col items-center justify-start py-1.5 rounded-xl mx-0.5 mb-0.5 min-h-[48px] transition-colors ${
+                      isSel
+                        ? "bg-primary text-primary-foreground shadow-md"
+                        : isToday
+                          ? "bg-primary/15 text-primary font-bold"
+                          : !inMonth
+                            ? "opacity-25"
+                            : weekend
+                              ? "text-muted-foreground"
+                              : "hover:bg-muted"
+                    }`}
+                  >
+                    <span className={`text-[13px] leading-none ${isSel ? "font-bold" : isToday ? "font-bold" : "font-medium"}`}>
+                      {format(d, "d")}
+                    </span>
+                    {/* Shift indicator dots */}
+                    {dots && (dots.armed > 0 || dots.unarmed > 0) && (
+                      <div className="flex gap-0.5 mt-1">
+                        {dots.armed > 0 && (
+                          <span className={`w-1.5 h-1.5 rounded-full ${isSel ? "bg-white" : "bg-red-500"}`} />
+                        )}
+                        {dots.unarmed > 0 && (
+                          <span className={`w-1.5 h-1.5 rounded-full ${isSel ? "bg-white/70" : "bg-blue-500"}`} />
+                        )}
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Legend */}
+            <div className="flex items-center gap-4 px-4 pb-3 text-[11px] text-muted-foreground">
+              <div className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-500 inline-block" /> Armed</div>
+              <div className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-blue-500 inline-block" /> Unarmed</div>
+            </div>
+          </Card>
+
+          {/* Selected day shift cards */}
+          <div className="mt-4">
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <h3 className="font-semibold text-sm">
+                  {format(mobileCalDate, "EEEE, MMMM d")}
+                </h3>
+                {mobileSelectedStr === todayStr && (
+                  <span className="text-[11px] text-primary font-semibold">Today</span>
+                )}
+              </div>
+              {isPrivileged && (
+                <Button size="sm" variant="outline" onClick={() => openBuilder(mobileCalDate)} className="h-8 text-xs gap-1" data-testid="button-mobile-add-shift">
+                  <Plus className="w-3.5 h-3.5" /> Add Shift
+                </Button>
+              )}
+            </div>
+
+            {mobileSelectedShifts.length === 0 ? (
+              <div className="text-center py-10 text-muted-foreground">
+                <CalendarDays className="w-10 h-10 mx-auto mb-2 opacity-20" />
+                <p className="text-sm">No shifts on this day</p>
+                {isPrivileged && (
+                  <Button size="sm" className="mt-3" onClick={() => openBuilder(mobileCalDate)}>
+                    <Plus className="w-4 h-4 mr-1" /> Schedule a shift
+                  </Button>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {mobileSelectedShifts.map((s) => (
+                  <Card key={s.id} className={`p-3.5 border-l-4 ${
+                    s.armed === "Armed"
+                      ? "border-l-red-500 bg-red-50/50 dark:bg-red-950/20"
+                      : "border-l-blue-500 bg-blue-50/50 dark:bg-blue-950/20"
+                  }`}>
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="space-y-1 min-w-0">
+                        {isPrivileged && (
+                          <div className="font-semibold text-sm truncate">{empName(s.eid)}</div>
+                        )}
+                        <div className="flex items-center gap-1.5 text-sm font-medium">
+                          <Clock className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                          {fmt12(s.shiftStart)} – {fmt12(s.shiftEnd)}
+                        </div>
+                        {s.location && (
+                          <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                            <MapPin className="w-3 h-3 shrink-0" />{s.location}
+                          </div>
+                        )}
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full ${
+                            s.armed === "Armed"
+                              ? "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300"
+                              : "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300"
+                          }`}>
+                            {s.armed === "Armed"
+                              ? <Shield className="w-3 h-3" />
+                              : <ShieldOff className="w-3 h-3" />}
+                            {s.armed ?? "Unarmed"}
+                          </span>
+                          {s.client && (
+                            <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full">{s.client}</span>
+                          )}
+                        </div>
+                      </div>
+                      {isPrivileged && (
+                        <div className="flex flex-col gap-1 shrink-0">
+                          <button
+                            onClick={() => setEditShift(s)}
+                            className="p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 transition-colors"
+                            data-testid={`button-mobile-edit-${s.id}`}
+                          >
+                            <Edit2 className="w-4 h-4 text-muted-foreground" />
+                          </button>
+                          <button
+                            onClick={() => setDeleteTarget(s)}
+                            className="p-2 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
+                            data-testid={`button-mobile-delete-${s.id}`}
+                          >
+                            <Trash2 className="w-4 h-4 text-red-500" />
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Jump to today */}
+          {mobileSelectedStr !== todayStr && (
+            <button
+              onClick={() => { setMobileCalDate(new Date()); setMobileCalAnchor(startOfMonth(new Date())); }}
+              className="w-full mt-3 text-xs text-primary font-medium text-center py-2"
+              data-testid="button-mobile-jump-today"
+            >
+              Jump to today
+            </button>
+          )}
         </div>
 
         {/* ── Summary card ─────────────────────────────────────────────────── */}
