@@ -6,6 +6,7 @@ import { useTimesheets } from "@/hooks/use-timesheets";
 import { EmployeeFormDialog } from "@/pages/Employees";
 import { useChildren, useCreateChild, useUpdateChild, useDeleteChild } from "@/hooks/use-children";
 import { useLoans, useCreateLoan, useUpdateLoan, useDeleteLoan } from "@/hooks/use-loans";
+import { useSchedules, useCreateSchedule, useUpdateSchedule, useDeleteSchedule } from "@/hooks/use-schedules";
 import { useAuth } from "@/hooks/use-auth";
 import { Redirect } from "wouter";
 import { Card } from "@/components/ui/card";
@@ -18,11 +19,13 @@ import {
   ChevronLeft, User, Banknote, ShieldCheck, Baby, CreditCard,
   PlusCircle, Edit2, Trash2, TrendingDown, TrendingUp,
   Clock, DollarSign, Calendar, GraduationCap, Briefcase,
-  Info, Phone, Mail, MapPin, LayoutDashboard,
+  Info, Phone, Mail, MapPin, LayoutDashboard, CalendarDays, Shield, Building2,
 } from "lucide-react";
-import { format, differenceInYears, differenceInMonths, addYears, parseISO } from "date-fns";
+import { format, differenceInYears, differenceInMonths, addYears, parseISO, isAfter, startOfDay } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
-import type { User as UserType, EmployeeChild, EmployeeLoan, PayConfig } from "@shared/schema";
+import type { User as UserType, EmployeeChild, EmployeeLoan, PayConfig, Schedule, InsertSchedule } from "@shared/schema";
+import { FMS_LOCATIONS, ARMED_STATUSES, CLIENT_AGENCIES } from "@shared/schema";
+import { detectShift, fmt12, SHIFT_TEMPLATES } from "@/lib/shifts";
 
 // ── Guyana 2026 constants ─────────────────────────────────────────────────
 const GY_NIS_EMP   = 0.056;
@@ -108,7 +111,7 @@ function Bar({ value, max = 100, color = "bg-primary", label, sub }: {
   );
 }
 
-type Tab = "overview" | "pay" | "allowances" | "deductions" | "children" | "loans";
+type Tab = "overview" | "pay" | "allowances" | "deductions" | "children" | "loans" | "schedule";
 
 const NAV: { id: Tab; label: string; Icon: any }[] = [
   { id: "overview",    label: "Overview",              Icon: LayoutDashboard },
@@ -117,6 +120,7 @@ const NAV: { id: Tab; label: string; Icon: any }[] = [
   { id: "deductions",  label: "Deductions",            Icon: TrendingDown },
   { id: "children",    label: "Children / Dependents", Icon: Baby },
   { id: "loans",       label: "Loans",                 Icon: CreditCard },
+  { id: "schedule",    label: "My Schedule",           Icon: CalendarDays },
 ];
 
 export default function EmployeeProfile() {
@@ -137,6 +141,14 @@ export default function EmployeeProfile() {
   const { mutateAsync: updateLoan  } = useUpdateLoan(userId);
   const { mutateAsync: deleteLoan  } = useDeleteLoan(userId);
 
+  const { data: scheduleData = [] } = useSchedules(userId);
+  const { mutateAsync: createSchedule, isPending: addingSchedule } = useCreateSchedule(userId ?? "");
+  const { mutateAsync: updateSchedule } = useUpdateSchedule(userId ?? "");
+  const { mutateAsync: deleteSchedule } = useDeleteSchedule(userId ?? "");
+
+  const EMPTY_SCHED: Partial<InsertSchedule> = { date: format(new Date(), "yyyy-MM-dd"), shiftStart: "06:00", shiftEnd: "14:00", location: "", armed: "Unarmed", client: "", notes: "" };
+  const [schedModal, setSchedModal] = useState<Partial<InsertSchedule> & { id?: number } | null>(null);
+
   const [tab, setTab] = useState<Tab>("overview");
   const [editOpen, setEditOpen] = useState(false);
   const [childModal, setChildModal] = useState<Partial<EmployeeChild> | null>(null);
@@ -145,7 +157,10 @@ export default function EmployeeProfile() {
   const EMPTY_CHILD = { firstName: "", lastName: "", dob: "", relationship: "biological", school: "", active: true };
   const EMPTY_LOAN  = { description: "", principal: 0, balance: 0, monthlyPayment: 0, startDate: today(), status: "active", notes: "" };
 
-  if (authUser?.role !== "admin" && authUser?.role !== "manager") return <Redirect to="/" />;
+  // Employees can only view their own profile; managers/admins can view any
+  const canManageSchedule = authUser?.role === "admin" || authUser?.role === "manager" || authUser?.pos === "Shift Supervisor";
+  const canViewProfile    = authUser?.role === "admin" || authUser?.role === "manager" || authUser?.userId === userId;
+  if (!canViewProfile) return <Redirect to="/" />;
 
   if (!emp) return (
     <Layout>
@@ -179,6 +194,22 @@ export default function EmployeeProfile() {
       else               { await createChild(childModal as any); toast({ title: "Dependent added" }); }
       setChildModal(null);
     } catch (err: any) { toast({ title: "Failed to save", description: err.message, variant: "destructive" }); }
+  };
+
+  const handleSaveSchedule = async () => {
+    if (!schedModal?.date || !schedModal?.shiftStart || !schedModal?.shiftEnd) {
+      toast({ title: "Date, shift start and shift end are required", variant: "destructive" }); return;
+    }
+    try {
+      if (schedModal.id) {
+        await updateSchedule({ id: schedModal.id, ...schedModal });
+        toast({ title: "Schedule entry updated" });
+      } else {
+        await createSchedule({ ...schedModal, eid: userId ?? "", createdBy: authUser?.userId ?? "" } as any);
+        toast({ title: "Schedule entry added" });
+      }
+      setSchedModal(null);
+    } catch (err: any) { toast({ title: "Failed to save schedule", description: err.message, variant: "destructive" }); }
   };
 
   const handleSaveLoan = async () => {
@@ -674,8 +705,227 @@ export default function EmployeeProfile() {
               </div>
             </div>
           )}
+          {/* ══ SCHEDULE ══════════════════════════════════════════════════ */}
+          {tab === "schedule" && (() => {
+            const today = startOfDay(new Date());
+            const upcoming = scheduleData.filter((s) => isAfter(new Date(s.date), today) || s.date === format(today, "yyyy-MM-dd"));
+            const past = scheduleData.filter((s) => !isAfter(new Date(s.date), today) && s.date !== format(today, "yyyy-MM-dd"));
+
+            const SchedCard = ({ s, showActions }: { s: Schedule; showActions: boolean }) => {
+              const shift = detectShift(s.shiftStart);
+              return (
+                <Card key={s.id} className="p-3" data-testid={`schedule-card-${s.id}`}>
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-start gap-3 min-w-0">
+                      <div className="flex flex-col items-center text-center shrink-0 w-10">
+                        <span className="text-[10px] text-muted-foreground uppercase font-medium">{format(parseISO(s.date), "MMM")}</span>
+                        <span className="text-xl font-bold leading-tight">{format(parseISO(s.date), "d")}</span>
+                        <span className="text-[10px] text-muted-foreground">{format(parseISO(s.date), "EEE")}</span>
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="font-semibold text-sm">{fmt12(s.shiftStart)} – {fmt12(s.shiftEnd)}</span>
+                          {shift && (
+                            <Badge variant="outline" className="text-[10px] px-1.5 py-0">{shift.name}</Badge>
+                          )}
+                          {s.armed && s.armed !== "Unarmed" && (
+                            <Badge className="text-[10px] px-1.5 py-0 bg-red-100 text-red-700 border-red-200">{s.armed}</Badge>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-3 mt-0.5 flex-wrap text-xs text-muted-foreground">
+                          {s.location && (
+                            <span className="flex items-center gap-1"><MapPin className="w-3 h-3" />{s.location}</span>
+                          )}
+                          {s.client && (
+                            <span className="flex items-center gap-1"><Building2 className="w-3 h-3" />{s.client}</span>
+                          )}
+                        </div>
+                        {s.notes && <p className="text-[10px] text-muted-foreground mt-1 italic">"{s.notes}"</p>}
+                      </div>
+                    </div>
+                    {showActions && (
+                      <div className="flex gap-1 shrink-0">
+                        <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => setSchedModal({ ...s })} data-testid={`button-edit-sched-${s.id}`}>
+                          <Edit2 className="w-3 h-3" />
+                        </Button>
+                        <Button size="icon" variant="ghost" className="h-6 w-6 text-destructive" onClick={async () => {
+                          await deleteSchedule(s.id);
+                          toast({ title: "Schedule entry removed" });
+                        }} data-testid={`button-delete-sched-${s.id}`}>
+                          <Trash2 className="w-3 h-3" />
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                </Card>
+              );
+            };
+
+            return (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="font-semibold text-base">My Schedule</h3>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {scheduleData.length === 0
+                        ? "No schedule has been assigned yet"
+                        : `${upcoming.length} upcoming · ${past.length} past`}
+                    </p>
+                  </div>
+                  {canManageSchedule && (
+                    <Button size="sm" onClick={() => setSchedModal({ ...EMPTY_SCHED })} data-testid="button-add-schedule">
+                      <PlusCircle className="w-4 h-4 mr-1.5" /> Add Shift
+                    </Button>
+                  )}
+                </div>
+
+                {scheduleData.length === 0 && (
+                  <Card className="p-10 text-center text-muted-foreground text-sm">
+                    <CalendarDays className="w-10 h-10 mx-auto mb-3 opacity-25" />
+                    <p>No schedule has been assigned to this employee yet.</p>
+                    {canManageSchedule && (
+                      <Button size="sm" variant="outline" className="mt-3" onClick={() => setSchedModal({ ...EMPTY_SCHED })}>
+                        <PlusCircle className="w-4 h-4 mr-1.5" /> Add First Shift
+                      </Button>
+                    )}
+                  </Card>
+                )}
+
+                {upcoming.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Upcoming</p>
+                    {upcoming.map((s) => <SchedCard key={s.id} s={s} showActions={canManageSchedule} />)}
+                  </div>
+                )}
+
+                {past.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Past Shifts</p>
+                    {past.slice(0, 10).map((s) => (
+                      <div key={s.id} className="opacity-50">
+                        <SchedCard s={s} showActions={canManageSchedule} />
+                      </div>
+                    ))}
+                    {past.length > 10 && (
+                      <p className="text-xs text-muted-foreground text-center">+{past.length - 10} more past shifts</p>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
         </div>{/* end right panel */}
       </div>{/* end landscape flex */}
+
+      {/* ── Schedule Modal ────────────────────────────────────────────── */}
+      <Dialog open={schedModal !== null} onOpenChange={(o) => { if (!o) setSchedModal(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{schedModal?.id ? "Edit Shift" : "Add Shift"}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 pt-2">
+            <div className="space-y-1.5">
+              <Label>Date <span className="text-destructive">*</span></Label>
+              <Input
+                type="date"
+                value={schedModal?.date ?? ""}
+                onChange={(e) => setSchedModal((m) => m ? { ...m, date: e.target.value } : m)}
+                data-testid="input-sched-date"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Shift Template</Label>
+              <select
+                className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm"
+                value=""
+                onChange={(e) => {
+                  const tmpl = SHIFT_TEMPLATES.find((t) => `${t.start}|${t.end}` === e.target.value);
+                  if (tmpl) setSchedModal((m) => m ? { ...m, shiftStart: tmpl.start, shiftEnd: tmpl.end } : m);
+                }}
+                data-testid="select-sched-template"
+              >
+                <option value="">— Select a template or enter manually —</option>
+                {SHIFT_TEMPLATES.map((t) => (
+                  <option key={t.label} value={`${t.start}|${t.end}`}>{t.label}</option>
+                ))}
+              </select>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Shift Start <span className="text-destructive">*</span></Label>
+                <Input
+                  type="time"
+                  value={schedModal?.shiftStart ?? "06:00"}
+                  onChange={(e) => setSchedModal((m) => m ? { ...m, shiftStart: e.target.value } : m)}
+                  data-testid="input-sched-start"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Shift End <span className="text-destructive">*</span></Label>
+                <Input
+                  type="time"
+                  value={schedModal?.shiftEnd ?? "14:00"}
+                  onChange={(e) => setSchedModal((m) => m ? { ...m, shiftEnd: e.target.value } : m)}
+                  data-testid="input-sched-end"
+                />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Location</Label>
+              <select
+                className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm"
+                value={schedModal?.location ?? ""}
+                onChange={(e) => setSchedModal((m) => m ? { ...m, location: e.target.value } : m)}
+                data-testid="select-sched-location"
+              >
+                <option value="">— Select location —</option>
+                {FMS_LOCATIONS.map((loc) => <option key={loc} value={loc}>{loc}</option>)}
+              </select>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Armed Status</Label>
+                <select
+                  className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm"
+                  value={schedModal?.armed ?? "Unarmed"}
+                  onChange={(e) => setSchedModal((m) => m ? { ...m, armed: e.target.value } : m)}
+                  data-testid="select-sched-armed"
+                >
+                  {ARMED_STATUSES.map((a) => <option key={a} value={a}>{a}</option>)}
+                </select>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Client / Agency</Label>
+                <select
+                  className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm"
+                  value={schedModal?.client ?? ""}
+                  onChange={(e) => setSchedModal((m) => m ? { ...m, client: e.target.value } : m)}
+                  data-testid="select-sched-client"
+                >
+                  <option value="">— Select client —</option>
+                  {CLIENT_AGENCIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Notes</Label>
+              <Input
+                value={schedModal?.notes ?? ""}
+                onChange={(e) => setSchedModal((m) => m ? { ...m, notes: e.target.value } : m)}
+                placeholder="Optional notes"
+                data-testid="input-sched-notes"
+              />
+            </div>
+            <div className="flex justify-end gap-2 pt-2 border-t border-border">
+              <Button variant="outline" onClick={() => setSchedModal(null)} data-testid="button-cancel-sched">Cancel</Button>
+              <Button onClick={handleSaveSchedule} disabled={addingSchedule} data-testid="button-save-sched">
+                {addingSchedule ? "Saving…" : "Save Shift"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Edit Employee dialog */}
       {editOpen && (

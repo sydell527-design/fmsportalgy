@@ -20,6 +20,7 @@ import {
 import { format, startOfMonth, endOfMonth, subMonths, addMonths } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import type { Timesheet } from "@shared/schema";
+import { DAY_STATUSES, HOLIDAY_TYPES, ARMED_STATUSES, CLIENT_AGENCIES } from "@shared/schema";
 import type { InsertTimesheet } from "@shared/routes";
 import * as XLSX from "xlsx";
 
@@ -149,7 +150,11 @@ export default function Timesheets() {
 
   // Admin override edit modal
   const [adminEditModal, setAdminEditModal] = useState<Timesheet | null>(null);
-  const [adminForm, setAdminForm] = useState({ ci: "", co: "", brk: "30", notes: "", reason: "" });
+  const [adminForm, setAdminForm] = useState({
+    ci: "", co: "", brk: "30", notes: "", reason: "",
+    dayStatus: "", holidayType: "", armed: "", client: "",
+    ph: "0", meals: "0",
+  });
 
   // Sign All modal
   const [signAllOpen, setSignAllOpen] = useState(false);
@@ -454,7 +459,12 @@ export default function Timesheets() {
   };
 
   const openAdminEdit = (ts: Timesheet) => {
-    setAdminForm({ ci: ts.ci ?? "", co: ts.co ?? "", brk: String(ts.brk ?? 30), notes: ts.notes ?? "", reason: "" });
+    setAdminForm({
+      ci: ts.ci ?? "", co: ts.co ?? "", brk: String(ts.brk ?? 30), notes: ts.notes ?? "", reason: "",
+      dayStatus: ts.dayStatus ?? "", holidayType: ts.holidayType ?? "",
+      armed: ts.armed ?? "", client: ts.client ?? "",
+      ph: String(ts.ph ?? 0), meals: String(ts.meals ?? 0),
+    });
     setAdminEditModal(ts);
   };
 
@@ -505,6 +515,12 @@ export default function Timesheets() {
         notes: adminForm.notes ? `${adminForm.notes}\n[${auditNote}]` : `[${auditNote}]`,
         reg: hours.reg,
         ot: hours.ot,
+        ph: Number(adminForm.ph) || 0,
+        meals: Number(adminForm.meals) || 0,
+        dayStatus: adminForm.dayStatus || null,
+        holidayType: adminForm.holidayType || null,
+        armed: adminForm.armed || null,
+        client: adminForm.client || null,
         edited: true,
       });
       toast({ title: "Timesheet updated (admin override)" });
@@ -1181,7 +1197,7 @@ export default function Timesheets() {
 
       {/* ── Admin Override Edit Modal ─────────────────────────────────────── */}
       <Dialog open={!!adminEditModal} onOpenChange={() => setAdminEditModal(null)}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <ShieldCheck className="w-4 h-4 text-amber-600" /> Admin Edit Override
@@ -1216,6 +1232,53 @@ export default function Timesheets() {
                   {adminHours.ot > 0 && <div><p className="text-xs text-amber-600">Overtime</p><p className="font-bold text-lg text-amber-600">{adminHours.ot}h</p></div>}
                 </div>
               )}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label>Day Status</Label>
+                  <select className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm"
+                    value={adminForm.dayStatus} onChange={(e) => setAdminForm({ ...adminForm, dayStatus: e.target.value, holidayType: "" })}>
+                    <option value="">— None —</option>
+                    {DAY_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Holiday Type</Label>
+                  <select className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm"
+                    value={adminForm.holidayType} onChange={(e) => setAdminForm({ ...adminForm, holidayType: e.target.value })}
+                    disabled={adminForm.dayStatus !== "Holiday"}>
+                    <option value="">— None —</option>
+                    {HOLIDAY_TYPES.map((h) => <option key={h} value={h}>{h}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label>Armed Status</Label>
+                  <select className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm"
+                    value={adminForm.armed} onChange={(e) => setAdminForm({ ...adminForm, armed: e.target.value })}>
+                    <option value="">— None —</option>
+                    {ARMED_STATUSES.map((a) => <option key={a} value={a}>{a}</option>)}
+                  </select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Client / Agency</Label>
+                  <select className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm"
+                    value={adminForm.client} onChange={(e) => setAdminForm({ ...adminForm, client: e.target.value })}>
+                    <option value="">— None —</option>
+                    {CLIENT_AGENCIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label>Public Holiday Hrs</Label>
+                  <Input type="number" min={0} step={0.5} value={adminForm.ph} onChange={(e) => setAdminForm({ ...adminForm, ph: e.target.value })} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Meals</Label>
+                  <Input type="number" min={0} max={2} value={adminForm.meals} onChange={(e) => setAdminForm({ ...adminForm, meals: e.target.value })} />
+                </div>
+              </div>
               <div className="space-y-1.5">
                 <Label>Notes</Label>
                 <Textarea value={adminForm.notes} onChange={(e) => setAdminForm({ ...adminForm, notes: e.target.value })} rows={2} />

@@ -1,12 +1,13 @@
 import { db } from "./db";
 import {
-  users, timesheets, requests, geofences, employeeChildren, employeeLoans,
+  users, timesheets, requests, geofences, employeeChildren, employeeLoans, schedules,
   type User, type InsertUser,
   type Timesheet, type InsertTimesheet,
   type Request, type InsertRequest,
   type Geofence, type InsertGeofence,
   type EmployeeChild, type InsertEmployeeChild,
   type EmployeeLoan, type InsertEmployeeLoan,
+  type Schedule, type InsertSchedule,
 } from "@shared/schema";
 import { eq, and, gte, lte, desc, inArray } from "drizzle-orm";
 
@@ -56,6 +57,12 @@ export interface IStorage {
   createLoan(loan: InsertEmployeeLoan): Promise<EmployeeLoan>;
   updateLoan(id: number, updates: Partial<InsertEmployeeLoan>): Promise<EmployeeLoan>;
   deleteLoan(id: number): Promise<void>;
+
+  getSchedulesByEid(eid: string): Promise<Schedule[]>;
+  getSchedulesByEids(eids: string[]): Promise<Schedule[]>;
+  createSchedule(s: InsertSchedule): Promise<Schedule>;
+  updateSchedule(id: number, updates: Partial<InsertSchedule>): Promise<Schedule>;
+  deleteSchedule(id: number): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -205,6 +212,25 @@ export class DatabaseStorage implements IStorage {
   }
   async deleteLoan(id: number) {
     await db.delete(employeeLoans).where(eq(employeeLoans.id, id));
+  }
+
+  async getSchedulesByEid(eid: string) {
+    return db.select().from(schedules).where(eq(schedules.eid, eid)).orderBy(schedules.date);
+  }
+  async getSchedulesByEids(eids: string[]) {
+    if (!eids.length) return [];
+    return db.select().from(schedules).where(inArray(schedules.eid, eids)).orderBy(schedules.date);
+  }
+  async createSchedule(s: InsertSchedule) {
+    const [r] = await db.insert(schedules).values(s).returning();
+    return r;
+  }
+  async updateSchedule(id: number, updates: Partial<InsertSchedule>) {
+    const [r] = await db.update(schedules).set(updates).where(eq(schedules.id, id)).returning();
+    return r;
+  }
+  async deleteSchedule(id: number) {
+    await db.delete(schedules).where(eq(schedules.id, id));
   }
 }
 

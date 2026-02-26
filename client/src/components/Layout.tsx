@@ -4,7 +4,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import {
   LayoutDashboard, Clock, CalendarClock, Users, Settings,
-  LogOut, Building2, DollarSign, BarChart2, ScrollText, Menu, X,
+  LogOut, Building2, DollarSign, BarChart2, ScrollText, Menu, X, UserCircle,
 } from "lucide-react";
 import { ForcePasswordChange } from "./ForcePasswordChange";
 
@@ -20,14 +20,15 @@ export function Layout({ children }: LayoutProps) {
   if (!user) return null;
 
   const navItems = [
-    { href: "/",           label: "Dashboard",  icon: LayoutDashboard, roles: ["employee", "manager", "admin"] },
-    { href: "/timesheets", label: "Timesheets", icon: Clock,            roles: ["employee", "manager", "admin"] },
-    { href: "/requests",   label: "Requests",   icon: CalendarClock,    roles: ["employee", "manager", "admin"] },
-    { href: "/payroll",    label: "Payroll",    icon: DollarSign,       roles: ["manager", "admin"] },
-    { href: "/reports",    label: "Reports",    icon: BarChart2,         roles: ["manager", "admin"] },
-    { href: "/employees",  label: "Employees",  icon: Users,            roles: ["admin", "manager"] },
-    { href: "/settings",   label: "Settings",   icon: Settings,         roles: ["employee", "manager", "admin"] },
-    { href: "/changelog",  label: "Changelog",  icon: ScrollText,       roles: ["admin", "manager"] },
+    { href: "/",                                  label: "Dashboard",  icon: LayoutDashboard, roles: ["employee", "manager", "admin"] },
+    { href: "/timesheets",                        label: "Timesheets", icon: Clock,            roles: ["employee", "manager", "admin"] },
+    { href: "/requests",                          label: "Requests",   icon: CalendarClock,    roles: ["employee", "manager", "admin"] },
+    { href: `/employee/${user.userId}`,           label: "My Profile", icon: UserCircle,       roles: ["employee"] },
+    { href: "/payroll",                           label: "Payroll",    icon: DollarSign,       roles: ["manager", "admin"] },
+    { href: "/reports",                           label: "Reports",    icon: BarChart2,        roles: ["manager", "admin"] },
+    { href: "/employees",                         label: "Employees",  icon: Users,            roles: ["admin", "manager"] },
+    { href: "/settings",                          label: "Settings",   icon: Settings,         roles: ["employee", "manager", "admin"] },
+    { href: "/changelog",                         label: "Changelog",  icon: ScrollText,       roles: ["admin", "manager"] },
   ];
 
   const allowedNav = navItems.filter((item) => item.roles.includes(user.role));
