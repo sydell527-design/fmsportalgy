@@ -174,6 +174,7 @@ export const schedules = pgTable("schedules", {
   location: text("location"),                   // from FMS_LOCATIONS
   armed: text("armed"),                         // Unarmed / Armed
   client: text("client"),                       // Caricom / EU / UN / ...
+  company: text("company"),                     // Company A – Company F
   notes: text("notes"),
   createdBy: text("created_by").notNull(),      // userId of creator
 });

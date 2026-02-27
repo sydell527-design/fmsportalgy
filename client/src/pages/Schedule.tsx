@@ -501,7 +501,7 @@ function EditDialog({ shift, employees, onClose, onSaved, onDelete }: EditDialog
   const { toast } = useToast();
   const [form, setForm] = useState({
     shiftStart: "", shiftEnd: "", armed: "Unarmed" as ArmedStatus,
-    location: "", client: "" as ClientAgency | "", notes: "",
+    location: "", client: "" as ClientAgency | "", company: "", notes: "",
   });
   const [saving, setSaving] = useState(false);
 
@@ -513,6 +513,7 @@ function EditDialog({ shift, employees, onClose, onSaved, onDelete }: EditDialog
         armed:      (shift.armed as ArmedStatus) ?? "Unarmed",
         location:   shift.location ?? "",
         client:     (shift.client as ClientAgency | "") ?? "",
+        company:    shift.company ?? "",
         notes:      shift.notes ?? "",
       });
     }
@@ -526,6 +527,7 @@ function EditDialog({ shift, employees, onClose, onSaved, onDelete }: EditDialog
         ...form,
         location: form.location || null,
         client:   form.client   || null,
+        company:  form.company  || null,
         notes:    form.notes    || null,
       });
       toast({ title: "Shift updated" });
@@ -607,6 +609,21 @@ function EditDialog({ shift, employees, onClose, onSaved, onDelete }: EditDialog
               >
                 <option value="">— Select —</option>
                 {CLIENT_AGENCIES.map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+
+            <div className="space-y-1">
+              <Label className="text-xs">Company</Label>
+              <select
+                className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm"
+                value={form.company}
+                onChange={(e) => setForm((p) => ({ ...p, company: e.target.value }))}
+                data-testid="select-edit-company"
+              >
+                <option value="">— None —</option>
+                {["Company A","Company B","Company C","Company D","Company E","Company F"].map((c) => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
               </select>
             </div>
 
@@ -1054,6 +1071,9 @@ export default function SchedulePage() {
                               <div className="min-w-0">
                                 <div className="font-semibold truncate max-w-[90px]">{userMap[s.eid] ?? s.eid}</div>
                                 <div className="opacity-80 whitespace-nowrap">{fmt12(s.shiftStart)} – {fmt12(s.shiftEnd)}</div>
+                                {s.company && (
+                                  <div className="text-[9px] opacity-70 font-semibold truncate">{s.company}</div>
+                                )}
                                 <div className="flex items-center gap-0.5 mt-0.5 opacity-70">
                                   {s.armed === "Armed" ? <Shield className="w-2.5 h-2.5 shrink-0" /> : <ShieldOff className="w-2.5 h-2.5 shrink-0" />}
                                   <span>{s.armed ?? "Unarmed"}</span>
@@ -1161,6 +1181,9 @@ export default function SchedulePage() {
                                 <div className="opacity-80 whitespace-nowrap">{fmt12(s.shiftEnd)}</div>
                                 {viewMode === "week" && s.location && (
                                   <div className="truncate opacity-70 text-[10px]">{s.location}</div>
+                                )}
+                                {viewMode === "week" && s.company && (
+                                  <div className="truncate opacity-70 text-[9px] font-semibold">{s.company}</div>
                                 )}
                                 <div className="flex items-center gap-0.5 mt-0.5">
                                   {s.armed === "Armed"
@@ -1480,6 +1503,9 @@ export default function SchedulePage() {
                           <div className="font-semibold">{fmt12(s.shiftStart)}</div>
                           <div className="opacity-60 text-[5px] tracking-widest">────</div>
                           <div className="font-semibold">{fmt12(s.shiftEnd)}</div>
+                          {s.company && (
+                            <div className="mt-0.5 text-[5px] opacity-80 truncate font-semibold tracking-wide">{s.company}</div>
+                          )}
                         </div>
                       ))}
                     </div>

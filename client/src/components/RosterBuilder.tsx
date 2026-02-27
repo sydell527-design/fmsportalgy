@@ -51,8 +51,11 @@ interface EmpRow {
   customTimes: Record<string, { start: string; end: string }>; // for custom entries
 }
 
+const COMPANY_OPTIONS = ["Company A", "Company B", "Company C", "Company D", "Company E", "Company F"] as const;
+
 interface AgencyRoster {
   agency: string;          // e.g. "CARICOM", "EU"
+  company: string;         // e.g. "Company A" .. "Company F"
   rows: EmpRow[];          // main / primary officers
   reliefRows: EmpRow[];    // relief security officers
   reserveRows: EmpRow[];   // reserve officers
@@ -522,6 +525,7 @@ export function RosterBuilder({ open, onClose, employees, onSaved }: Props) {
     ]);
     const data: (string | number)[][] = [
       [`${activeAgency} Roster — ${periodLabel}`],
+      ...(activeCompany ? [[activeCompany]] : []),
       [],
       header,
       ...toRows(activeRows),
@@ -543,15 +547,15 @@ export function RosterBuilder({ open, onClose, employees, onSaved }: Props) {
     const numCols = 4 + days.length;
     const ws = XLSX.utils.aoa_to_sheet(data);
 
-    // Merge section header rows (rows with a single cell starting with "—") across all columns
+    // Merge title, company subtitle, and section header rows across all columns
     const merges: { s: { r: number; c: number }; e: { r: number; c: number } }[] = [];
     data.forEach((row, ri) => {
       const txt = String(row[0] ?? "");
       const isSectionHeader = row.length === 1 && txt.startsWith("—");
-      const isTitleRow = ri === 0;
-      if (isSectionHeader || isTitleRow) {
+      const isTitleRow      = ri === 0;
+      const isCompanyRow    = ri === 1 && row.length === 1 && !txt.startsWith("—") && !!txt;
+      if (isSectionHeader || isTitleRow || isCompanyRow) {
         merges.push({ s: { r: ri, c: 0 }, e: { r: ri, c: numCols - 1 } });
-        // Center-align the merged cell
         const cellAddr = XLSX.utils.encode_cell({ r: ri, c: 0 });
         if (ws[cellAddr]) {
           ws[cellAddr].s = { alignment: { horizontal: "center" }, font: { bold: true } };
@@ -627,9 +631,12 @@ export function RosterBuilder({ open, onClose, employees, onSaved }: Props) {
       body += buildRows(activeReserveRows);
     }
 
+    const companyLine = activeCompany
+      ? `<p style="text-align:center;font-size:13px;font-weight:bold;color:#374151;margin:0 0 14px">${activeCompany}</p>`
+      : "";
     return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${title}</title>
-<style>body{font-family:Arial,sans-serif;margin:20px}h2{color:#1d4ed8;margin-bottom:12px}table{border-collapse:collapse;width:100%}@media print{@page{size:landscape}body{margin:12px}}</style>
-</head><body><h2>${title}</h2><table>${headerRow}${body}</table></body></html>`;
+<style>body{font-family:Arial,sans-serif;margin:20px}h2{color:#1d4ed8;margin-bottom:6px}table{border-collapse:collapse;width:100%}@media print{@page{size:landscape}body{margin:12px}}</style>
+</head><body><h2>${title}</h2>${companyLine}<table>${headerRow}${body}</table></body></html>`;
   }
 
   // PDF — open print dialog in a new window
@@ -766,6 +773,17 @@ export function RosterBuilder({ open, onClose, employees, onSaved }: Props) {
     [agencyRosters, activeAgency]
   );
 
+  // Active agency's company assignment
+  const activeCompany = useMemo(
+    () => agencyRosters.find((ar) => ar.agency === activeAgency)?.company ?? "",
+    [agencyRosters, activeAgency]
+  );
+  function setActiveCompany(company: string) {
+    setAgencyRosters((prev) =>
+      prev.map((ar) => ar.agency === activeAgency ? { ...ar, company } : ar)
+    );
+  }
+
   function updateActiveReliefRows(updater: (rows: EmpRow[]) => EmpRow[]) {
     setAgencyRosters((prev) =>
       prev.map((ar) => ar.agency === activeAgency ? { ...ar, reliefRows: updater(ar.reliefRows) } : ar)
@@ -781,7 +799,7 @@ export function RosterBuilder({ open, onClose, employees, onSaved }: Props) {
   function openAgency(agency: string) {
     setAgencyRosters((prev) => {
       if (prev.some((ar) => ar.agency === agency)) return prev;
-      return [...prev, { agency, rows: [], reliefRows: [], reserveRows: [] }];
+      return [...prev, { agency, company: "", rows: [], reliefRows: [], reserveRows: [] }];
     });
     setActiveAgency(agency);
     setReliefOpen(false);
@@ -981,6 +999,7 @@ export function RosterBuilder({ open, onClose, employees, onSaved }: Props) {
           armed:      "Unarmed",
           location:   row.location || null,
           client:     activeAgency,
+          company:    activeCompany || null,
           notes:      null,
           createdBy:  user?.userId ?? "",
         });
@@ -1257,6 +1276,24 @@ export function RosterBuilder({ open, onClose, employees, onSaved }: Props) {
               <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1.5">Agency / Client</p>
               <AgencyCombo onSelect={openAgency} existing={agencyRosters.map((ar) => ar.agency)} />
             </div>
+
+            {/* Company selector */}
+            {activeAgency && (
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1.5">Company</p>
+                <select
+                  value={activeCompany}
+                  onChange={(e) => setActiveCompany(e.target.value)}
+                  className="w-full border rounded px-2 py-1.5 text-xs bg-background"
+                  data-testid="select-roster-company"
+                >
+                  <option value="">— Select Company —</option>
+                  {COMPANY_OPTIONS.map((c) => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
+              </div>
+            )}
 
             {/* ── MAIN section ─────────────────────────────────────────────── */}
             <div>
