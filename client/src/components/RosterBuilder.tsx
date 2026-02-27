@@ -1427,6 +1427,15 @@ export function RosterBuilder({ open, onClose, employees, onSaved }: Props) {
           ) : (
             <div className="space-y-6">
 
+              {/* ── Company label (centred above all sections) ─────────────────── */}
+              {activeCompany && (
+                <div className="flex justify-center">
+                  <span className="px-5 py-1 rounded-full border-2 border-primary/30 bg-primary/5 text-primary font-bold text-sm tracking-wide select-none">
+                    {activeCompany}
+                  </span>
+                </div>
+              )}
+
               {/* ── Main roster table ─────────────────────────────────────────── */}
               {activeRows.length > 0 && (
                 <SectionGrid
