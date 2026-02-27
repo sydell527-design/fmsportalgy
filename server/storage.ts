@@ -59,6 +59,7 @@ export interface IStorage {
   updateLoan(id: number, updates: Partial<InsertEmployeeLoan>): Promise<EmployeeLoan>;
   deleteLoan(id: number): Promise<void>;
 
+  getAllSchedules(): Promise<Schedule[]>;
   getSchedulesByEid(eid: string): Promise<Schedule[]>;
   getSchedulesByEids(eids: string[]): Promise<Schedule[]>;
   createSchedule(s: InsertSchedule): Promise<Schedule>;
@@ -220,6 +221,9 @@ export class DatabaseStorage implements IStorage {
     await db.delete(employeeLoans).where(eq(employeeLoans.id, id));
   }
 
+  async getAllSchedules() {
+    return db.select().from(schedules).orderBy(schedules.date);
+  }
   async getSchedulesByEid(eid: string) {
     return db.select().from(schedules).where(eq(schedules.eid, eid)).orderBy(schedules.date);
   }

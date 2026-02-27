@@ -1,46 +1,73 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { Layout } from "@/components/Layout";
 import { ClockInOut } from "@/components/ClockInOut";
-import { ActiveOfficers } from "@/components/ActiveOfficers";
 import { useTimesheets, useUpdateTimesheet } from "@/hooks/use-timesheets";
 import { useRequests } from "@/hooks/use-requests";
 import { useUsers } from "@/hooks/use-users";
-import { Card } from "@/components/ui/card";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { apiRequest } from "@/lib/queryClient";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   Users, Clock, CheckCircle2, AlertTriangle, FileText,
-  TrendingUp, BarChart2, Calendar, PenLine, XCircle, UserCheck,
-  MapPin, Timer, Radio,
+  TrendingUp, Calendar, PenLine, XCircle, Building2,
+  Trash2, Shield, ShieldOff, Radio, Search, ChevronDown,
+  ChevronRight, LayoutDashboard, RefreshCw, Filter,
 } from "lucide-react";
-import { format, differenceInMinutes, parse } from "date-fns";
+import { format, differenceInMinutes, parse, startOfMonth, endOfMonth } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
-import type { Timesheet } from "@shared/schema";
+import type { Timesheet, Schedule } from "@shared/schema";
 
-function statusColor(status: string) {
-  if (status === "approved") return "bg-green-100 text-green-700 border-green-200";
-  if (status === "rejected") return "bg-red-100 text-red-700 border-red-200";
-  if (status === "pending_second_approval") return "bg-purple-100 text-purple-700 border-purple-200";
-  if (status === "pending_first_approval") return "bg-yellow-100 text-yellow-700 border-yellow-200";
-  if (status === "pending_employee") return "bg-blue-100 text-blue-700 border-blue-200";
+// ── helpers ────────────────────────────────────────────────────────────────────
+function statusColor(s: string) {
+  if (s === "approved") return "bg-green-100 text-green-700 border-green-200";
+  if (s === "rejected") return "bg-red-100 text-red-700 border-red-200";
+  if (s === "pending_second_approval") return "bg-purple-100 text-purple-700 border-purple-200";
+  if (s === "pending_first_approval") return "bg-yellow-100 text-yellow-700 border-yellow-200";
+  if (s === "pending_employee") return "bg-blue-100 text-blue-700 border-blue-200";
   return "bg-muted text-muted-foreground";
 }
-
-function statusLabel(status: string) {
-  const map: Record<string, string> = {
-    approved: "Approved",
-    rejected: "Rejected",
+function statusLabel(s: string) {
+  const m: Record<string, string> = {
+    approved: "Approved", rejected: "Rejected",
     pending_second_approval: "Awaiting 2nd Sign-off",
     pending_first_approval: "Awaiting 1st Sign-off",
     pending_employee: "Awaiting Your Signature",
   };
-  return map[status] ?? status;
+  return m[s] ?? s;
+}
+function elapsed(ci: string) {
+  const now = new Date();
+  const start = parse(`${format(now, "yyyy-MM-dd")} ${ci}`, "yyyy-MM-dd HH:mm", new Date());
+  const m = Math.max(0, differenceInMinutes(now, start));
+  const h = Math.floor(m / 60);
+  return h > 0 ? `${h}h ${m % 60}m` : `${m}m`;
+}
+function fmtDate(d: string) { return format(new Date(d + "T00:00"), "d MMM yy"); }
+
+// ── KPI stat card ──────────────────────────────────────────────────────────────
+function KpiCard({ label, value, icon: Icon, color = "text-foreground", sub }: {
+  label: string; value: string | number; icon: any; color?: string; sub?: string;
+}) {
+  return (
+    <div className="bg-card border rounded-xl p-4 flex items-start gap-3 shadow-sm" data-testid={`kpi-${label.toLowerCase().replace(/\s+/g, "-")}`}>
+      <div className="p-2 rounded-lg bg-primary/10 shrink-0">
+        <Icon className="w-4 h-4 text-primary" />
+      </div>
+      <div className="min-w-0">
+        <p className="text-[11px] text-muted-foreground font-medium leading-tight truncate">{label}</p>
+        <p className={`text-2xl font-bold leading-tight mt-0.5 ${color}`}>{value}</p>
+        {sub && <p className="text-[10px] text-muted-foreground mt-0.5">{sub}</p>}
+      </div>
+    </div>
+  );
 }
 
+// ── Main Dashboard ─────────────────────────────────────────────────────────────
 export default function Dashboard() {
   const { user } = useAuth();
   const { data: timesheets } = useTimesheets();
@@ -48,69 +75,144 @@ export default function Dashboard() {
   const { data: users } = useUsers();
   const { mutateAsync: updateTimesheet } = useUpdateTimesheet();
   const { toast } = useToast();
+  const qc = useQueryClient();
 
-  // Full Access: admin or manager always get the full portal
-  const isFullAccess = user.role === "admin" || user.role === "manager";
-  // Stage 2 (Supervisor): any employee whose position appears as fa or sa on at least one other employee
-  // Dynamically derived — no position titles are hardcoded
+  const isAdmin = user.role === "admin" || user.role === "manager";
   const isSupervisor =
     user.role === "employee" &&
-    (users ?? []).some(
-      (u) => u.userId !== user.userId && (u.fa === user.pos || u.sa === user.pos)
-    );
-  const [supTab, setSupTab] = useState<"my-shift" | "active-officers">("my-shift");
+    (users ?? []).some((u) => u.userId !== user.userId && (u.fa === user.pos || u.sa === user.pos));
 
+  // ── Admin schedule data ──────────────────────────────────────────────────────
+  const { data: allSchedules, refetch: refetchSchedules } = useQuery<Schedule[]>({
+    queryKey: ["/api/schedules/all"],
+    enabled: isAdmin,
+  });
+
+  // ── Filters ─────────────────────────────────────────────────────────────────
+  const todayStr = format(new Date(), "yyyy-MM-dd");
+  const [dateFrom, setDateFrom] = useState(format(startOfMonth(new Date()), "yyyy-MM-dd"));
+  const [dateTo,   setDateTo]   = useState(format(endOfMonth(new Date()),   "yyyy-MM-dd"));
+  const [agencyFilter, setAgencyFilter] = useState("ALL");
+  const [search, setSearch] = useState("");
+  const [rosterView, setRosterView] = useState<"agency" | "employee">("agency");
+
+  // ── Approval state ───────────────────────────────────────────────────────────
   const [sigModal, setSigModal] = useState<{ ts: Timesheet; role: "approver" } | null>(null);
   const [sigName, setSigName] = useState("");
   const [rejectModal, setRejectModal] = useState<Timesheet | null>(null);
 
-  if (!user) return null;
+  // ── Delete confirmation ──────────────────────────────────────────────────────
+  const [deleteTarget, setDeleteTarget] = useState<{
+    label: string; eids: string[]; startDate: string; endDate: string; count: number;
+  } | null>(null);
 
-  const today = format(new Date(), "yyyy-MM-dd");
+  // ── Expand state (agency cards) ──────────────────────────────────────────────
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+
+  // ── Live refresh tick ────────────────────────────────────────────────────────
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setTick((t) => t + 1), 60_000);
+    return () => clearInterval(id);
+  }, []);
+
+  const today = todayStr;
   const currentMonth = format(new Date(), "yyyy-MM");
 
-  // ── Admin / Manager stats ──────────────────────────────────────────────────
-  const totalEmployees = users?.filter((u) => u.status === "active").length ?? 0;
-  const clockedInToday = timesheets?.filter((t) => t.date === today && t.ci && !t.co).length ?? 0;
+  // ── Maps ─────────────────────────────────────────────────────────────────────
+  const userMap = useMemo(() => {
+    const m: Record<string, { name: string; pos: string; av: string; status: string }> = {};
+    for (const u of users ?? []) {
+      m[u.userId] = { name: u.name, pos: u.pos ?? "", av: u.av ?? u.name.charAt(0), status: u.status };
+    }
+    return m;
+  }, [users]);
 
-  const pendingApprovals = timesheets?.filter((ts) => {
+  // ── Filtered schedules (within date range) ───────────────────────────────────
+  const filteredSchedules = useMemo(() => {
+    return (allSchedules ?? []).filter((s) => {
+      if (s.date < dateFrom || s.date > dateTo) return false;
+      if (agencyFilter !== "ALL" && s.client !== agencyFilter) return false;
+      if (search) {
+        const name = (userMap[s.eid]?.name ?? "").toLowerCase();
+        if (!name.includes(search.toLowerCase()) && !s.eid.includes(search)) return false;
+      }
+      return true;
+    });
+  }, [allSchedules, dateFrom, dateTo, agencyFilter, search, userMap]);
+
+  // ── Agency list for filter ───────────────────────────────────────────────────
+  const allAgencies = useMemo(() => {
+    const set = new Set<string>();
+    for (const s of allSchedules ?? []) if (s.client) set.add(s.client);
+    return Array.from(set).sort();
+  }, [allSchedules]);
+
+  // ── Grouped by agency ────────────────────────────────────────────────────────
+  const agencyGroups = useMemo(() => {
+    const g: Record<string, Schedule[]> = {};
+    for (const s of filteredSchedules) {
+      const k = s.client ?? "Unassigned";
+      if (!g[k]) g[k] = [];
+      g[k].push(s);
+    }
+    return Object.entries(g).sort(([a], [b]) => a.localeCompare(b));
+  }, [filteredSchedules]);
+
+  // ── Grouped by employee ──────────────────────────────────────────────────────
+  const empGroups = useMemo(() => {
+    const g: Record<string, Schedule[]> = {};
+    for (const s of filteredSchedules) {
+      if (!g[s.eid]) g[s.eid] = [];
+      g[s.eid].push(s);
+    }
+    return Object.entries(g).sort(([a], [b]) =>
+      (userMap[a]?.name ?? a).localeCompare(userMap[b]?.name ?? b)
+    );
+  }, [filteredSchedules, userMap]);
+
+  // ── Admin KPIs ───────────────────────────────────────────────────────────────
+  const totalEmployees = (users ?? []).filter((u) => u.status === "active").length;
+  const clockedInToday = (timesheets ?? []).filter((t) => t.date === today && t.ci && !t.co).length;
+  const pendingApprovals = (timesheets ?? []).filter((ts) => {
     if (ts.status === "pending_first_approval") {
-      const emp = users?.find((u) => u.userId === ts.eid);
-      return emp?.fa === user.pos;
+      return (users ?? []).find((u) => u.userId === ts.eid)?.fa === user.pos;
     }
     if (ts.status === "pending_second_approval") {
-      const emp = users?.find((u) => u.userId === ts.eid);
-      return emp?.sa === user.pos;
+      return (users ?? []).find((u) => u.userId === ts.eid)?.sa === user.pos;
     }
     return false;
-  }) ?? [];
+  });
+  const disputesPending = (timesheets ?? []).filter((t) => t.disputed).length;
+  const approvedMtd = (timesheets ?? []).filter((t) => t.status === "approved" && t.date?.startsWith(currentMonth)).length;
+  const pendingRequests = (requests ?? []).filter((r) => r.status === "pending").length;
+  const totalPlannedShifts = filteredSchedules.length;
 
-  const disputesPending = timesheets?.filter((t) => t.disputed).length ?? 0;
-  const payrollReady = timesheets?.filter((t) => t.status === "approved" && t.date?.startsWith(currentMonth)).length ?? 0;
-  const pendingRequests = requests?.filter((r) => r.status === "pending").length ?? 0;
-
-  // ── Employee / Supervisor stats ────────────────────────────────────────────
-  const myTimesheets = timesheets?.filter((t) => t.eid === user.userId) ?? [];
-  const myMonthTs = myTimesheets.filter((t) => t.date?.startsWith(currentMonth));
+  // ── My stats (employee/supervisor) ──────────────────────────────────────────
+  const myTs = (timesheets ?? []).filter((t) => t.eid === user.userId);
+  const myMonthTs = myTs.filter((t) => t.date?.startsWith(currentMonth));
   const myRegHours = myMonthTs.filter((t) => t.status === "approved").reduce((s, t) => s + (t.reg ?? 0), 0);
   const myOtHours = myMonthTs.filter((t) => t.status === "approved").reduce((s, t) => s + (t.ot ?? 0), 0);
-  const myPending = myTimesheets.filter((t) => t.status === "pending_employee" && !!t.co);
-
-  // For supervisor: count officers needing sign-off
+  const myPending = myTs.filter((t) => t.status === "pending_employee" && !!t.co);
   const officersNeedingSignoff = isSupervisor
     ? (timesheets ?? []).filter((ts) => {
-        const emp = users?.find((u) => u.userId === ts.eid);
+        const emp = (users ?? []).find((u) => u.userId === ts.eid);
         return ts.status === "pending_first_approval" && emp?.fa === user.pos && !ts.f2Sig;
       }).length
     : 0;
 
-  const handleApprove = async (ts: Timesheet) => {
-    setSigModal({ ts, role: "approver" });
-    setSigName(user.name);
-  };
+  // ── Live personnel ───────────────────────────────────────────────────────────
+  const livePersonnel = useMemo(() => {
+    const active = (timesheets ?? []).filter((t) => t.date === today && t.ci && !t.co);
+    const zones = Array.from(new Set(active.map((t) => t.zone ?? "Unknown"))).sort();
+    return { active, zones };
+  }, [timesheets, today]);
+  const [locFilter, setLocFilter] = useState("ALL");
+  const liveDisplayed = locFilter === "ALL"
+    ? livePersonnel.active
+    : livePersonnel.active.filter((t) => (t.zone ?? "Unknown") === locFilter);
 
-  const handleReject = (ts: Timesheet) => setRejectModal(ts);
-
+  // ── Approval actions ─────────────────────────────────────────────────────────
   const submitApproval = async () => {
     if (!sigModal) return;
     const ts = sigModal.ts;
@@ -122,11 +224,8 @@ export default function Dashboard() {
         ...(isFirst ? { f1Sig: sigObj, status: "pending_second_approval" } : { f2Sig: sigObj, status: "approved" }),
       });
       toast({ title: isFirst ? "First approval applied" : "Timesheet fully approved" });
-      setSigModal(null);
-      setSigName("");
-    } catch {
-      toast({ title: "Failed to approve", variant: "destructive" });
-    }
+      setSigModal(null); setSigName("");
+    } catch { toast({ title: "Failed to approve", variant: "destructive" }); }
   };
 
   const submitRejection = async () => {
@@ -135,234 +234,480 @@ export default function Dashboard() {
       await updateTimesheet({ id: rejectModal.id, status: "rejected" });
       toast({ title: "Timesheet rejected" });
       setRejectModal(null);
-    } catch {
-      toast({ title: "Failed to reject", variant: "destructive" });
-    }
+    } catch { toast({ title: "Failed to reject", variant: "destructive" }); }
   };
 
+  // ── Delete roster ────────────────────────────────────────────────────────────
+  const deleteRoster = useMutation({
+    mutationFn: async ({ eids, startDate, endDate }: { eids: string[]; startDate: string; endDate: string }) => {
+      const params = new URLSearchParams({ eids: eids.join(","), startDate, endDate });
+      return apiRequest("DELETE", `/api/schedules?${params}`);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["/api/schedules/all"] });
+      qc.invalidateQueries({ queryKey: ["/api/schedules"] });
+      toast({ title: "Roster deleted successfully" });
+      setDeleteTarget(null);
+      refetchSchedules();
+    },
+    onError: () => toast({ title: "Delete failed", variant: "destructive" }),
+  });
+
+  function confirmDelete() {
+    if (!deleteTarget) return;
+    deleteRoster.mutate({ eids: deleteTarget.eids, startDate: deleteTarget.startDate, endDate: deleteTarget.endDate });
+  }
+
+  function prepareAgencyDelete(agency: string, shifts: Schedule[]) {
+    const eids = Array.from(new Set(shifts.map((s) => s.eid)));
+    const dates = shifts.map((s) => s.date).sort();
+    setDeleteTarget({ label: `${agency} roster`, eids, startDate: dates[0], endDate: dates[dates.length - 1], count: shifts.length });
+  }
+
+  function prepareEmpDelete(eid: string, shifts: Schedule[]) {
+    const dates = shifts.map((s) => s.date).sort();
+    setDeleteTarget({ label: `${userMap[eid]?.name ?? eid}'s shifts`, eids: [eid], startDate: dates[0], endDate: dates[dates.length - 1], count: shifts.length });
+  }
+
+  // ── EMPLOYEE / SUPERVISOR VIEW ───────────────────────────────────────────────
+  if (!isAdmin) {
+    return (
+      <Layout>
+        <div className="space-y-5">
+          <div className="bg-primary rounded-xl p-6 text-primary-foreground shadow">
+            <div className="flex items-center gap-3 mb-1">
+              <LayoutDashboard className="w-5 h-5 opacity-70" />
+              <h2 className="text-2xl font-bold">Welcome, {user.name}</h2>
+            </div>
+            <p className="text-primary-foreground/75 text-sm">{user.pos} — {user.dept}</p>
+            <p className="text-primary-foreground/55 text-xs mt-1">{format(new Date(), "EEEE, MMMM d, yyyy")}</p>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <KpiCard icon={Clock} label="Regular Hours (MTD)" value={`${myRegHours.toFixed(1)}h`} />
+            <KpiCard icon={TrendingUp} label="Overtime (MTD)" value={`${myOtHours.toFixed(1)}h`} />
+            <KpiCard icon={FileText} label="Timesheets (MTD)" value={myMonthTs.length} />
+            <KpiCard icon={AlertTriangle} label="Awaiting My Signature" value={myPending.length}
+              color={myPending.length > 0 ? "text-amber-600" : undefined} />
+          </div>
+          {isSupervisor && officersNeedingSignoff > 0 && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-center gap-3">
+              <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />
+              <p className="text-sm font-medium text-amber-800">{officersNeedingSignoff} officer shift{officersNeedingSignoff > 1 ? "s" : ""} awaiting your sign-off</p>
+            </div>
+          )}
+          <ClockInOut />
+          {myPending.length > 0 && (
+            <div className="bg-card border rounded-xl p-5 shadow-sm">
+              <h3 className="font-semibold text-sm mb-3">Timesheets Awaiting Your Signature</h3>
+              <div className="space-y-2">
+                {myPending.map((ts) => (
+                  <div key={ts.id} className="flex items-center justify-between py-2 border-b last:border-0">
+                    <div>
+                      <span className="font-medium text-sm">{ts.date}</span>
+                      <span className="text-muted-foreground text-xs ml-3">{ts.ci} → {ts.co}</span>
+                    </div>
+                    <Badge variant="outline" className="text-xs text-blue-600 border-blue-200 bg-blue-50">Sign Required</Badge>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </Layout>
+    );
+  }
+
+  // ── ADMIN / MANAGER FULL DASHBOARD ──────────────────────────────────────────
   return (
     <Layout>
-      <div className="space-y-6">
-        {/* Welcome */}
-        <div className="bg-primary rounded-md p-6 text-primary-foreground">
-          <h2 className="text-2xl font-bold mb-0.5">Welcome, {user.name}</h2>
-          <p className="text-primary-foreground/80 text-sm">
-            {isFullAccess
-              ? "Full Access — Administration & Team Management"
-              : `${user.pos} — ${user.dept}`}
-          </p>
-          <p className="text-primary-foreground/60 text-xs mt-1">{format(new Date(), "EEEE, MMMM d, yyyy")}</p>
+      {/* Break out of the Layout's padding to fill the screen edge-to-edge */}
+      <div className="-mx-4 md:-mx-6 lg:-mx-8 -mt-4 md:-mt-6 lg:-mt-8">
+
+        {/* ── HERO BAND ───────────────────────────────────────────────────── */}
+        <div className="bg-gradient-to-r from-primary to-primary/80 px-6 py-5 text-primary-foreground">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-2 mb-0.5">
+                <LayoutDashboard className="w-5 h-5 opacity-75" />
+                <h1 className="text-xl font-bold tracking-tight">Operations Dashboard</h1>
+              </div>
+              <p className="text-primary-foreground/70 text-xs">{format(new Date(), "EEEE, MMMM d, yyyy")} · {user.name} · {user.pos}</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <ClockInOut />
+            </div>
+          </div>
+
+          {/* KPI strip */}
+          <div className="grid grid-cols-3 sm:grid-cols-6 gap-3 mt-5">
+            {[
+              { label: "Active Staff", value: totalEmployees, icon: Users },
+              { label: "Clocked In", value: clockedInToday, icon: Clock, color: clockedInToday > 0 ? "text-green-300" : "text-primary-foreground" },
+              { label: "Planned Shifts", value: totalPlannedShifts, icon: Calendar },
+              { label: "Pending Approvals", value: pendingApprovals.length, icon: PenLine, color: pendingApprovals.length > 0 ? "text-amber-300" : "text-primary-foreground" },
+              { label: "Open Requests", value: pendingRequests, icon: FileText, color: pendingRequests > 0 ? "text-yellow-300" : "text-primary-foreground" },
+              { label: "Approved MTD", value: approvedMtd, icon: CheckCircle2, color: "text-green-300" },
+            ].map(({ label, value, icon: Icon, color }) => (
+              <div key={label} className="bg-white/10 rounded-lg px-3 py-2.5 text-center backdrop-blur-sm">
+                <Icon className="w-3.5 h-3.5 mx-auto mb-1 opacity-70" />
+                <p className={`text-xl font-bold leading-none ${color ?? "text-primary-foreground"}`}>{value}</p>
+                <p className="text-[10px] text-primary-foreground/60 mt-0.5 leading-tight">{label}</p>
+              </div>
+            ))}
+          </div>
         </div>
 
-        {/* ══ SHIFT SUPERVISOR LAYOUT ══════════════════════════════════════ */}
-        {isSupervisor && (
-          <>
-            {/* Tabs */}
-            <div className="flex border-b border-border">
-              <button
-                onClick={() => setSupTab("my-shift")}
-                className={`px-5 py-2.5 text-sm font-medium border-b-2 transition-colors ${
-                  supTab === "my-shift"
-                    ? "border-primary text-primary"
-                    : "border-transparent text-muted-foreground hover:text-foreground"
-                }`}
-                data-testid="tab-my-shift"
-              >
-                <Clock className="inline w-4 h-4 mr-1.5 -mt-0.5" />
-                My Shift
-              </button>
-              <button
-                onClick={() => setSupTab("active-officers")}
-                className={`px-5 py-2.5 text-sm font-medium border-b-2 transition-colors flex items-center gap-1.5 ${
-                  supTab === "active-officers"
-                    ? "border-primary text-primary"
-                    : "border-transparent text-muted-foreground hover:text-foreground"
-                }`}
-                data-testid="tab-active-officers"
-              >
-                <UserCheck className="w-4 h-4" />
-                Active Officers
-                {officersNeedingSignoff > 0 && (
-                  <span className="ml-1 bg-amber-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-bold">
-                    {officersNeedingSignoff}
-                  </span>
-                )}
-              </button>
+        {/* ── FILTER BAR ──────────────────────────────────────────────────── */}
+        <div className="bg-card border-b px-6 py-3 flex flex-wrap items-center gap-3">
+          <Filter className="w-4 h-4 text-muted-foreground shrink-0" />
+          <div className="flex items-center gap-1.5">
+            <Label className="text-xs text-muted-foreground whitespace-nowrap">From</Label>
+            <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)}
+              className="border rounded px-2 py-1 text-xs h-7 bg-background" data-testid="filter-date-from" />
+          </div>
+          <div className="flex items-center gap-1.5">
+            <Label className="text-xs text-muted-foreground whitespace-nowrap">To</Label>
+            <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)}
+              className="border rounded px-2 py-1 text-xs h-7 bg-background" data-testid="filter-date-to" />
+          </div>
+          <select value={agencyFilter} onChange={(e) => setAgencyFilter(e.target.value)}
+            className="border rounded px-2 py-1 text-xs h-7 bg-background" data-testid="filter-agency">
+            <option value="ALL">All Agencies</option>
+            {allAgencies.map((a) => <option key={a} value={a}>{a}</option>)}
+          </select>
+          <div className="relative">
+            <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
+            <input value={search} onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search employee…" className="border rounded pl-6 pr-2 py-1 text-xs h-7 bg-background w-40"
+              data-testid="filter-search" />
+          </div>
+          <Button variant="ghost" size="sm" className="h-7 text-xs"
+            onClick={() => { setDateFrom(format(startOfMonth(new Date()), "yyyy-MM-dd")); setDateTo(format(endOfMonth(new Date()), "yyyy-MM-dd")); setAgencyFilter("ALL"); setSearch(""); }}
+            data-testid="button-reset-filters">
+            <RefreshCw className="w-3 h-3 mr-1" /> Reset
+          </Button>
+          <div className="ml-auto text-xs text-muted-foreground">{filteredSchedules.length} shift{filteredSchedules.length !== 1 ? "s" : ""} in view</div>
+        </div>
+
+        {/* ── MAIN BODY (two columns) ──────────────────────────────────────── */}
+        <div className="flex gap-0 overflow-hidden" style={{ height: "calc(100vh - 14.5rem)" }}>
+
+          {/* ── LEFT: Roster Management ─────────────────────────────────────── */}
+          <div className="w-[42%] border-r flex flex-col bg-background">
+            {/* Sub-header */}
+            <div className="flex items-center gap-2 px-4 py-3 border-b bg-muted/20">
+              <Building2 className="w-4 h-4 text-primary" />
+              <span className="font-semibold text-sm">Roster Management</span>
+              <div className="ml-auto flex rounded-md border overflow-hidden text-xs">
+                <button
+                  onClick={() => setRosterView("agency")}
+                  className={`px-3 py-1.5 font-medium transition-colors ${rosterView === "agency" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted"}`}
+                  data-testid="tab-roster-by-agency"
+                >
+                  By Agency
+                </button>
+                <button
+                  onClick={() => setRosterView("employee")}
+                  className={`px-3 py-1.5 font-medium transition-colors ${rosterView === "employee" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted"}`}
+                  data-testid="tab-roster-by-employee"
+                >
+                  By Employee
+                </button>
+              </div>
             </div>
 
-            {/* My Shift Tab */}
-            {supTab === "my-shift" && (
-              <div className="space-y-5">
-                <ClockInOut />
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  <StatCard icon={Clock} label="Regular Hours (MTD)" value={`${myRegHours.toFixed(1)}h`} />
-                  <StatCard icon={TrendingUp} label="Overtime (MTD)" value={`${myOtHours.toFixed(1)}h`} />
-                  <StatCard icon={FileText} label="Timesheets (MTD)" value={myMonthTs.length} />
-                  <StatCard
-                    icon={AlertTriangle}
-                    label="My Pending Signature"
-                    value={myPending.length}
-                    color={myPending.length > 0 ? "text-amber-600" : undefined}
-                  />
+            {/* Cards */}
+            <div className="flex-1 overflow-y-auto p-3 space-y-2">
+              {filteredSchedules.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-full text-muted-foreground gap-3">
+                  <Calendar className="w-10 h-10 opacity-20" />
+                  <p className="text-sm">No schedules found for this period</p>
                 </div>
-                {myPending.length > 0 && (
-                  <Card className="p-5">
-                    <h3 className="font-semibold text-sm mb-3">Timesheets Awaiting Your Signature</h3>
-                    <div className="space-y-2">
-                      {myPending.map((ts) => (
-                        <div key={ts.id} className="flex items-center justify-between py-2 border-b border-border last:border-0" data-testid={`pending-ts-${ts.id}`}>
-                          <div>
-                            <span className="font-medium text-sm">{ts.date}</span>
-                            <span className="text-muted-foreground text-xs ml-3">{ts.ci} → {ts.co}</span>
-                          </div>
-                          <Badge variant="outline" className="text-xs text-blue-600 border-blue-200 bg-blue-50">Sign Required</Badge>
+              ) : rosterView === "agency" ? (
+                agencyGroups.map(([agency, shifts]) => {
+                  const empIds = Array.from(new Set(shifts.map((s) => s.eid)));
+                  const dates = shifts.map((s) => s.date).sort();
+                  const isOpen = expanded.has(agency);
+                  const armedCount = shifts.filter((s) => s.armed === "Armed").length;
+                  return (
+                    <div key={agency} className="border rounded-lg bg-card shadow-sm overflow-hidden" data-testid={`agency-card-${agency}`}>
+                      {/* Agency header row */}
+                      <div
+                        className="flex items-center gap-2 px-4 py-3 cursor-pointer hover:bg-muted/30 transition-colors select-none"
+                        onClick={() => setExpanded((prev) => {
+                          const n = new Set(prev);
+                          if (n.has(agency)) n.delete(agency); else n.add(agency);
+                          return n;
+                        })}
+                      >
+                        <div className="p-1.5 rounded-md bg-primary/10">
+                          <Building2 className="w-3.5 h-3.5 text-primary" />
                         </div>
-                      ))}
+                        <div className="flex-1 min-w-0">
+                          <p className="font-semibold text-sm truncate">{agency}</p>
+                          <p className="text-[10px] text-muted-foreground">
+                            {empIds.length} officer{empIds.length !== 1 ? "s" : ""} · {shifts.length} shift{shifts.length !== 1 ? "s" : ""}
+                            {dates.length > 0 ? ` · ${fmtDate(dates[0])} – ${fmtDate(dates[dates.length - 1])}` : ""}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          {armedCount > 0 && (
+                            <span className="text-[9px] bg-red-100 text-red-700 border border-red-200 rounded px-1.5 py-0.5 font-semibold flex items-center gap-0.5">
+                              <Shield className="w-2.5 h-2.5" />{armedCount}
+                            </span>
+                          )}
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 px-2 text-destructive hover:text-destructive hover:bg-destructive/10"
+                            onClick={(e) => { e.stopPropagation(); prepareAgencyDelete(agency, shifts); }}
+                            data-testid={`button-delete-agency-${agency}`}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </Button>
+                          {isOpen ? <ChevronDown className="w-4 h-4 text-muted-foreground" /> : <ChevronRight className="w-4 h-4 text-muted-foreground" />}
+                        </div>
+                      </div>
+
+                      {/* Expanded employee list */}
+                      {isOpen && (
+                        <div className="border-t bg-muted/10 divide-y divide-border/50">
+                          {empIds.map((eid) => {
+                            const empShifts = shifts.filter((s) => s.eid === eid);
+                            const info = userMap[eid];
+                            return (
+                              <div key={eid} className="flex items-center gap-3 px-4 py-2.5 hover:bg-muted/20 transition-colors group" data-testid={`emp-roster-row-${eid}`}>
+                                <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-[10px] shrink-0">
+                                  {info?.av ?? eid.slice(0, 2).toUpperCase()}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-xs font-semibold truncate">{info?.name ?? eid}</p>
+                                  <p className="text-[9px] text-muted-foreground">{empShifts.length} shift{empShifts.length !== 1 ? "s" : ""}</p>
+                                </div>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-6 px-2 text-destructive hover:text-destructive hover:bg-destructive/10 opacity-0 group-hover:opacity-100 transition-opacity"
+                                  onClick={() => prepareEmpDelete(eid, empShifts)}
+                                  data-testid={`button-delete-emp-${eid}`}
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                </Button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
-                  </Card>
+                  );
+                })
+              ) : (
+                empGroups.map(([eid, shifts]) => {
+                  const info = userMap[eid];
+                  const dates = shifts.map((s) => s.date).sort();
+                  const agencies = Array.from(new Set(shifts.map((s) => s.client ?? "—")));
+                  const armedCount = shifts.filter((s) => s.armed === "Armed").length;
+                  return (
+                    <div key={eid} className="border rounded-lg bg-card shadow-sm flex items-center gap-3 px-4 py-3 hover:bg-muted/10 transition-colors group" data-testid={`emp-card-${eid}`}>
+                      <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-sm shrink-0">
+                        {info?.av ?? eid.slice(0, 2).toUpperCase()}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-semibold text-sm truncate">{info?.name ?? eid}</p>
+                        <p className="text-[10px] text-muted-foreground truncate">
+                          {info?.pos ?? ""} · {agencies.join(", ")}
+                        </p>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <span className="text-[10px] text-muted-foreground">
+                            {shifts.length} shift{shifts.length !== 1 ? "s" : ""}
+                            {dates.length > 0 ? ` · ${fmtDate(dates[0])} – ${fmtDate(dates[dates.length - 1])}` : ""}
+                          </span>
+                          {armedCount > 0 && (
+                            <span className="text-[9px] bg-red-100 text-red-700 border border-red-200 rounded px-1.5 font-semibold flex items-center gap-0.5">
+                              <Shield className="w-2.5 h-2.5" /> {armedCount} Armed
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-8 px-2 text-destructive hover:text-destructive hover:bg-destructive/10 opacity-0 group-hover:opacity-100 transition-opacity"
+                        onClick={() => prepareEmpDelete(eid, shifts)}
+                        data-testid={`button-delete-emp-card-${eid}`}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </Button>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+
+          {/* ── RIGHT: Operations Panel ─────────────────────────────────────── */}
+          <div className="flex-1 flex flex-col overflow-hidden">
+
+            {/* ── Live Personnel Board ──────────────────────────────────────── */}
+            <div className="flex flex-col" style={{ flex: "0 0 auto", maxHeight: "50%" }}>
+              <div className="flex items-center gap-2 px-4 py-3 border-b bg-muted/20">
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-500 opacity-75" />
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500" />
+                </span>
+                <span className="font-semibold text-sm">Live Personnel</span>
+                <Badge variant="secondary" className="text-xs">{livePersonnel.active.length} on duty</Badge>
+                <div className="ml-auto flex items-center gap-1 text-[10px] text-muted-foreground">
+                  <Radio className="w-3 h-3" /> Updates every 60s
+                </div>
+              </div>
+
+              {/* Zone filter */}
+              <div className="px-3 pt-2 pb-1 flex gap-1.5 overflow-x-auto shrink-0">
+                {["ALL", ...livePersonnel.zones].map((z) => (
+                  <button
+                    key={z}
+                    onClick={() => setLocFilter(z)}
+                    className={`px-2.5 py-1 rounded-md text-[11px] font-medium whitespace-nowrap border transition-colors ${
+                      locFilter === z
+                        ? "bg-primary text-primary-foreground border-primary"
+                        : "bg-background text-muted-foreground border-border hover:border-primary/40"
+                    }`}
+                    data-testid={`filter-zone-${z}`}
+                  >
+                    {z === "ALL" ? "All Zones" : z}
+                  </button>
+                ))}
+              </div>
+
+              {/* Live cards */}
+              <div className="flex-1 overflow-y-auto px-3 pb-3">
+                {liveDisplayed.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center h-20 text-muted-foreground gap-2">
+                    <ShieldOff className="w-6 h-6 opacity-20" />
+                    <p className="text-xs">No personnel currently on duty</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-1">
+                    {liveDisplayed.map((ts) => {
+                      const info = userMap[ts.eid];
+                      return (
+                        <div key={ts.id} className="border rounded-lg bg-card px-3 py-2.5 flex items-center gap-2.5 shadow-sm" data-testid={`live-card-${ts.id}`}>
+                          <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center text-green-700 font-bold text-xs shrink-0">
+                            {info?.av ?? ts.eid.slice(0, 2).toUpperCase()}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="font-semibold text-xs truncate">{info?.name ?? ts.eid}</p>
+                            <p className="text-[10px] text-muted-foreground truncate">{ts.zone ?? "Unknown"}</p>
+                          </div>
+                          <div className="text-right shrink-0">
+                            <p className="text-xs font-mono font-semibold text-green-600">{ts.ci}</p>
+                            <p className="text-[10px] text-muted-foreground">{elapsed(ts.ci)}</p>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 )}
               </div>
-            )}
-
-            {/* Active Officers Tab */}
-            {supTab === "active-officers" && <ActiveOfficers />}
-          </>
-        )}
-
-        {/* ══ REGULAR EMPLOYEE LAYOUT (Stage 1) ═══════════════════════════ */}
-        {user.role === "employee" && !isSupervisor && (
-          <>
-            <ClockInOut />
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <StatCard icon={Clock} label="Regular Hours (MTD)" value={`${myRegHours.toFixed(1)}h`} />
-              <StatCard icon={TrendingUp} label="Overtime (MTD)" value={`${myOtHours.toFixed(1)}h`} />
-              <StatCard icon={FileText} label="Timesheets (MTD)" value={myMonthTs.length} />
-              <StatCard
-                icon={AlertTriangle}
-                label="Awaiting My Signature"
-                value={myPending.length}
-                color={myPending.length > 0 ? "text-amber-600" : undefined}
-              />
-            </div>
-            {myPending.length > 0 && (
-              <Card className="p-5">
-                <h3 className="font-semibold text-sm mb-3">Timesheets Awaiting Your Signature</h3>
-                <div className="space-y-2">
-                  {myPending.map((ts) => (
-                    <div key={ts.id} className="flex items-center justify-between py-2 border-b border-border last:border-0" data-testid={`pending-ts-${ts.id}`}>
-                      <div>
-                        <span className="font-medium text-sm">{ts.date}</span>
-                        <span className="text-muted-foreground text-xs ml-3">{ts.ci} → {ts.co}</span>
-                      </div>
-                      <Badge variant="outline" className="text-xs text-blue-600 border-blue-200 bg-blue-50">Sign Required</Badge>
-                    </div>
-                  ))}
-                </div>
-              </Card>
-            )}
-          </>
-        )}
-
-        {/* ══ FULL ACCESS LAYOUT (Admin + Manager) ════════════════════════ */}
-        {isFullAccess && (
-          <>
-            {/* Own clock in/out — all personnel can clock regardless of role */}
-            <ClockInOut />
-
-            {/* Personal timesheets awaiting own signature */}
-            {myPending.length > 0 && (
-              <Card className="p-5">
-                <h3 className="font-semibold text-sm mb-3">Your Timesheets Awaiting Signature</h3>
-                <div className="space-y-2">
-                  {myPending.map((ts) => (
-                    <div key={ts.id} className="flex items-center justify-between py-2 border-b border-border last:border-0" data-testid={`pending-ts-${ts.id}`}>
-                      <div>
-                        <span className="font-medium text-sm">{ts.date}</span>
-                        <span className="text-muted-foreground text-xs ml-3">{ts.ci} → {ts.co}</span>
-                      </div>
-                      <Badge variant="outline" className="text-xs text-blue-600 border-blue-200 bg-blue-50">Sign Required</Badge>
-                    </div>
-                  ))}
-                </div>
-              </Card>
-            )}
-
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
-              <StatCard icon={Users} label="Active Employees" value={totalEmployees} />
-              <StatCard icon={Clock} label="Clocked In Today" value={clockedInToday} color="text-green-600" />
-              <StatCard icon={AlertTriangle} label="Pending Approvals" value={pendingApprovals.length} color={pendingApprovals.length > 0 ? "text-amber-600" : undefined} />
-              <StatCard icon={CheckCircle2} label="Approved (MTD)" value={payrollReady} />
-              <StatCard icon={Calendar} label="Open Requests" value={pendingRequests} />
-              <StatCard icon={BarChart2} label="Disputes Pending" value={disputesPending} color={disputesPending > 0 ? "text-red-500" : undefined} />
             </div>
 
-            {/* ── Live Personnel Board ──────────────────────────────── */}
-            <LivePersonnelBoard timesheets={timesheets ?? []} users={users ?? []} today={today} />
-
-            <Card className="p-5">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="font-semibold">Pending Approvals Queue</h3>
-                <Badge variant="secondary">{pendingApprovals.length} item{pendingApprovals.length !== 1 ? "s" : ""}</Badge>
+            {/* ── Pending Approvals ─────────────────────────────────────────── */}
+            <div className="flex-1 flex flex-col border-t overflow-hidden">
+              <div className="flex items-center gap-2 px-4 py-3 border-b bg-muted/20 shrink-0">
+                <PenLine className="w-4 h-4 text-primary" />
+                <span className="font-semibold text-sm">Pending Approvals</span>
+                <Badge variant={pendingApprovals.length > 0 ? "default" : "secondary"} className="text-xs">
+                  {pendingApprovals.length}
+                </Badge>
+                {disputesPending > 0 && (
+                  <Badge variant="destructive" className="text-xs ml-1">{disputesPending} disputed</Badge>
+                )}
               </div>
-              {pendingApprovals.length === 0 ? (
-                <div className="text-center py-8 text-muted-foreground border-2 border-dashed border-border rounded-md">
-                  <CheckCircle2 className="w-8 h-8 mx-auto mb-2 opacity-30" />
-                  <p className="text-sm">All clear — no approvals waiting.</p>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {pendingApprovals.map((ts) => {
-                    const emp = users?.find((u) => u.userId === ts.eid);
+              <div className="flex-1 overflow-y-auto p-3 space-y-2">
+                {pendingApprovals.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center h-20 text-muted-foreground gap-2">
+                    <CheckCircle2 className="w-6 h-6 opacity-20" />
+                    <p className="text-xs">All clear — no approvals waiting</p>
+                  </div>
+                ) : (
+                  pendingApprovals.map((ts) => {
+                    const emp = (users ?? []).find((u) => u.userId === ts.eid);
                     return (
-                      <div key={ts.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 border border-border rounded-md" data-testid={`approval-row-${ts.id}`}>
-                        <div className="flex items-center gap-3">
-                          <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-sm shrink-0">
+                      <div key={ts.id} className="border rounded-lg bg-card p-3 flex flex-col sm:flex-row sm:items-center gap-2.5 shadow-sm" data-testid={`approval-row-${ts.id}`}>
+                        <div className="flex items-center gap-2.5 flex-1 min-w-0">
+                          <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-xs shrink-0">
                             {emp?.av ?? ts.eid.slice(0, 2)}
                           </div>
-                          <div>
-                            <p className="font-semibold text-sm">{emp?.name ?? ts.eid}</p>
-                            <p className="text-xs text-muted-foreground">{ts.date} · {ts.ci} – {ts.co ?? "?"} · {ts.reg}h reg{(ts.ot ?? 0) > 0 ? ` + ${ts.ot}h OT` : ""}</p>
+                          <div className="min-w-0">
+                            <p className="font-semibold text-xs truncate">{emp?.name ?? ts.eid}</p>
+                            <p className="text-[10px] text-muted-foreground">{ts.date} · {ts.ci}–{ts.co ?? "?"} · {ts.reg}h{(ts.ot ?? 0) > 0 ? ` +${ts.ot}h OT` : ""}</p>
                           </div>
                         </div>
-                        <div className="flex items-center gap-2">
-                          <span className={`text-xs px-2 py-0.5 rounded border ${statusColor(ts.status)}`}>{statusLabel(ts.status)}</span>
-                          {ts.disputed && <span className="text-xs px-2 py-0.5 rounded border bg-orange-100 text-orange-700 border-orange-200">Disputed</span>}
-                          <Button size="sm" onClick={() => handleApprove(ts)} data-testid={`button-approve-${ts.id}`}>
-                            <PenLine className="w-3.5 h-3.5 mr-1.5" /> Sign
+                        <div className="flex items-center gap-1.5 shrink-0 flex-wrap">
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded border ${statusColor(ts.status)}`}>{statusLabel(ts.status)}</span>
+                          {ts.disputed && <span className="text-[10px] px-1.5 py-0.5 rounded border bg-orange-100 text-orange-700 border-orange-200">Disputed</span>}
+                          <Button size="sm" className="h-7 px-2 text-xs" onClick={() => { setSigModal({ ts, role: "approver" }); setSigName(user.name); }} data-testid={`button-approve-${ts.id}`}>
+                            <PenLine className="w-3 h-3 mr-1" /> Sign
                           </Button>
-                          <Button size="sm" variant="outline" onClick={() => handleReject(ts)} data-testid={`button-reject-${ts.id}`}>
-                            <XCircle className="w-3.5 h-3.5 mr-1.5" /> Reject
+                          <Button size="sm" variant="outline" className="h-7 px-2 text-xs" onClick={() => setRejectModal(ts)} data-testid={`button-reject-${ts.id}`}>
+                            <XCircle className="w-3 h-3 mr-1" /> Reject
                           </Button>
                         </div>
                       </div>
                     );
-                  })}
-                </div>
-              )}
-            </Card>
-          </>
-        )}
+                  })
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
-      {/* Approval Signature Modal */}
+      {/* ── DELETE CONFIRMATION DIALOG ──────────────────────────────────────── */}
+      <Dialog open={!!deleteTarget} onOpenChange={() => setDeleteTarget(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <Trash2 className="w-4 h-4" /> Delete Roster
+            </DialogTitle>
+          </DialogHeader>
+          {deleteTarget && (
+            <div className="space-y-4 mt-1">
+              <div className="bg-destructive/5 border border-destructive/20 rounded-lg p-4 space-y-1.5">
+                <p className="text-sm font-semibold">{deleteTarget.label}</p>
+                <p className="text-xs text-muted-foreground">{deleteTarget.count} shift{deleteTarget.count !== 1 ? "s" : ""} from {fmtDate(deleteTarget.startDate)} to {fmtDate(deleteTarget.endDate)}</p>
+                <p className="text-xs text-muted-foreground">{deleteTarget.eids.length} employee{deleteTarget.eids.length !== 1 ? "s" : ""} affected</p>
+              </div>
+              <p className="text-xs text-muted-foreground">This action cannot be undone. All shift records in this roster will be permanently deleted.</p>
+              <div className="flex gap-2 justify-end">
+                <Button variant="outline" onClick={() => setDeleteTarget(null)}>Cancel</Button>
+                <Button variant="destructive" onClick={confirmDelete} disabled={deleteRoster.isPending} data-testid="button-confirm-delete-roster">
+                  {deleteRoster.isPending ? "Deleting…" : `Delete ${deleteTarget.count} Shift${deleteTarget.count !== 1 ? "s" : ""}`}
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* ── SIGNATURE MODAL ─────────────────────────────────────────────────── */}
       <Dialog open={!!sigModal} onOpenChange={() => setSigModal(null)}>
         <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Electronic Signature — Approval</DialogTitle>
-          </DialogHeader>
+          <DialogHeader><DialogTitle>Electronic Signature — Approval</DialogTitle></DialogHeader>
           {sigModal && (
             <div className="space-y-4 mt-2">
-              <div className="rounded-md border border-border bg-muted/30 p-4 text-sm space-y-1">
-                <p><span className="text-muted-foreground">Employee:</span> <strong>{users?.find((u) => u.userId === sigModal.ts.eid)?.name ?? sigModal.ts.eid}</strong></p>
+              <div className="rounded-md border bg-muted/30 p-4 text-sm space-y-1">
+                <p><span className="text-muted-foreground">Employee:</span> <strong>{(users ?? []).find((u) => u.userId === sigModal.ts.eid)?.name ?? sigModal.ts.eid}</strong></p>
                 <p><span className="text-muted-foreground">Date:</span> <strong>{sigModal.ts.date}</strong></p>
-                <p><span className="text-muted-foreground">Hours:</span> <strong>{sigModal.ts.reg}h regular + {sigModal.ts.ot}h OT</strong></p>
-                <p><span className="text-muted-foreground">Stage:</span> <strong>{sigModal.ts.status === "pending_first_approval" ? "1st Approver Signature" : "2nd Approver Signature"}</strong></p>
+                <p><span className="text-muted-foreground">Hours:</span> <strong>{sigModal.ts.reg}h reg + {sigModal.ts.ot}h OT</strong></p>
+                <p><span className="text-muted-foreground">Stage:</span> <strong>{sigModal.ts.status === "pending_first_approval" ? "1st Approver" : "2nd Approver"}</strong></p>
               </div>
               <div className="space-y-1.5">
                 <Label>Your Full Name (typed signature)</Label>
                 <Input value={sigName} onChange={(e) => setSigName(e.target.value)} placeholder="Type your full name" data-testid="input-sig-name" />
               </div>
-              <p className="text-xs text-muted-foreground">By typing your name, you are applying a legally binding electronic signature. Timestamp and source will be recorded.</p>
+              <p className="text-xs text-muted-foreground">By typing your name, you apply a legally binding electronic signature. Timestamp and source will be recorded.</p>
               <div className="flex gap-2 justify-end">
                 <Button variant="outline" onClick={() => setSigModal(null)}>Cancel</Button>
                 <Button onClick={submitApproval} disabled={!sigName.trim()} data-testid="button-confirm-sig">
@@ -374,7 +719,7 @@ export default function Dashboard() {
         </DialogContent>
       </Dialog>
 
-      {/* Rejection Modal */}
+      {/* ── REJECTION MODAL ─────────────────────────────────────────────────── */}
       <Dialog open={!!rejectModal} onOpenChange={() => setRejectModal(null)}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader><DialogTitle>Reject Timesheet</DialogTitle></DialogHeader>
@@ -386,222 +731,5 @@ export default function Dashboard() {
         </DialogContent>
       </Dialog>
     </Layout>
-  );
-}
-
-function StatCard({ icon: Icon, label, value, color }: { icon: any; label: string; value: string | number; color?: string }) {
-  return (
-    <Card className="p-4" data-testid={`stat-${label.toLowerCase().replace(/\s+/g, "-")}`}>
-      <div className="flex items-start justify-between gap-2">
-        <div>
-          <p className="text-xs text-muted-foreground font-medium leading-tight">{label}</p>
-          <p className={`text-2xl font-bold mt-1 ${color ?? "text-foreground"}`}>{value}</p>
-        </div>
-        <div className="p-2 rounded-md bg-primary/10 shrink-0">
-          <Icon className="w-4 h-4 text-primary" />
-        </div>
-      </div>
-    </Card>
-  );
-}
-
-function elapsedStr(ci: string): string {
-  const now = new Date();
-  const today = format(now, "yyyy-MM-dd");
-  const start = parse(`${today} ${ci}`, "yyyy-MM-dd HH:mm", new Date());
-  const mins = Math.max(0, differenceInMinutes(now, start));
-  const h = Math.floor(mins / 60);
-  const m = mins % 60;
-  return h > 0 ? `${h}h ${m}m` : `${m}m`;
-}
-
-function LivePersonnelBoard({
-  timesheets,
-  users,
-  today,
-}: {
-  timesheets: Timesheet[];
-  users: any[];
-  today: string;
-}) {
-  const [locFilter, setLocFilter] = useState("ALL");
-  const [, setTick] = useState(0);
-
-  // Refresh elapsed times every 60 seconds
-  useEffect(() => {
-    const id = setInterval(() => setTick((t) => t + 1), 60_000);
-    return () => clearInterval(id);
-  }, []);
-
-  // All active (clocked in, not yet out) across every zone for today
-  const active = timesheets.filter((ts) => ts.date === today && ts.ci && !ts.co);
-
-  // Unique zones among active records — sorted alphabetically
-  const zones = Array.from(new Set(active.map((ts) => ts.zone ?? "Unknown"))).sort();
-
-  const displayed = locFilter === "ALL" ? active : active.filter((ts) => (ts.zone ?? "Unknown") === locFilter);
-
-  // Group displayed by zone for the "All" view
-  const grouped: Record<string, Timesheet[]> = {};
-  for (const ts of displayed) {
-    const z = ts.zone ?? "Unknown";
-    if (!grouped[z]) grouped[z] = [];
-    grouped[z].push(ts);
-  }
-
-  const empName = (eid: string) => users.find((u) => u.userId === eid)?.name ?? eid;
-  const empPos = (eid: string) => users.find((u) => u.userId === eid)?.pos ?? "";
-  const empAv = (eid: string) => {
-    const av = users.find((u) => u.userId === eid)?.av;
-    return av ?? eid.slice(0, 2).toUpperCase();
-  };
-
-  return (
-    <Card className="p-5" data-testid="live-personnel-board">
-      {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-        <div className="flex items-center gap-2">
-          <span className="relative flex h-2.5 w-2.5">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-500 opacity-75" />
-            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-green-500" />
-          </span>
-          <h3 className="font-semibold">Live Personnel</h3>
-          <Badge variant="secondary" className="text-xs">{active.length} on duty</Badge>
-        </div>
-        <div className="flex items-center gap-1 text-xs text-muted-foreground">
-          <Radio className="w-3 h-3" />
-          <span>Updates every 60s</span>
-        </div>
-      </div>
-
-      {/* Location filter tabs */}
-      <div className="flex flex-wrap gap-1.5 mb-5">
-        <button
-          onClick={() => setLocFilter("ALL")}
-          className={`px-3 py-1.5 rounded-md text-xs font-medium border transition-colors ${
-            locFilter === "ALL"
-              ? "bg-primary text-primary-foreground border-primary"
-              : "bg-background text-muted-foreground border-border hover:border-primary/50 hover:text-foreground"
-          }`}
-          data-testid="filter-all-locations"
-        >
-          All Locations
-          <span className="ml-1.5 bg-white/20 rounded px-1">{active.length}</span>
-        </button>
-        {zones.map((z) => {
-          const cnt = active.filter((ts) => (ts.zone ?? "Unknown") === z).length;
-          return (
-            <button
-              key={z}
-              onClick={() => setLocFilter(z)}
-              className={`px-3 py-1.5 rounded-md text-xs font-medium border transition-colors ${
-                locFilter === z
-                  ? "bg-primary text-primary-foreground border-primary"
-                  : "bg-background text-muted-foreground border-border hover:border-primary/50 hover:text-foreground"
-              }`}
-              data-testid={`filter-location-${z}`}
-            >
-              <MapPin className="inline w-3 h-3 mr-1 -mt-0.5" />
-              {z}
-              <span className={`ml-1.5 rounded px-1 ${locFilter === z ? "bg-white/20" : "bg-muted"}`}>{cnt}</span>
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Empty state */}
-      {active.length === 0 && (
-        <div className="text-center py-12 border-2 border-dashed border-border rounded-md text-muted-foreground">
-          <Timer className="w-8 h-8 mx-auto mb-2 opacity-30" />
-          <p className="text-sm">No one is currently clocked in.</p>
-        </div>
-      )}
-
-      {/* Cards */}
-      {active.length > 0 && (
-        locFilter === "ALL" ? (
-          // Grouped by zone
-          <div className="space-y-5">
-            {Object.entries(grouped).map(([zone, records]) => (
-              <div key={zone}>
-                <div className="flex items-center gap-2 mb-2">
-                  <MapPin className="w-3.5 h-3.5 text-primary" />
-                  <span className="text-xs font-semibold text-primary uppercase tracking-wide">{zone}</span>
-                  <span className="text-xs text-muted-foreground">— {records.length} on duty</span>
-                </div>
-                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                  {records.map((ts) => (
-                    <PersonnelCard key={ts.id} ts={ts} name={empName(ts.eid)} pos={empPos(ts.eid)} av={empAv(ts.eid)} />
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : (
-          // Single zone flat list
-          displayed.length === 0 ? (
-            <div className="text-center py-8 border-2 border-dashed border-border rounded-md text-muted-foreground text-sm">
-              No one clocked in at {locFilter} right now.
-            </div>
-          ) : (
-            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-              {displayed.map((ts) => (
-                <PersonnelCard key={ts.id} ts={ts} name={empName(ts.eid)} pos={empPos(ts.eid)} av={empAv(ts.eid)} />
-              ))}
-            </div>
-          )
-        )
-      )}
-    </Card>
-  );
-}
-
-function PersonnelCard({ ts, name, pos, av }: { ts: Timesheet; name: string; pos: string; av: string }) {
-  return (
-    <div
-      className="flex items-start gap-3 p-3 rounded-md border border-border bg-muted/20 hover:bg-muted/40 transition-colors"
-      data-testid={`personnel-card-${ts.id}`}
-    >
-      {/* Avatar */}
-      <div className="w-9 h-9 rounded-full bg-green-100 dark:bg-green-900 flex items-center justify-center text-green-700 dark:text-green-300 font-bold text-sm shrink-0">
-        {av}
-      </div>
-
-      {/* Info */}
-      <div className="flex-1 min-w-0">
-        <p className="font-semibold text-sm leading-tight truncate">{name}</p>
-        {pos && <p className="text-xs text-muted-foreground truncate">{pos}</p>}
-
-        <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5">
-          {/* Zone */}
-          {ts.zone && (
-            <span className="text-xs text-muted-foreground flex items-center gap-0.5">
-              <MapPin className="w-3 h-3" /> {ts.zone}
-            </span>
-          )}
-          {/* Post */}
-          {ts.post && (
-            <span className="text-xs font-medium text-primary bg-primary/10 rounded px-1.5 py-0.5">
-              {ts.post}
-            </span>
-          )}
-        </div>
-
-        <div className="mt-1.5 flex items-center gap-2 flex-wrap">
-          <span className="text-xs text-muted-foreground flex items-center gap-0.5">
-            <Clock className="w-3 h-3" /> In: <strong className="ml-0.5 text-foreground">{ts.ci}</strong>
-          </span>
-          <span className="text-xs text-green-600 dark:text-green-400 font-medium flex items-center gap-0.5">
-            <Timer className="w-3 h-3" /> {elapsedStr(ts.ci!)}
-          </span>
-        </div>
-      </div>
-
-      {/* Live indicator */}
-      <span className="relative flex h-2 w-2 mt-1 shrink-0">
-        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
-        <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500" />
-      </span>
-    </div>
   );
 }

@@ -217,6 +217,12 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
 
   // ── SCHEDULES ─────────────────────────────────────────────────────────────
+  // GET /api/schedules/all — returns every schedule (admin dashboard use)
+  app.get("/api/schedules/all", async (_req, res) => {
+    try { res.json(await storage.getAllSchedules()); }
+    catch { res.status(500).json({ message: "Server error" }); }
+  });
+
   // GET /api/schedules?eid=... (single employee)
   // GET /api/schedules?eids=...,...  (multiple employees, comma-separated)
   app.get("/api/schedules", async (req, res) => {
