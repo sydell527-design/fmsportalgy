@@ -540,13 +540,33 @@ export function RosterBuilder({ open, onClose, employees, onSaved }: Props) {
     setExportOpen(false);
     const XLSX = await import("xlsx");
     const data = buildRosterData();
+    const numCols = 4 + days.length;
     const ws = XLSX.utils.aoa_to_sheet(data);
+
+    // Merge section header rows (rows with a single cell starting with "—") across all columns
+    const merges: { s: { r: number; c: number }; e: { r: number; c: number } }[] = [];
+    data.forEach((row, ri) => {
+      const txt = String(row[0] ?? "");
+      const isSectionHeader = row.length === 1 && txt.startsWith("—");
+      const isTitleRow = ri === 0;
+      if (isSectionHeader || isTitleRow) {
+        merges.push({ s: { r: ri, c: 0 }, e: { r: ri, c: numCols - 1 } });
+        // Center-align the merged cell
+        const cellAddr = XLSX.utils.encode_cell({ r: ri, c: 0 });
+        if (ws[cellAddr]) {
+          ws[cellAddr].s = { alignment: { horizontal: "center" }, font: { bold: true } };
+        }
+      }
+    });
+    if (merges.length) ws["!merges"] = merges;
+
     // Auto-width columns
     const colWidths = data.reduce<number[]>((acc, row) => {
       row.forEach((cell, i) => { acc[i] = Math.max(acc[i] ?? 6, String(cell).length + 2); });
       return acc;
     }, []);
     ws["!cols"] = colWidths.map((w) => ({ wch: w }));
+
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, (activeAgency || "Roster").slice(0, 31));
     XLSX.writeFile(wb, `${activeAgency || "Roster"}_Roster_${format(days[0] ?? new Date(), "yyyy-MM-dd")}.xlsx`);
@@ -570,20 +590,46 @@ export function RosterBuilder({ open, onClose, employees, onSaved }: Props) {
 
   // Build an HTML table string for print / Word
   function buildHtmlTable(): string {
-    const data = buildRosterData();
-    const title = data[0][0] as string;
-    const header = data[2] as string[];
-    const body   = data.slice(3);
-    const thStyle = `style="background:#1d4ed8;color:#fff;padding:6px 10px;text-align:left;white-space:nowrap;font-size:11px;border:1px solid #1e40af"`;
-    const tdStyle = (i: number, light: boolean) =>
-      `style="padding:5px 10px;font-size:11px;border:1px solid #d1d5db;background:${light ? "#f8fafc" : "#fff"}"`;
-    const headerRow = `<tr>${header.map((h) => `<th ${thStyle}>${h}</th>`).join("")}</tr>`;
-    const bodyRows  = body.map((row, ri) =>
-      `<tr>${row.map((cell, ci) => `<td ${tdStyle(ci, ri % 2 === 0)}>${cell}</td>`).join("")}</tr>`
-    ).join("");
+    const periodLabel = fmsPeriod(anchor, activePeriod).label;
+    const title = `${activeAgency} Roster — ${periodLabel}`;
+    const numCols = 4 + days.length;
+
+    const thS = `background:#1d4ed8;color:#fff;padding:6px 10px;text-align:left;white-space:nowrap;font-size:11px;border:1px solid #1e40af`;
+    const th = (txt: string) => `<th style="${thS}">${txt}</th>`;
+    const td = (txt: string, light: boolean) =>
+      `<td style="padding:5px 10px;font-size:11px;border:1px solid #d1d5db;background:${light ? "#f8fafc" : "#fff"}">${txt ?? ""}</td>`;
+
+    const dateHeaders = days.map((d) => th(format(d, "EEE d MMM")));
+    const headerRow = `<tr>${th("Name")}${th("Position")}${th("Call Sign")}${th("Location")}${dateHeaders.join("")}</tr>`;
+
+    const buildRows = (rows: EmpRow[]) =>
+      rows.map((row, ri) =>
+        `<tr>${td(row.name, ri % 2 === 0)}${td(row.pos, ri % 2 === 0)}${td(row.callSign, ri % 2 === 0)}${td(row.location, ri % 2 === 0)}${days.map((d) => td(row.cells[format(d, "yyyy-MM-dd")] ?? "", ri % 2 === 0)).join("")}</tr>`
+      ).join("");
+
+    const spacerRow = `<tr><td colspan="${numCols}" style="padding:6px;border:none"></td></tr>`;
+
+    const sectionHeaderRow = (label: string, bg: string, color: string, border: string) =>
+      `<tr><td colspan="${numCols}" style="text-align:center;font-weight:bold;font-size:13px;letter-spacing:3px;text-transform:uppercase;padding:10px 6px;background:${bg};color:${color};border:2px solid ${border}">${label}</td></tr>`;
+
+    let body = buildRows(activeRows);
+
+    if (activeReliefRows.length > 0) {
+      body += spacerRow;
+      body += sectionHeaderRow("Relief Security", "#fef3c7", "#92400e", "#fcd34d");
+      body += headerRow;
+      body += buildRows(activeReliefRows);
+    }
+    if (activeReserveRows.length > 0) {
+      body += spacerRow;
+      body += sectionHeaderRow("Reserve", "#dbeafe", "#1e40af", "#93c5fd");
+      body += headerRow;
+      body += buildRows(activeReserveRows);
+    }
+
     return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${title}</title>
-<style>body{font-family:Arial,sans-serif;margin:20px}h2{color:#1d4ed8;margin-bottom:12px}table{border-collapse:collapse;width:100%}@media print{@page{size:landscape}}</style>
-</head><body><h2>${title}</h2><table>${headerRow}${bodyRows}</table></body></html>`;
+<style>body{font-family:Arial,sans-serif;margin:20px}h2{color:#1d4ed8;margin-bottom:12px}table{border-collapse:collapse;width:100%}@media print{@page{size:landscape}body{margin:12px}}</style>
+</head><body><h2>${title}</h2><table>${headerRow}${body}</table></body></html>`;
   }
 
   // PDF — open print dialog in a new window
