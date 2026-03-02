@@ -122,14 +122,9 @@ export function calcPayroll(
   if (employee.cat !== "Time" && rate === 0 && (employee.salary ?? 0) > 0) {
     rate = (employee.salary ?? 0) / (hrsPerPeriod * ppm);
   }
-  if (employee.cat === "Time") {
-    // Paid for actual hours clocked
-    basicPay = regularHours * rate;
-  } else {
-    // Fixed/Executive: always receive full period pay (hrsPerPeriod × rate)
-    basicPay = hrsPerPeriod * rate;
-  }
-  otPay = otHours * rate * otMultiplier;
+  // All categories paid from timesheet hours — Fixed/Executive can also earn OT
+  basicPay = regularHours * rate;
+  otPay    = otHours * rate * otMultiplier;
 
   // Monthly allowances prorated to this pay period
   const allowances =
