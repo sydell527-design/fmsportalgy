@@ -632,7 +632,7 @@ export function EmployeeFormDialog({
       const freq = user.payConfig?.frequency ?? "bimonthly";
       const hrs = freq === "weekly" ? 40 : 80;
       const ppm = freq === "weekly" ? 52 / 12 : 2;
-      base.hourlyRate = Math.round(user.salary / (hrs * ppm));
+      base.hourlyRate = Math.round((user.salary / (hrs * ppm)) * 100) / 100;
     }
     return base;
   });
@@ -861,8 +861,8 @@ export function EmployeeFormDialog({
                   <div className="space-y-1.5">
                     {formData.cat === "Time" ? (<>
                       <Label>Hourly Rate (GYD)</Label>
-                      <Input type="number" min={0} step="1" value={formData.hourlyRate || ""} placeholder="0"
-                        onChange={(e) => { const v = Math.round(Number(e.target.value)); setSalaryCalcInput(""); setFormData((prev) => ({ ...prev, hourlyRate: v })); }}
+                      <Input type="number" min={0} step="0.01" value={formData.hourlyRate || ""} placeholder="0.00"
+                        onChange={(e) => { const v = Math.round(Number(e.target.value) * 100) / 100; setSalaryCalcInput(""); setFormData((prev) => ({ ...prev, hourlyRate: v })); }}
                         data-testid="input-employee-hourly" />
                       {formData.hourlyRate > 0 && (
                         <p className="text-xs text-muted-foreground">≈ {fmt(calc.gross)}/{calc.label} · {fmt(calc.gross * calc.ppm)}/mo</p>
@@ -879,7 +879,7 @@ export function EmployeeFormDialog({
                               setSalaryCalcInput(e.target.value);
                               const amount = Number(e.target.value);
                               const divisor = pc.frequency === "weekly" ? 40 : 80;
-                              if (amount > 0) setFormData((prev) => ({ ...prev, hourlyRate: Math.round(amount / divisor) }));
+                              if (amount > 0) setFormData((prev) => ({ ...prev, hourlyRate: Math.round((amount / divisor) * 100) / 100 }));
                             }}
                             data-testid="input-salary-calc" />
                           <span className="text-xs text-muted-foreground whitespace-nowrap shrink-0">
@@ -888,17 +888,17 @@ export function EmployeeFormDialog({
                         </div>
                         {salaryCalcInput && Number(salaryCalcInput) > 0 && (
                           <p className="text-xs text-emerald-600 font-medium">
-                            → GYD {Math.round(Number(salaryCalcInput) / (pc.frequency === "weekly" ? 40 : 80))}/hr
+                            → GYD {(Math.round((Number(salaryCalcInput) / (pc.frequency === "weekly" ? 40 : 80)) * 100) / 100).toFixed(2)}/hr
                           </p>
                         )}
                       </div>
                     </>) : (<>
                       {/* Fixed / Executive: same hourly-rate pattern as Time */}
                       <Label>Hourly Rate (GYD)</Label>
-                      <Input type="number" min={0} step="1"
-                        value={formData.hourlyRate || ""} placeholder="0"
+                      <Input type="number" min={0} step="0.01"
+                        value={formData.hourlyRate || ""} placeholder="0.00"
                         onChange={(e) => {
-                          const v = Math.round(Number(e.target.value));
+                          const v = Math.round(Number(e.target.value) * 100) / 100;
                           setSalaryCalcInput("");
                           setFormData((prev) => ({ ...prev, hourlyRate: v }));
                         }}
@@ -921,7 +921,7 @@ export function EmployeeFormDialog({
                               setSalaryCalcInput(e.target.value);
                               const amount = Number(e.target.value);
                               const divisor = pc.frequency === "weekly" ? 40 : 80;
-                              if (amount > 0) setFormData((prev) => ({ ...prev, hourlyRate: Math.round(amount / divisor) }));
+                              if (amount > 0) setFormData((prev) => ({ ...prev, hourlyRate: Math.round((amount / divisor) * 100) / 100 }));
                             }}
                             data-testid="input-salary-calc-fixed" />
                           <span className="text-xs text-muted-foreground whitespace-nowrap shrink-0">
@@ -930,7 +930,7 @@ export function EmployeeFormDialog({
                         </div>
                         {salaryCalcInput && Number(salaryCalcInput) > 0 && (
                           <p className="text-xs text-emerald-600 font-medium">
-                            → GYD {Math.round(Number(salaryCalcInput) / (pc.frequency === "weekly" ? 40 : 80))}/hr
+                            → GYD {(Math.round((Number(salaryCalcInput) / (pc.frequency === "weekly" ? 40 : 80)) * 100) / 100).toFixed(2)}/hr
                           </p>
                         )}
                       </div>
