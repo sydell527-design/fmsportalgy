@@ -7,9 +7,10 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { FileText, ChevronDown, ChevronRight, Download } from "lucide-react";
+import { FileText, ChevronRight, Download, FileDown } from "lucide-react";
 import { format } from "date-fns";
-import { formatGYD, generateQuickBooksCSV, downloadCSV, PAYROLL_CONSTANTS } from "@/lib/payroll";
+import { formatGYD, PAYROLL_CONSTANTS } from "@/lib/payroll";
+import { downloadPayslipPDF } from "@/lib/payslip-pdf";
 import type { PayrollResult } from "@/lib/payroll";
 import type { Payslip } from "@shared/schema";
 
@@ -241,16 +242,13 @@ export default function Payslips() {
             <DialogTitle>Payslip — {selected?.period}</DialogTitle>
           </DialogHeader>
           {selected && <PayslipDetail r={selected.data as unknown as PayrollResult} />}
-          <div className="flex gap-2 justify-end pt-2">
+          <div className="flex gap-2 justify-end pt-2 flex-wrap">
             {selected && (
               <Button variant="outline" size="sm"
-                onClick={() => {
-                  const r = selected.data as unknown as PayrollResult;
-                  downloadCSV(generateQuickBooksCSV([r]), `Payslip_${r.employee.userId}_${r.periodStart}_${r.periodEnd}.csv`);
-                }}
-                data-testid="button-download-payslip"
+                onClick={() => downloadPayslipPDF(selected.data as unknown as PayrollResult)}
+                data-testid="button-download-pdf"
               >
-                <Download className="w-4 h-4 mr-1.5" /> Download CSV
+                <FileDown className="w-4 h-4 mr-1.5" /> Download PDF
               </Button>
             )}
             <Button size="sm" onClick={() => setSelected(null)}>Close</Button>
