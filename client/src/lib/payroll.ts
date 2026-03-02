@@ -1,38 +1,42 @@
 import type { User, Timesheet, EmployeeChild, PayConfig } from "@shared/schema";
-import { differenceInYears, parseISO } from "date-fns";
+import { differenceInYears, parseISO, getDaysInMonth } from "date-fns";
 
 // ── Guyana 2026 Statutory Constants ─────────────────────────────────────────
-// Sources: GRA official notice, DPI Budget 2026 announcement (Jan 27 2026),
-//          PwC Guyana National Budget Insights 2026
 export const PAYROLL_CONSTANTS = {
-  // NIS (National Insurance Scheme) — unchanged from 2025
-  NIS_EMP_RATE: 0.056,             // 5.6% employee contribution
-  NIS_ER_RATE: 0.084,              // 8.4% employer contribution
-  NIS_CEILING_MONTHLY: 280_000,    // GYD/month maximum insurable earnings (= GYD 3,360,000/yr)
-
-  // Income Tax (PAYE) — Budget 2026 rates effective 1 Jan 2026
-  // Personal allowance = max(GYD 140,000/month, 1/3 of gross income) — whichever is greater
-  PERSONAL_ALLOWANCE: 140_000,     // GYD/month minimum personal allowance (raised from 130,000 in 2025)
-  CHILD_ALLOWANCE: 10_000,         // GYD/month per qualifying child (unchanged)
-  TAX_LOWER_RATE: 0.25,            // 25% on chargeable income up to GYD 280,000/month
-  TAX_LOWER_LIMIT: 280_000,        // GYD/month — 25% bracket ceiling (= GYD 3,360,000/year)
-  TAX_UPPER_RATE: 0.35,            // 35% on chargeable income above GYD 280,000/month
-
-  // Health Surcharge — no change announced in Budget 2026
-  HEALTH_SURCHARGE_FULL: 1_200,    // GYD/month — employed persons
-  HEALTH_SURCHARGE_HALF: 600,      // GYD/month — casual/part-time workers
-
-  // Hours
-  WORKING_HOURS_PER_MONTH: 160,    // 80h/bi-monthly period × 2 periods/month
+  NIS_EMP_RATE: 0.056,
+  NIS_ER_RATE: 0.084,
+  NIS_CEILING_MONTHLY: 280_000,
+  PERSONAL_ALLOWANCE: 140_000,
+  CHILD_ALLOWANCE: 10_000,
+  TAX_LOWER_RATE: 0.25,
+  TAX_LOWER_LIMIT: 280_000,
+  TAX_UPPER_RATE: 0.35,
+  HEALTH_SURCHARGE_FULL: 1_200,
+  HEALTH_SURCHARGE_HALF: 600,
+  WORKING_HOURS_PER_MONTH: 160,
   OT_MULTIPLIER_DEFAULT: 1.5,
   PH_MULTIPLIER_DEFAULT: 2.0,
 };
 
 const C = PAYROLL_CONSTANTS;
 
-// A qualifying child reduces chargeable income:
-//   — under 18 years old, OR
-//   — 18–25 years old and currently in full-time education (child.school = true)
+// ── Pay frequency helpers ─────────────────────────────────────────────────────
+// ppm = periods per calendar month (used to prorate monthly statutory values)
+export function freqPpm(freq: string): number {
+  if (freq === "weekly")    return 52 / 12;   // ≈ 4.333 weeks/month
+  if (freq === "biweekly")  return 26 / 12;   // ≈ 2.167 fortnights/month
+  if (freq === "monthly")   return 1;
+  return 2;                                   // bimonthly (default)
+}
+
+export function freqHrsPerPeriod(freq: string): number {
+  if (freq === "weekly")   return 40;
+  if (freq === "biweekly") return 80;
+  if (freq === "monthly")  return 160;
+  return 80; // bimonthly
+}
+
+// ── Qualifying child for PAYE child allowance ─────────────────────────────────
 function isQualifyingChild(child: EmployeeChild): boolean {
   if (!child.active) return false;
   const age = differenceInYears(new Date(), parseISO(child.dob));
@@ -41,29 +45,52 @@ function isQualifyingChild(child: EmployeeChild): boolean {
   return false;
 }
 
+// ── Date range helpers ────────────────────────────────────────────────────────
+// periodHalf: "1" = 1st–15th, "2" = 16th–end of month
+export function periodDates(yearMonth: string, half: "1" | "2"): { start: string; end: string; label: string } {
+  const [y, m] = yearMonth.split("-").map(Number);
+  const lastDay = getDaysInMonth(new Date(y, m - 1));
+  if (half === "1") {
+    return {
+      start: `${yearMonth}-01`,
+      end:   `${yearMonth}-15`,
+      label: `${yearMonth} · Period 1 (1–15)`,
+    };
+  }
+  return {
+    start: `${yearMonth}-16`,
+    end:   `${yearMonth}-${String(lastDay).padStart(2, "0")}`,
+    label: `${yearMonth} · Period 2 (16–${lastDay})`,
+  };
+}
+
 export interface PayrollResult {
   employee: User;
-  period: string;
+  period: string;        // display label
+  periodStart: string;
+  periodEnd: string;
 
   // Hours
   regularHours: number;
   otHours: number;
+  phHours: number;
 
   // Earnings
   basicPay: number;
   otPay: number;
-  allowances: number;        // sum of all payConfig allowances
-  grossPay: number;          // basicPay + otPay + allowances
+  phPay: number;
+  allowances: number;
+  grossPay: number;
 
   // Statutory deductions
-  employeeNIS: number;       // 5.6% capped at NIS ceiling
-  employerNIS: number;       // 8.4% capped at NIS ceiling (employer cost, not deducted from employee)
-  healthSurcharge: number;   // 1,200 full / 600 half / 0 if exempt
+  employeeNIS: number;
+  employerNIS: number;
+  healthSurcharge: number;
   qualifyingChildren: number;
-  childAllowance: number;    // qualifyingChildren × 10,000
-  personalAllowance: number; // max(GYD 140,000, grossPay/3) — GRA 2026 rule
-  chargeableIncome: number;  // grossPay − employeeNIS − personalAllowance − childAllowance
-  paye: number;              // progressive 25%/35% (Budget 2026)
+  childAllowance: number;
+  personalAllowance: number;
+  chargeableIncome: number;
+  paye: number;
 
   // Voluntary deductions
   creditUnion: number;
@@ -81,103 +108,131 @@ export interface PayrollResult {
   approvedTimesheets: number;
   pendingTimesheets: number;
   totalTimesheets: number;
+
+  // Derived: hourly rate used
+  effectiveRate: number;
 }
 
 export function calcPayroll(
   employee: User,
   timesheets: Timesheet[],
-  period: string,
+  periodStart: string,   // "2026-03-01"
+  periodEnd: string,     // "2026-03-15"
   allChildren: EmployeeChild[] = [],
+  periodLabel?: string,
 ): PayrollResult {
   const pc: PayConfig = employee.payConfig ?? ({} as PayConfig);
 
-  // ── Timesheets ─────────────────────────────────────────────────────────────
+  // ── Timesheets — exact date range for this pay period ─────────────────────
   const periodTs = timesheets.filter(
-    (ts) => ts.eid === employee.userId && ts.date?.startsWith(period)
+    (ts) =>
+      ts.eid === employee.userId &&
+      ts.date != null &&
+      ts.date >= periodStart &&
+      ts.date <= periodEnd
   );
   const approvedTs = periodTs.filter((ts) => ts.status === "approved");
   const approvedTimesheets = approvedTs.length;
   const pendingTimesheets = periodTs.filter(
-    (ts) => ts.status === "pending_first_approval" ||
-            ts.status === "pending_second_approval" ||
-            ts.status === "pending_employee"
+    (ts) =>
+      ts.status === "pending_first_approval" ||
+      ts.status === "pending_second_approval" ||
+      ts.status === "pending_employee"
   ).length;
 
+  // Sum hours from approved timesheets only — no invented figures
   const regularHours = approvedTs.reduce((s, ts) => s + (ts.reg ?? 0), 0);
   const otHours      = approvedTs.reduce((s, ts) => s + (ts.ot ?? 0), 0);
+  const phHours      = approvedTs.reduce((s, ts) => s + (ts.ph ?? 0), 0);
 
-  // ── Pay frequency — periods per calendar month ────────────────────────────
+  // ── Pay frequency ─────────────────────────────────────────────────────────
   const freq = pc.frequency ?? "bimonthly";
-  const ppm  = freq === "weekly" ? 52 / 12 : 2;   // bimonthly = 2 periods/month
+  const ppm  = freqPpm(freq);            // periods per calendar month
+  const hrsPerPeriod = freqHrsPerPeriod(freq);
 
-  // ── Earnings ──────────────────────────────────────────────────────────────
-  const otMultiplier = pc.otMultiplier ?? C.OT_MULTIPLIER_DEFAULT;
-  let basicPay = 0;
-  let otPay = 0;
-
-  // All categories use hourlyRate as the stored rate.
-  // Fallback for legacy Fixed/Executive records that only have salary (hourlyRate = 0).
-  const hrsPerPeriod = freq === "weekly" ? 40 : 80;
-  let rate = employee.hourlyRate ?? 0;
-  if (employee.cat !== "Time" && rate === 0 && (employee.salary ?? 0) > 0) {
-    rate = (employee.salary ?? 0) / (hrsPerPeriod * ppm);
+  // ── Effective hourly rate ─────────────────────────────────────────────────
+  // Primary: hourlyRate from employee profile (supports decimals e.g. 937.50)
+  // Fallback: legacy Fixed/Executive records that only have salary (no hourlyRate)
+  let effectiveRate = employee.hourlyRate ?? 0;
+  if (effectiveRate === 0 && (employee.salary ?? 0) > 0) {
+    effectiveRate = (employee.salary ?? 0) / (hrsPerPeriod * ppm);
   }
-  // All categories paid from timesheet hours — Fixed/Executive can also earn OT
-  basicPay = regularHours * rate;
-  otPay    = otHours * rate * otMultiplier;
 
-  // Monthly allowances prorated to this pay period
-  const allowances =
-    ((pc.housingAllowance   ?? 0) +
-     (pc.transportAllowance ?? 0) +
-     (pc.mealAllowance      ?? 0) +
-     (pc.uniformAllowance   ?? 0) +
-     (pc.riskAllowance      ?? 0) +
-     (pc.shiftAllowance     ?? 0) +
-     (pc.otherAllowances    ?? []).reduce((s, x) => s + x.amount, 0)) / ppm;
+  // ── Earnings — all from actual approved timesheet hours × rate ────────────
+  const otMultiplier = pc.otMultiplier ?? C.OT_MULTIPLIER_DEFAULT;
+  const phMultiplier = pc.phMultiplier ?? C.PH_MULTIPLIER_DEFAULT;
 
-  const grossPay = basicPay + otPay + allowances;
+  const basicPay = regularHours * effectiveRate;
+  const otPay    = otHours      * effectiveRate * otMultiplier;
+  const phPay    = phHours      * effectiveRate * phMultiplier;
 
-  // ── NIS — ceiling prorated to pay period ─────────────────────────────────
-  const nisBase         = Math.min(grossPay, C.NIS_CEILING_MONTHLY / ppm);
+  // Allowances are stored as monthly amounts → prorate to this pay period
+  const monthlyAllowances =
+    (pc.housingAllowance   ?? 0) +
+    (pc.transportAllowance ?? 0) +
+    (pc.mealAllowance      ?? 0) +
+    (pc.uniformAllowance   ?? 0) +
+    (pc.riskAllowance      ?? 0) +
+    (pc.shiftAllowance     ?? 0) +
+    (pc.otherAllowances ?? []).reduce((s, x) => s + x.amount, 0);
+  const allowances = Math.round(monthlyAllowances / ppm);
+
+  const grossPay = basicPay + otPay + phPay + allowances;
+
+  // ── NIS — employee 5.6%, employer 8.4%, ceiling prorated to period ────────
+  const effectiveNisCeiling = (pc.nisCeilingOverride ?? C.NIS_CEILING_MONTHLY) / ppm;
+  const nisBase         = Math.min(grossPay, effectiveNisCeiling);
   const employeeNISCalc = pc.nisExempt ? 0 : Math.round(nisBase * C.NIS_EMP_RATE);
-  const employeeNIS     = (pc.nisEmployeeOverride != null) ? pc.nisEmployeeOverride : employeeNISCalc;
+  const employeeNIS     = pc.nisEmployeeOverride != null ? pc.nisEmployeeOverride : employeeNISCalc;
   const employerNISCalc = pc.nisExempt ? 0 : Math.round(nisBase * C.NIS_ER_RATE);
-  const employerNIS     = (pc.nisEmployerOverride != null) ? pc.nisEmployerOverride : employerNISCalc;
+  const employerNIS     = pc.nisEmployerOverride != null ? pc.nisEmployerOverride : employerNISCalc;
 
-  // ── Health Surcharge — prorated from monthly flat amount ──────────────────
-  const hsMonthly = pc.healthSurchargeRate === "half" ? C.HEALTH_SURCHARGE_HALF : C.HEALTH_SURCHARGE_FULL;
-  const healthSurchargeCalc = pc.healthSurchargeExempt ? 0 : Math.round(hsMonthly / ppm);
-  const healthSurcharge = (pc.healthSurchargeRate === "custom" && pc.healthSurchargeOverride != null)
-    ? (pc.healthSurchargeExempt ? 0 : pc.healthSurchargeOverride)
-    : healthSurchargeCalc;
+  // ── Hand In Hand Insurance — flat monthly fee prorated to period ──────────
+  const hsMonthlyFlat = pc.healthSurchargeRate === "half"
+    ? C.HEALTH_SURCHARGE_HALF
+    : C.HEALTH_SURCHARGE_FULL;
+  const healthSurchargeCalc =
+    pc.healthSurchargeExempt ? 0 : Math.round(hsMonthlyFlat / ppm);
+  const healthSurcharge =
+    pc.healthSurchargeRate === "custom" && pc.healthSurchargeOverride != null
+      ? pc.healthSurchargeExempt ? 0 : pc.healthSurchargeOverride
+      : healthSurchargeCalc;
 
-  // ── PAYE (Income Tax) — progressive, GRA thresholds prorated to period ────
+  // ── PAYE — GRA 2026 progressive tax ──────────────────────────────────────
   const empChildren        = allChildren.filter((ch) => ch.eid === employee.userId);
   const qualifyingChildren = empChildren.filter(isQualifyingChild).length;
+  // Child allowance: monthly GYD 10,000/child → prorated to this period
   const childAllowance     = Math.round((qualifyingChildren * C.CHILD_ALLOWANCE) / ppm);
 
-  // GRA rule: personal allowance = greater of GYD 140,000/month OR 1/3 of monthly gross
-  // Prorated to pay period
-  const monthlyGross      = grossPay * ppm;
-  const monthlyPersonalAl = Math.max(C.PERSONAL_ALLOWANCE, Math.round(monthlyGross / 3));
-  const personalAllowance = Math.round(monthlyPersonalAl / ppm);
+  // Personal allowance: GRA 2026 rule = max(GYD 140,000/month, ⅓ of monthly gross)
+  // Scale this period's gross UP to monthly equivalent for the GRA threshold test,
+  // then scale the resulting monthly allowance BACK DOWN to this period.
+  const effectivePaMonthly = pc.personalAllowanceOverride ?? C.PERSONAL_ALLOWANCE;
+  const monthlyGrossEquiv  = grossPay * ppm;   // annualise to monthly for GRA ⅓-rule
+  const monthlyPersonalAl  = Math.max(effectivePaMonthly, Math.round(monthlyGrossEquiv / 3));
+  const personalAllowance  = Math.round(monthlyPersonalAl / ppm);
 
-  // Insurance (healthSurcharge) is deductible before PAYE alongside NIS
+  // Chargeable income: gross − NIS − insurance − personal − child allowances
+  // (insurance deducted before PAYE per GRA guidance)
   const chargeableIncome = pc.taxExempt ? 0
     : Math.max(0, grossPay - employeeNIS - healthSurcharge - personalAllowance - childAllowance);
 
-  const periodLowerLimit = Math.round(C.TAX_LOWER_LIMIT / ppm);
+  // PAYE bracket prorated to this pay period
+  const effectiveLowerLimit =
+    pc.taxLowerLimitOverride != null
+      ? pc.taxLowerLimitOverride / ppm
+      : Math.round(C.TAX_LOWER_LIMIT / ppm);
+
   const payeCalc = pc.taxExempt ? 0
-    : chargeableIncome <= periodLowerLimit
+    : chargeableIncome <= effectiveLowerLimit
       ? Math.round(chargeableIncome * C.TAX_LOWER_RATE)
       : Math.round(
-          periodLowerLimit * C.TAX_LOWER_RATE +
-          (chargeableIncome - periodLowerLimit) * C.TAX_UPPER_RATE
+          effectiveLowerLimit * C.TAX_LOWER_RATE +
+          (chargeableIncome - effectiveLowerLimit) * C.TAX_UPPER_RATE
         );
-  const paye = (pc.taxOverride != null) ? (pc.taxExempt ? 0 : pc.taxOverride) : payeCalc;
+  const paye = pc.taxOverride != null ? (pc.taxExempt ? 0 : pc.taxOverride) : payeCalc;
 
-  // ── Voluntary Deductions ──────────────────────────────────────────────────
+  // ── Voluntary deductions — stored as per-period amounts ──────────────────
   const creditUnion      = pc.creditUnion      ?? 0;
   const loanRepayment    = pc.loanRepayment    ?? 0;
   const advancesRecovery = pc.advancesRecovery ?? 0;
@@ -185,17 +240,21 @@ export function calcPayroll(
   const otherDeductions  = (pc.otherDeductions ?? []).reduce((s, x) => s + x.amount, 0);
   const totalVoluntary   = creditUnion + loanRepayment + advancesRecovery + unionDues + otherDeductions;
 
-  // ── Net Pay ───────────────────────────────────────────────────────────────
+  // ── Net pay ───────────────────────────────────────────────────────────────
   const totalDeductions = employeeNIS + healthSurcharge + paye + totalVoluntary;
   const netPay          = Math.round(grossPay - totalDeductions);
 
   return {
     employee,
-    period,
+    period:      periodLabel ?? `${periodStart} – ${periodEnd}`,
+    periodStart,
+    periodEnd,
     regularHours,
     otHours,
+    phHours,
     basicPay:     Math.round(basicPay),
     otPay:        Math.round(otPay),
+    phPay:        Math.round(phPay),
     allowances:   Math.round(allowances),
     grossPay:     Math.round(grossPay),
     employeeNIS,
@@ -217,20 +276,27 @@ export function calcPayroll(
     approvedTimesheets,
     pendingTimesheets,
     totalTimesheets: periodTs.length,
+    effectiveRate,
   };
 }
 
 export function formatGYD(amount: number): string {
-  return `GYD ${Math.round(amount).toLocaleString("en-GY", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+  return `GYD ${Math.round(amount).toLocaleString("en-GY", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  })}`;
 }
 
 export function generateQuickBooksCSV(results: PayrollResult[]): string {
   const headers = [
     "Employee Name", "Employee ID", "Department", "Position", "Pay Category",
-    "Period", "Regular Hours", "OT Hours",
-    "Basic Pay (GYD)", "OT Pay (GYD)", "Allowances (GYD)", "Gross Pay (GYD)",
-    "Employee NIS (GYD)", "Hand In Hand Insurance (GYD)", "Qualifying Children",
-    "Child Allowance (GYD)", "Chargeable Income (GYD)", "PAYE (GYD)",
+    "Period Start", "Period End",
+    "Regular Hours", "OT Hours", "PH Hours",
+    "Hourly Rate (GYD)",
+    "Basic Pay (GYD)", "OT Pay (GYD)", "PH Pay (GYD)", "Allowances (GYD)", "Gross Pay (GYD)",
+    "Employee NIS (GYD)", "Hand In Hand Insurance (GYD)",
+    "Personal Allowance (GYD)", "Child Allowance (GYD)", "Qualifying Children",
+    "Chargeable Income (GYD)", "PAYE (GYD)",
     "Credit Union (GYD)", "Loan Repayment (GYD)", "Advances Recovery (GYD)",
     "Union Dues (GYD)", "Other Deductions (GYD)",
     "Total Deductions (GYD)", "Net Pay (GYD)", "Employer NIS (GYD)",
@@ -242,17 +308,22 @@ export function generateQuickBooksCSV(results: PayrollResult[]): string {
     r.employee.dept,
     r.employee.pos,
     r.employee.cat,
-    r.period,
+    r.periodStart,
+    r.periodEnd,
     r.regularHours.toFixed(2),
     r.otHours.toFixed(2),
+    r.phHours.toFixed(2),
+    r.effectiveRate.toFixed(2),
     r.basicPay.toFixed(2),
     r.otPay.toFixed(2),
+    r.phPay.toFixed(2),
     r.allowances.toFixed(2),
     r.grossPay.toFixed(2),
     r.employeeNIS.toFixed(2),
     r.healthSurcharge.toFixed(2),
-    String(r.qualifyingChildren),
+    r.personalAllowance.toFixed(2),
     r.childAllowance.toFixed(2),
+    String(r.qualifyingChildren),
     r.chargeableIncome.toFixed(2),
     r.paye.toFixed(2),
     r.creditUnion.toFixed(2),
@@ -265,7 +336,9 @@ export function generateQuickBooksCSV(results: PayrollResult[]): string {
     r.employerNIS.toFixed(2),
   ]);
 
-  return [headers, ...rows].map((row) => row.map((v) => `"${v}"`).join(",")).join("\n");
+  return [headers, ...rows]
+    .map((row) => row.map((v) => `"${v}"`).join(","))
+    .join("\n");
 }
 
 export function downloadCSV(content: string, filename: string) {

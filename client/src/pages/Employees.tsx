@@ -519,11 +519,11 @@ const GY_HEALTH_SURCHARGE_FULL = C.HEALTH_SURCHARGE_FULL;
 const GY_HEALTH_SURCHARGE_HALF = C.HEALTH_SURCHARGE_HALF;
 
 // Periods per calendar month for each frequency
-const FREQ_PPM: Record<string, number> = { bimonthly: 2, weekly: 52 / 12 };
+const FREQ_PPM: Record<string, number> = { bimonthly: 2, weekly: 52 / 12, biweekly: 26 / 12, monthly: 1 };
 // Standard working hours per pay period
-const FREQ_HRS: Record<string, number> = { bimonthly: 80, weekly: 40 };
+const FREQ_HRS: Record<string, number> = { bimonthly: 80, weekly: 40, biweekly: 80, monthly: 160 };
 // Human-readable period label
-const FREQ_LABEL: Record<string, string> = { bimonthly: "bi-mo", weekly: "wk" };
+const FREQ_LABEL: Record<string, string> = { bimonthly: "bi-mo", weekly: "wk", biweekly: "bi-wk", monthly: "mo" };
 
 function gyCalc(hourlyRate: number, salary: number, cat: string, pc: PayConfig | null | undefined) {
   const safePC = pc ?? ({} as PayConfig);
