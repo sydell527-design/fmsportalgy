@@ -1210,7 +1210,12 @@ export function EmployeeFormDialog({
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <p className="font-medium text-sm">Income Tax (PAYE)</p>
-                        <p className="text-xs text-muted-foreground">GRA allowance {fmt(GY_PERSONAL_ALLOWANCE)}/mo or ⅓ gross (prorated to period) · {(GY_TAX_LOWER_RATE*100).toFixed(0)}% / {(GY_TAX_UPPER_RATE*100).toFixed(0)}%</p>
+                        <p className="text-xs text-muted-foreground">
+                          GRA allowance {fmt(pc.personalAllowanceOverride ?? GY_PERSONAL_ALLOWANCE)}/mo or ⅓ gross (prorated to period) · {(GY_TAX_LOWER_RATE*100).toFixed(0)}% / {(GY_TAX_UPPER_RATE*100).toFixed(0)}%
+                          {pc.personalAllowanceOverride != null && pc.personalAllowanceOverride !== GY_PERSONAL_ALLOWANCE && (
+                            <span className="ml-1 text-amber-600 font-medium">(custom override)</span>
+                          )}
+                        </p>
                       </div>
                       <label className="flex items-center gap-1.5 text-xs cursor-pointer shrink-0 mt-0.5">
                         <input type="checkbox" checked={pc.taxExempt} onChange={(e) => setPc({ taxExempt: e.target.checked, taxOverride: undefined })} data-testid="checkbox-tax-exempt" /> Exempt
