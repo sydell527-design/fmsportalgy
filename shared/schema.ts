@@ -12,7 +12,7 @@ export const users = pgTable("users", {
   dept: text("dept").notNull(),
   pos: text("pos").notNull(),
   cat: text("cat").notNull(),
-  hourlyRate: integer("hourly_rate").notNull().default(0),
+  hourlyRate: doublePrecision("hourly_rate").notNull().default(0),
   salary: integer("salary").notNull().default(0),
   fa: text("fa"),
   sa: text("sa"),
