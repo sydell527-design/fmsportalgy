@@ -195,7 +195,9 @@ export const callSigns = pgTable("call_signs", {
 // ── Insert schemas ─────────────────────────────────────────────────────────
 export const insertEmployeeChildSchema = createInsertSchema(employeeChildren).omit({ id: true });
 export const insertEmployeeLoanSchema = createInsertSchema(employeeLoans).omit({ id: true });
-export const insertUserSchema = createInsertSchema(users).omit({ id: true });
+export const insertUserSchema = createInsertSchema(users).omit({ id: true }).extend({
+  hourlyRate: z.number().min(0),
+});
 export const insertTimesheetSchema = createInsertSchema(timesheets).omit({ id: true });
 export const insertRequestSchema = createInsertSchema(requests).omit({ id: true });
 export const insertGeofenceSchema = createInsertSchema(geofences).omit({ id: true });
