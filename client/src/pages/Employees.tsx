@@ -1053,17 +1053,19 @@ export function EmployeeFormDialog({
                           <div className="flex items-center gap-1.5">
                             <Input
                               type="number" min={0}
-                              placeholder={String(GY_PERSONAL_ALLOWANCE)}
-                              value={pc.personalAllowanceOverride ?? ""}
-                              onChange={(e) => setPc({ personalAllowanceOverride: e.target.value === "" ? undefined : Number(e.target.value) })}
+                              value={pc.personalAllowanceOverride ?? GY_PERSONAL_ALLOWANCE}
+                              onChange={(e) => {
+                                const v = Number(e.target.value);
+                                setPc({ personalAllowanceOverride: v === GY_PERSONAL_ALLOWANCE ? undefined : v });
+                              }}
                               className="h-7 text-xs"
                               data-testid="input-personal-allowance-override"
                             />
-                            {pc.personalAllowanceOverride != null && (
+                            {pc.personalAllowanceOverride != null && pc.personalAllowanceOverride !== GY_PERSONAL_ALLOWANCE && (
                               <button type="button" className="text-[10px] text-primary underline whitespace-nowrap" onClick={() => setPc({ personalAllowanceOverride: undefined })}>reset</button>
                             )}
                           </div>
-                          <p className="text-[9px] text-muted-foreground">Statutory: {fmt(GY_PERSONAL_ALLOWANCE)}/mo</p>
+                          <p className="text-[9px] text-muted-foreground">Statutory: {fmt(GY_PERSONAL_ALLOWANCE)}/mo{pc.personalAllowanceOverride != null && pc.personalAllowanceOverride !== GY_PERSONAL_ALLOWANCE ? " · custom override active" : ""}</p>
                         </div>
                       </div>
                       {/* NIS Ceiling */}
@@ -1073,17 +1075,19 @@ export function EmployeeFormDialog({
                           <div className="flex items-center gap-1.5">
                             <Input
                               type="number" min={0}
-                              placeholder={String(GY_NIS_MAX_INSURABLE)}
-                              value={pc.nisCeilingOverride ?? ""}
-                              onChange={(e) => setPc({ nisCeilingOverride: e.target.value === "" ? undefined : Number(e.target.value) })}
+                              value={pc.nisCeilingOverride ?? GY_NIS_MAX_INSURABLE}
+                              onChange={(e) => {
+                                const v = Number(e.target.value);
+                                setPc({ nisCeilingOverride: v === GY_NIS_MAX_INSURABLE ? undefined : v });
+                              }}
                               className="h-7 text-xs"
                               data-testid="input-nis-ceiling-override"
                             />
-                            {pc.nisCeilingOverride != null && (
+                            {pc.nisCeilingOverride != null && pc.nisCeilingOverride !== GY_NIS_MAX_INSURABLE && (
                               <button type="button" className="text-[10px] text-primary underline whitespace-nowrap" onClick={() => setPc({ nisCeilingOverride: undefined })}>reset</button>
                             )}
                           </div>
-                          <p className="text-[9px] text-muted-foreground">Statutory: {fmt(GY_NIS_MAX_INSURABLE)}/mo</p>
+                          <p className="text-[9px] text-muted-foreground">Statutory: {fmt(GY_NIS_MAX_INSURABLE)}/mo{pc.nisCeilingOverride != null && pc.nisCeilingOverride !== GY_NIS_MAX_INSURABLE ? " · custom override active" : ""}</p>
                         </div>
                       </div>
                       {/* PAYE Bracket */}
@@ -1093,17 +1097,19 @@ export function EmployeeFormDialog({
                           <div className="flex items-center gap-1.5">
                             <Input
                               type="number" min={0}
-                              placeholder={String(GY_TAX_LOWER_LIMIT)}
-                              value={pc.taxLowerLimitOverride ?? ""}
-                              onChange={(e) => setPc({ taxLowerLimitOverride: e.target.value === "" ? undefined : Number(e.target.value) })}
+                              value={pc.taxLowerLimitOverride ?? GY_TAX_LOWER_LIMIT}
+                              onChange={(e) => {
+                                const v = Number(e.target.value);
+                                setPc({ taxLowerLimitOverride: v === GY_TAX_LOWER_LIMIT ? undefined : v });
+                              }}
                               className="h-7 text-xs"
                               data-testid="input-tax-lower-limit-override"
                             />
-                            {pc.taxLowerLimitOverride != null && (
+                            {pc.taxLowerLimitOverride != null && pc.taxLowerLimitOverride !== GY_TAX_LOWER_LIMIT && (
                               <button type="button" className="text-[10px] text-primary underline whitespace-nowrap" onClick={() => setPc({ taxLowerLimitOverride: undefined })}>reset</button>
                             )}
                           </div>
-                          <p className="text-[9px] text-muted-foreground">Statutory: GYD {GY_TAX_LOWER_LIMIT.toLocaleString()}/yr · 35% above</p>
+                          <p className="text-[9px] text-muted-foreground">Statutory: GYD {GY_TAX_LOWER_LIMIT.toLocaleString()}/yr{pc.taxLowerLimitOverride != null && pc.taxLowerLimitOverride !== GY_TAX_LOWER_LIMIT ? " · custom override active" : ""}</p>
                         </div>
                       </div>
                     </div>

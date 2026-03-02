@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { Layout } from "@/components/Layout";
 import { useUsers } from "@/hooks/use-users";
+import { useUpdateUser } from "@/hooks/use-users";
 import { useTimesheets } from "@/hooks/use-timesheets";
 import { useAllChildren } from "@/hooks/use-children";
 import { useAuth } from "@/hooks/use-auth";
@@ -9,10 +10,11 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Download, FileText, TrendingUp, DollarSign, Building2, ShieldCheck } from "lucide-react";
+import { Download, FileText, TrendingUp, DollarSign, Building2, ShieldCheck, Upload, FileSpreadsheet, CheckCircle2, XCircle } from "lucide-react";
 import { calcPayroll, formatGYD, generateQuickBooksCSV, downloadCSV, PAYROLL_CONSTANTS } from "@/lib/payroll";
 import { format, subMonths } from "date-fns";
 import type { PayrollResult } from "@/lib/payroll";
+import * as XLSX from "xlsx";
 
 const C = PAYROLL_CONSTANTS;
 
@@ -40,14 +42,26 @@ function Divider({ label }: { label?: string }) {
   return <div className="h-px bg-border my-1" />;
 }
 
+type UploadRow = {
+  eid: string; name: string;
+  creditUnion: number; salaryAdvance: number;
+  otherName: string; otherAmount: number;
+};
+type UploadResult = { eid: string; name: string; status: "ok" | "error"; message: string };
+
 export default function Payroll() {
   const { user } = useAuth();
   const { data: users } = useUsers();
+  const { mutateAsync: updateUser } = useUpdateUser();
   const { data: timesheets } = useTimesheets();
   const { data: allChildren = [] } = useAllChildren();
 
   const [period, setPeriod] = useState(format(new Date(), "yyyy-MM"));
   const [selectedResult, setSelectedResult] = useState<PayrollResult | null>(null);
+  const [uploadOpen, setUploadOpen] = useState(false);
+  const [uploadResults, setUploadResults] = useState<UploadResult[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   if (user?.role === "employee") return <Redirect to="/" />;
 
@@ -72,6 +86,70 @@ export default function Payroll() {
     downloadCSV(generateQuickBooksCSV(results), `FMS_Payroll_${period}.csv`);
   };
 
+  const downloadTemplate = () => {
+    const headers = ["Employee ID", "Full Name", "Credit Union", "Salary Advance", "Other Deduction Name", "Other Deduction Amount"];
+    const sampleRows = (users ?? []).filter((u) => u.status === "active" && u.role !== "admin").map((u) => [
+      u.userId, u.name,
+      u.payConfig?.creditUnion ?? 0,
+      u.payConfig?.advancesRecovery ?? 0,
+      (u.payConfig?.otherDeductions ?? [])[0]?.name ?? "",
+      (u.payConfig?.otherDeductions ?? [])[0]?.amount ?? 0,
+    ]);
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...sampleRows]);
+    ws["!cols"] = [{ wch: 14 }, { wch: 24 }, { wch: 14 }, { wch: 16 }, { wch: 24 }, { wch: 22 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Deductions");
+    XLSX.writeFile(wb, `FMS_Deductions_Template_${period}.xlsx`);
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    setUploadResults([]);
+    try {
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(buf, { type: "array" });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json<Record<string, any>>(ws, { defval: "" });
+      const results: UploadResult[] = [];
+      for (const row of rows) {
+        const eid = String(row["Employee ID"] ?? row["employee_id"] ?? row["eid"] ?? "").trim();
+        const empName = String(row["Full Name"] ?? row["full_name"] ?? row["name"] ?? "").trim();
+        if (!eid) continue;
+        const emp = (users ?? []).find((u) => u.userId === eid);
+        if (!emp) { results.push({ eid, name: empName || eid, status: "error", message: "Employee ID not found" }); continue; }
+        const creditUnion = Number(row["Credit Union"] ?? row["credit_union"] ?? 0) || 0;
+        const salaryAdvance = Number(row["Salary Advance"] ?? row["salary_advance"] ?? 0) || 0;
+        const otherName = String(row["Other Deduction Name"] ?? row["other_deduction_name"] ?? "").trim();
+        const otherAmount = Number(row["Other Deduction Amount"] ?? row["other_deduction_amount"] ?? 0) || 0;
+        const existingOthers = (emp.payConfig?.otherDeductions ?? []).filter((d) => d.name !== otherName);
+        const newOthers = otherName && otherAmount > 0 ? [...existingOthers, { name: otherName, amount: otherAmount }] : existingOthers;
+        try {
+          await updateUser({
+            id: emp.id,
+            ...emp,
+            payConfig: {
+              ...emp.payConfig,
+              creditUnion,
+              advancesRecovery: salaryAdvance,
+              otherDeductions: newOthers,
+            } as any,
+          });
+          results.push({ eid, name: emp.name, status: "ok", message: `Updated — CU: ${creditUnion}, Advance: ${salaryAdvance}${otherName ? `, ${otherName}: ${otherAmount}` : ""}` });
+        } catch {
+          results.push({ eid, name: emp.name, status: "error", message: "Failed to save" });
+        }
+      }
+      setUploadResults(results);
+    } catch {
+      setUploadResults([{ eid: "", name: "", status: "error", message: "Could not parse file. Ensure it is a valid .xlsx or .csv file." }]);
+    } finally {
+      setUploading(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  };
+
   const monthOptions = Array.from({ length: 12 }, (_, i) => {
     const d = subMonths(new Date(), i);
     return { value: format(d, "yyyy-MM"), label: format(d, "MMMM yyyy") };
@@ -84,7 +162,7 @@ export default function Payroll() {
           <h1 className="text-2xl font-bold">Payroll</h1>
           <p className="text-muted-foreground text-sm mt-0.5">Guyana 2026 compliant — approved timesheets only</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 flex-wrap">
           <select
             className="flex h-9 rounded-md border border-input bg-background px-3 py-1 text-sm"
             value={period}
@@ -95,11 +173,71 @@ export default function Payroll() {
               <option key={m.value} value={m.value}>{m.label}</option>
             ))}
           </select>
+          <Button variant="outline" onClick={() => setUploadOpen(true)} data-testid="button-upload-deductions">
+            <Upload className="w-4 h-4 mr-2" /> Upload Deductions
+          </Button>
           <Button onClick={handleExport} data-testid="button-export-quickbooks">
             <Download className="w-4 h-4 mr-2" /> QuickBooks CSV
           </Button>
         </div>
       </div>
+
+      {/* Hidden file input */}
+      <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" className="hidden"
+        onChange={handleFileUpload} data-testid="input-deductions-file" />
+
+      {/* Upload Deductions Dialog */}
+      <Dialog open={uploadOpen} onOpenChange={setUploadOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileSpreadsheet className="w-5 h-5" /> Upload Deductions
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Upload an Excel (.xlsx) or CSV file with employee deductions. Columns required:
+            </p>
+            <div className="bg-muted/40 rounded-md p-3 text-xs font-mono text-muted-foreground space-y-0.5">
+              <p>• <span className="font-semibold text-foreground">Employee ID</span> — must match system ID</p>
+              <p>• <span className="font-semibold text-foreground">Full Name</span> — reference only</p>
+              <p>• <span className="font-semibold text-foreground">Credit Union</span> — amount per period</p>
+              <p>• <span className="font-semibold text-foreground">Salary Advance</span> — recovery per period</p>
+              <p>• <span className="font-semibold text-foreground">Other Deduction Name</span> — label for other deduction</p>
+              <p>• <span className="font-semibold text-foreground">Other Deduction Amount</span> — amount per period</p>
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" className="flex-1" onClick={downloadTemplate} data-testid="button-download-template">
+                <Download className="w-4 h-4 mr-2" /> Download Template
+              </Button>
+              <Button className="flex-1" onClick={() => fileRef.current?.click()} disabled={uploading} data-testid="button-choose-file">
+                <Upload className="w-4 h-4 mr-2" /> {uploading ? "Processing…" : "Choose File"}
+              </Button>
+            </div>
+            {uploadResults.length > 0 && (
+              <div className="space-y-1.5 max-h-64 overflow-y-auto">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                  Results — {uploadResults.filter((r) => r.status === "ok").length} updated · {uploadResults.filter((r) => r.status === "error").length} errors
+                </p>
+                {uploadResults.map((r, i) => (
+                  <div key={i} className={`flex items-start gap-2 text-xs rounded px-2 py-1.5 ${r.status === "ok" ? "bg-green-50 dark:bg-green-950/30" : "bg-red-50 dark:bg-red-950/30"}`}>
+                    {r.status === "ok"
+                      ? <CheckCircle2 className="w-3.5 h-3.5 text-green-600 shrink-0 mt-0.5" />
+                      : <XCircle className="w-3.5 h-3.5 text-red-600 shrink-0 mt-0.5" />}
+                    <div>
+                      <p className="font-semibold">{r.name || r.eid}</p>
+                      <p className="text-muted-foreground">{r.message}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="flex justify-end">
+              <Button variant="outline" onClick={() => { setUploadOpen(false); setUploadResults([]); }}>Close</Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Summary Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
