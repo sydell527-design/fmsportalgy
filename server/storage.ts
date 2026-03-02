@@ -123,7 +123,14 @@ export class DatabaseStorage implements IStorage {
     return t;
   }
   async bulkCreateTimesheets(records: InsertTimesheet[]) {
-    return db.insert(timesheets).values(records).returning();
+    if (!records.length) return [];
+    // Fetch existing timesheets for the same eids so we can skip duplicates
+    const eids = [...new Set(records.map((r) => r.eid))];
+    const existing = await db.select().from(timesheets).where(inArray(timesheets.eid, eids));
+    const existingKeys = new Set(existing.map((t) => `${t.eid}|${t.date}|${t.ci ?? ""}|${t.co ?? ""}`));
+    const fresh = records.filter((r) => !existingKeys.has(`${r.eid}|${r.date}|${r.ci ?? ""}|${r.co ?? ""}`));
+    if (!fresh.length) return [];
+    return db.insert(timesheets).values(fresh).returning();
   }
   async updateTimesheet(id: number, updates: Partial<InsertTimesheet>) {
     const [t] = await db.update(timesheets).set(updates).where(eq(timesheets.id, id)).returning();
