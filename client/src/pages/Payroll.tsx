@@ -21,7 +21,7 @@ import {
   calcPayroll, formatGYD, generateQuickBooksCSV, downloadCSV,
   PAYROLL_CONSTANTS, periodDates,
 } from "@/lib/payroll";
-import { format, subMonths } from "date-fns";
+import { format } from "date-fns";
 import type { PayrollResult } from "@/lib/payroll";
 import * as XLSX from "xlsx";
 
@@ -66,7 +66,10 @@ export default function Payroll() {
   const { data: companySettingsData } = useCompanySettings();
   const { mutateAsync: saveSettings, isPending: savingSettings } = useUpdateCompanySettings();
 
-  const [yearMonth, setYearMonth] = useState(format(new Date(), "yyyy-MM"));
+  const now = new Date();
+  const [selYear,  setSelYear]  = useState(now.getFullYear());
+  const [selMonth, setSelMonth] = useState(now.getMonth() + 1);   // 1-based
+  const yearMonth = `${selYear}-${String(selMonth).padStart(2, "0")}`;
   const [half, setHalf] = useState<"1" | "2">("1");
   const [selectedResult, setSelectedResult] = useState<PayrollResult | null>(null);
   const [uploadOpen, setUploadOpen] = useState(false);
@@ -192,10 +195,11 @@ export default function Payroll() {
     }
   };
 
-  const monthOptions = Array.from({ length: 12 }, (_, i) => {
-    const d = subMonths(new Date(), i);
-    return { value: format(d, "yyyy-MM"), label: format(d, "MMMM yyyy") };
-  });
+  const MONTHS = [
+    "January","February","March","April","May","June",
+    "July","August","September","October","November","December",
+  ];
+  const yearRange = Array.from({ length: 10 }, (_, i) => now.getFullYear() - 4 + i);
 
   return (
     <Layout>
@@ -211,12 +215,23 @@ export default function Payroll() {
           {/* Month picker */}
           <select
             className="flex h-9 rounded-md border border-input bg-background px-3 py-1 text-sm"
-            value={yearMonth}
-            onChange={(e) => setYearMonth(e.target.value)}
+            value={selMonth}
+            onChange={(e) => setSelMonth(Number(e.target.value))}
             data-testid="select-payroll-month"
           >
-            {monthOptions.map((m) => (
-              <option key={m.value} value={m.value}>{m.label}</option>
+            {MONTHS.map((name, i) => (
+              <option key={i + 1} value={i + 1}>{name}</option>
+            ))}
+          </select>
+          {/* Year picker */}
+          <select
+            className="flex h-9 rounded-md border border-input bg-background px-3 py-1 text-sm"
+            value={selYear}
+            onChange={(e) => setSelYear(Number(e.target.value))}
+            data-testid="select-payroll-year"
+          >
+            {yearRange.map((y) => (
+              <option key={y} value={y}>{y}</option>
             ))}
           </select>
           {/* Period half picker */}
