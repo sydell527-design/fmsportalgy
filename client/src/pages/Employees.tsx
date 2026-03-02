@@ -532,8 +532,10 @@ function gyCalc(hourlyRate: number, salary: number, cat: string, pc: PayConfig |
   const hrs   = FREQ_HRS[freq]   ?? 160;     // hours per period
   const label = FREQ_LABEL[freq] ?? "mo";
 
-  // Per-period basic pay
-  const periodBasic = cat === "Time" ? hourlyRate * hrs : salary / ppm;
+  // Per-period basic pay — all categories use hourlyRate × hrs/period
+  // For Fixed/Executive, hourlyRate is stored directly (same as Time).
+  // salary field is kept in sync on save for backward compatibility only.
+  const periodBasic = hourlyRate * hrs;
 
   // Monthly allowances prorated to this period
   const monthlyAllowances = (safePC.housingAllowance ?? 0) + (safePC.transportAllowance ?? 0) +
@@ -620,11 +622,19 @@ export function EmployeeFormDialog({
     otherDeductions: user?.payConfig?.otherDeductions ?? [],
   });
 
-  const [formData, setFormData] = useState<typeof EMPTY_FORM>(
-    user
-      ? { ...EMPTY_FORM, ...user, geo: user.geo ?? ["HEAD OFFICE"], payConfig: initPayConfig() }
-      : { ...EMPTY_FORM }
-  );
+  const [formData, setFormData] = useState<typeof EMPTY_FORM>(() => {
+    if (!user) return { ...EMPTY_FORM };
+    const base = { ...EMPTY_FORM, ...user, geo: user.geo ?? ["HEAD OFFICE"], payConfig: initPayConfig() };
+    // Backward compat: Fixed/Executive employees previously stored monthly salary not hourlyRate.
+    // Derive hourlyRate from salary so the unified hourly-rate input is populated correctly.
+    if (user.cat !== "Time" && (user.hourlyRate ?? 0) === 0 && (user.salary ?? 0) > 0) {
+      const freq = user.payConfig?.frequency ?? "bimonthly";
+      const hrs = freq === "weekly" ? 40 : 80;
+      const ppm = freq === "weekly" ? 52 / 12 : 2;
+      base.hourlyRate = Math.round((user.salary / (hrs * ppm)) * 100) / 100;
+    }
+    return base;
+  });
 
   const pc = formData.payConfig ?? { ...DEFAULT_PAY_CONFIG };
   const setPc = (patch: Partial<PayConfig>) =>
@@ -650,13 +660,22 @@ export function EmployeeFormDialog({
       return;
     }
     try {
+      // For Fixed/Executive: derive monthly salary from hourlyRate × hrs/period × periods/month
+      // so both fields stay in sync for any legacy code that reads salary.
+      const hrNum = Number(formData.hourlyRate);
+      const freqKey = formData.payConfig?.frequency ?? "bimonthly";
+      const pHrs = freqKey === "weekly" ? 40 : 80;
+      const pPpm = freqKey === "weekly" ? 52 / 12 : 2;
+      const derivedSalary = formData.cat !== "Time" && hrNum > 0
+        ? Math.round(hrNum * pHrs * pPpm)
+        : Number(formData.salary);
       const payload = {
         ...formData,
         username: formData.userId,
         password: user ? formData.password : "temp",
         fpc: user ? formData.fpc : true,
-        hourlyRate: Number(formData.hourlyRate),
-        salary: Number(formData.salary),
+        hourlyRate: hrNum,
+        salary: derivedSalary,
       };
       if (user) {
         await updateUser({ id: user.id, ...payload });
@@ -873,67 +892,46 @@ export function EmployeeFormDialog({
                         )}
                       </div>
                     </>) : (<>
-                      {/* Fixed / Executive: primary field is Monthly Basic Salary */}
-                      <Label>Monthly Basic Salary (GYD)</Label>
-                      <Input
-                        type="number"
-                        min={0}
-                        placeholder="Enter monthly salary…"
-                        value={formData.salary || ""}
+                      {/* Fixed / Executive: same hourly-rate pattern as Time */}
+                      <Label>Hourly Rate (GYD)</Label>
+                      <Input type="number" min={0} step="0.01"
+                        value={formData.hourlyRate || ""} placeholder="0.00"
                         onChange={(e) => {
-                          const monthly = Number(e.target.value);
+                          const v = Number(e.target.value);
                           setSalaryCalcInput("");
-                          setFormData((prev) => ({ ...prev, salary: monthly }));
+                          setFormData((prev) => ({ ...prev, hourlyRate: v }));
                         }}
                         data-testid="input-employee-salary"
                       />
-                      {formData.salary > 0 && (() => {
-                        // Monthly hours: bimonthly = 80 hrs × 2 periods = 160; weekly = 40 hrs × (52/12) ≈ 173.3
-                        const monthlyHrs = pc.frequency === "weekly" ? 40 * (52 / 12) : 160;
-                        const hrEquiv = formData.salary / monthlyHrs;
-                        const periodAmt = pc.frequency === "weekly"
-                          ? Math.round(formData.salary / (52 / 12))
-                          : Math.round(formData.salary / 2);
-                        return (
-                          <div className="space-y-0.5">
-                            <p className="text-xs font-semibold text-emerald-700">
-                              ≈ GYD {hrEquiv.toFixed(2)}/hr
-                            </p>
-                            <p className="text-xs text-muted-foreground">
-                              {fmt(periodAmt)}/{pc.frequency === "weekly" ? "wk" : "bi-mo"} · {fmt(calc.gross)}/{calc.label} gross
-                            </p>
-                          </div>
-                        );
-                      })()}
+                      {formData.hourlyRate > 0 && (
+                        <p className="text-xs text-muted-foreground">
+                          ≈ {fmt(calc.gross)}/{calc.label} · {fmt(calc.gross * calc.ppm)}/mo
+                        </p>
+                      )}
                       <div className="mt-2 pt-3 border-t border-border/50 space-y-1.5">
                         <Label className="text-xs font-medium text-muted-foreground">
-                          Or enter {pc.frequency === "weekly" ? "weekly" : "bi-monthly"} amount to back-calculate
+                          Back-calculate from {pc.frequency === "weekly" ? "weekly (40 hrs)" : "bi-monthly (80 hrs)"} pay
                         </Label>
                         <div className="flex gap-2 items-center">
                           <Input type="number" min={0}
-                            placeholder={pc.frequency === "weekly" ? "Weekly salary…" : "Bi-monthly salary…"}
+                            placeholder={pc.frequency === "weekly" ? "Weekly pay amount…" : "Bi-monthly pay amount…"}
                             value={salaryCalcInput}
                             onChange={(e) => {
                               setSalaryCalcInput(e.target.value);
                               const amount = Number(e.target.value);
-                              if (amount > 0) {
-                                const monthly = pc.frequency === "weekly" ? Math.round(amount * (52 / 12)) : Math.round(amount * 2);
-                                setFormData((prev) => ({ ...prev, salary: monthly }));
-                              }
+                              const divisor = pc.frequency === "weekly" ? 40 : 80;
+                              if (amount > 0) setFormData((prev) => ({ ...prev, hourlyRate: Math.round((amount / divisor) * 100) / 100 }));
                             }}
                             data-testid="input-salary-calc-fixed" />
                           <span className="text-xs text-muted-foreground whitespace-nowrap shrink-0">
                             {pc.frequency === "weekly" ? "/ wk" : "/ bi-mo"}
                           </span>
                         </div>
-                        {salaryCalcInput && Number(salaryCalcInput) > 0 && formData.salary > 0 && (() => {
-                          const monthlyHrs = pc.frequency === "weekly" ? 40 * (52 / 12) : 160;
-                          return (
-                            <p className="text-xs text-emerald-600 font-medium">
-                              → {fmt(formData.salary)}/mo · GYD {(formData.salary / monthlyHrs).toFixed(2)}/hr
-                            </p>
-                          );
-                        })()}
+                        {salaryCalcInput && Number(salaryCalcInput) > 0 && (
+                          <p className="text-xs text-emerald-600 font-medium">
+                            → GYD {(Number(salaryCalcInput) / (pc.frequency === "weekly" ? 40 : 80)).toFixed(2)}/hr
+                          </p>
+                        )}
                       </div>
                     </>)}
                   </div>

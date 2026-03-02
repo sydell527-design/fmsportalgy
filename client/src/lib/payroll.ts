@@ -115,19 +115,21 @@ export function calcPayroll(
   let basicPay = 0;
   let otPay = 0;
 
-  if (employee.cat === "Time") {
-    const rate = employee.hourlyRate ?? 0;
-    basicPay = regularHours * rate;
-    otPay    = otHours * rate * otMultiplier;
-  } else {
-    // Salaried: monthly salary prorated to pay period; OT adds on top
-    const monthlySalary = employee.salary ?? 0;
-    basicPay = monthlySalary / ppm;
-    if (otHours > 0) {
-      const hourlyEquiv = monthlySalary / C.WORKING_HOURS_PER_MONTH;
-      otPay = otHours * hourlyEquiv * otMultiplier;
-    }
+  // All categories use hourlyRate as the stored rate.
+  // Fallback for legacy Fixed/Executive records that only have salary (hourlyRate = 0).
+  const hrsPerPeriod = freq === "weekly" ? 40 : 80;
+  let rate = employee.hourlyRate ?? 0;
+  if (employee.cat !== "Time" && rate === 0 && (employee.salary ?? 0) > 0) {
+    rate = (employee.salary ?? 0) / (hrsPerPeriod * ppm);
   }
+  if (employee.cat === "Time") {
+    // Paid for actual hours clocked
+    basicPay = regularHours * rate;
+  } else {
+    // Fixed/Executive: always receive full period pay (hrsPerPeriod × rate)
+    basicPay = hrsPerPeriod * rate;
+  }
+  otPay = otHours * rate * otMultiplier;
 
   // Monthly allowances prorated to this pay period
   const allowances =
