@@ -887,14 +887,24 @@ export function EmployeeFormDialog({
                         }}
                         data-testid="input-employee-salary"
                       />
-                      {formData.salary > 0 && (
-                        <p className="text-xs text-muted-foreground">
-                          ≈ {fmt(pc.frequency === "weekly"
-                            ? Math.round(formData.salary / (52 / 12))
-                            : Math.round(formData.salary / 2))}
-                          /{pc.frequency === "weekly" ? "wk" : "bi-mo"} · {fmt(calc.gross)}/{calc.label} gross
-                        </p>
-                      )}
+                      {formData.salary > 0 && (() => {
+                        // Monthly hours: bimonthly = 80 hrs × 2 periods = 160; weekly = 40 hrs × (52/12) ≈ 173.3
+                        const monthlyHrs = pc.frequency === "weekly" ? 40 * (52 / 12) : 160;
+                        const hrEquiv = formData.salary / monthlyHrs;
+                        const periodAmt = pc.frequency === "weekly"
+                          ? Math.round(formData.salary / (52 / 12))
+                          : Math.round(formData.salary / 2);
+                        return (
+                          <div className="space-y-0.5">
+                            <p className="text-xs font-semibold text-emerald-700">
+                              ≈ GYD {hrEquiv.toFixed(2)}/hr
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {fmt(periodAmt)}/{pc.frequency === "weekly" ? "wk" : "bi-mo"} · {fmt(calc.gross)}/{calc.label} gross
+                            </p>
+                          </div>
+                        );
+                      })()}
                       <div className="mt-2 pt-3 border-t border-border/50 space-y-1.5">
                         <Label className="text-xs font-medium text-muted-foreground">
                           Or enter {pc.frequency === "weekly" ? "weekly" : "bi-monthly"} amount to back-calculate
@@ -916,9 +926,14 @@ export function EmployeeFormDialog({
                             {pc.frequency === "weekly" ? "/ wk" : "/ bi-mo"}
                           </span>
                         </div>
-                        {salaryCalcInput && Number(salaryCalcInput) > 0 && formData.salary > 0 && (
-                          <p className="text-xs text-emerald-600 font-medium">→ {fmt(formData.salary)}/mo</p>
-                        )}
+                        {salaryCalcInput && Number(salaryCalcInput) > 0 && formData.salary > 0 && (() => {
+                          const monthlyHrs = pc.frequency === "weekly" ? 40 * (52 / 12) : 160;
+                          return (
+                            <p className="text-xs text-emerald-600 font-medium">
+                              → {fmt(formData.salary)}/mo · GYD {(formData.salary / monthlyHrs).toFixed(2)}/hr
+                            </p>
+                          );
+                        })()}
                       </div>
                     </>)}
                   </div>
