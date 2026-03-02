@@ -302,6 +302,25 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     catch { res.status(500).json({ message: "Server error" }); }
   });
 
+  // ── COMPANY SETTINGS ──────────────────────────────────────────────────────
+  app.get("/api/settings", async (_req, res) => {
+    try { res.json(await storage.getCompanySettings()); }
+    catch { res.status(500).json({ message: "Server error" }); }
+  });
+  app.put("/api/settings", async (req, res) => {
+    try {
+      const schema = z.object({
+        personalAllowance: z.number().int().min(0).optional(),
+        childAllowance:    z.number().int().min(0).optional(),
+      });
+      const updates = schema.parse(req.body);
+      res.json(await storage.updateCompanySettings(updates));
+    } catch (err) {
+      if (err instanceof z.ZodError) return res.status(400).json({ message: err.errors[0].message });
+      res.status(500).json({ message: "Server error" });
+    }
+  });
+
   await seedDatabase();
   return httpServer;
 }

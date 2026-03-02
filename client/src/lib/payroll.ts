@@ -39,6 +39,7 @@ export function freqHrsPerPeriod(freq: string): number {
 // ── Qualifying child for PAYE child allowance ─────────────────────────────────
 function isQualifyingChild(child: EmployeeChild): boolean {
   if (!child.active) return false;
+  if (child.taxEligible === false) return false;   // explicitly excluded from PAYE deduction
   const age = differenceInYears(new Date(), parseISO(child.dob));
   if (age < 18) return true;
   if (age <= 25 && child.school) return true;
@@ -116,10 +117,11 @@ export interface PayrollResult {
 export function calcPayroll(
   employee: User,
   timesheets: Timesheet[],
-  periodStart: string,   // "2026-03-01"
-  periodEnd: string,     // "2026-03-15"
+  periodStart: string,                       // "2026-03-01"
+  periodEnd: string,                         // "2026-03-15"
   allChildren: EmployeeChild[] = [],
   periodLabel?: string,
+  companyPersonalAllowance?: number,         // company-wide threshold override (e.g. 130_000)
 ): PayrollResult {
   const pc: PayConfig = employee.payConfig ?? ({} as PayConfig);
 
@@ -204,10 +206,11 @@ export function calcPayroll(
   // Child allowance: monthly GYD 10,000/child → prorated to this period
   const childAllowance     = Math.round((qualifyingChildren * C.CHILD_ALLOWANCE) / ppm);
 
-  // Personal allowance: GRA 2026 rule = max(GYD 140,000/month, ⅓ of monthly gross)
-  // Scale this period's gross UP to monthly equivalent for the GRA threshold test,
-  // then scale the resulting monthly allowance BACK DOWN to this period.
-  const effectivePaMonthly = pc.personalAllowanceOverride ?? C.PERSONAL_ALLOWANCE;
+  // Personal allowance: GRA rule = max(company threshold/month, ⅓ of monthly gross)
+  // companyPersonalAllowance overrides the statutory constant for company-wide config.
+  // Per-employee personalAllowanceOverride takes highest precedence.
+  const basePersonalAllowance = companyPersonalAllowance ?? C.PERSONAL_ALLOWANCE;
+  const effectivePaMonthly = pc.personalAllowanceOverride ?? basePersonalAllowance;
   const monthlyGrossEquiv  = grossPay * ppm;   // annualise to monthly for GRA ⅓-rule
   const monthlyPersonalAl  = Math.max(effectivePaMonthly, Math.round(monthlyGrossEquiv / 3));
   const personalAllowance  = Math.round(monthlyPersonalAl / ppm);

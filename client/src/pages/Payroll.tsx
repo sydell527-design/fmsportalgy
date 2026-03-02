@@ -5,14 +5,17 @@ import { useUpdateUser } from "@/hooks/use-users";
 import { useTimesheets } from "@/hooks/use-timesheets";
 import { useAllChildren } from "@/hooks/use-children";
 import { useAuth } from "@/hooks/use-auth";
+import { useCompanySettings, useUpdateCompanySettings } from "@/hooks/use-settings";
 import { Redirect } from "wouter";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   Download, FileText, TrendingUp, DollarSign, Building2, ShieldCheck,
-  Upload, FileSpreadsheet, CheckCircle2, XCircle, Clock, AlertCircle,
+  Upload, FileSpreadsheet, CheckCircle2, XCircle, Clock, AlertCircle, Settings2,
 } from "lucide-react";
 import {
   calcPayroll, formatGYD, generateQuickBooksCSV, downloadCSV,
@@ -60,14 +63,21 @@ export default function Payroll() {
   const { data: users } = useUsers();
   const { mutateAsync: updateUser } = useUpdateUser();
   const { data: allChildren = [] } = useAllChildren();
+  const { data: companySettingsData } = useCompanySettings();
+  const { mutateAsync: saveSettings, isPending: savingSettings } = useUpdateCompanySettings();
 
   const [yearMonth, setYearMonth] = useState(format(new Date(), "yyyy-MM"));
   const [half, setHalf] = useState<"1" | "2">("1");
   const [selectedResult, setSelectedResult] = useState<PayrollResult | null>(null);
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [uploadResults, setUploadResults] = useState<UploadResult[]>([]);
   const [uploading, setUploading] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  // Company-level personal allowance threshold (GYD/month)
+  const companyPA = companySettingsData?.personalAllowance ?? C.PERSONAL_ALLOWANCE;
+  const [paEdit, setPaEdit] = useState<number | "">("");
 
   if (user?.role === "employee") return <Redirect to="/" />;
 
@@ -84,7 +94,7 @@ export default function Payroll() {
   const activeEmployees = (users ?? []).filter((u) => u.status === "active" && u.role !== "admin");
 
   const allResults = activeEmployees.map((emp) =>
-    calcPayroll(emp, timesheets, pd.start, pd.end, allChildren, pd.label)
+    calcPayroll(emp, timesheets, pd.start, pd.end, allChildren, pd.label, companyPA)
   );
 
   // Show employees who have at least one approved timesheet in this period
@@ -219,6 +229,9 @@ export default function Payroll() {
             <option value="1">Period 1 (1st – 15th)</option>
             <option value="2">Period 2 (16th – end)</option>
           </select>
+          <Button variant="outline" onClick={() => { setPaEdit(companyPA); setSettingsOpen(true); }} data-testid="button-payroll-settings">
+            <Settings2 className="w-4 h-4 mr-2" /> Settings
+          </Button>
           <Button variant="outline" onClick={() => setUploadOpen(true)} data-testid="button-upload-deductions">
             <Upload className="w-4 h-4 mr-2" /> Upload Deductions
           </Button>
@@ -278,6 +291,69 @@ export default function Payroll() {
             )}
             <div className="flex justify-end">
               <Button variant="outline" onClick={() => { setUploadOpen(false); setUploadResults([]); }}>Close</Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Payroll Settings Dialog ───────────────────────────────────── */}
+      <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Settings2 className="w-5 h-5" /> Payroll Settings
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-5 pt-2">
+            <div className="space-y-2">
+              <Label className="text-sm font-semibold">Personal Allowance Threshold</Label>
+              <p className="text-xs text-muted-foreground">
+                Company-wide monthly personal allowance (GYD). GRA 2026 statutory is GYD 140,000.
+                The higher of this threshold or ⅓ of monthly gross is applied.
+              </p>
+              <div className="flex gap-2 flex-wrap">
+                {[100_000, 130_000, 135_000, 140_000].map((v) => (
+                  <button
+                    key={v}
+                    type="button"
+                    onClick={() => setPaEdit(v)}
+                    className={`px-3 py-1.5 rounded-md text-xs font-medium border transition-colors ${
+                      (paEdit === "" ? companyPA : paEdit) === v
+                        ? "bg-primary text-primary-foreground border-primary"
+                        : "border-border hover:bg-muted"
+                    }`}
+                    data-testid={`button-pa-preset-${v}`}
+                  >
+                    GYD {v.toLocaleString()}
+                  </button>
+                ))}
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">Or enter custom amount</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  step={1000}
+                  value={paEdit}
+                  onChange={(e) => setPaEdit(e.target.value === "" ? "" : Number(e.target.value))}
+                  placeholder={`Current: GYD ${companyPA.toLocaleString()}`}
+                  data-testid="input-personal-allowance"
+                />
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end pt-2">
+              <Button variant="outline" onClick={() => setSettingsOpen(false)}>Cancel</Button>
+              <Button
+                disabled={savingSettings}
+                onClick={async () => {
+                  const val = paEdit === "" ? companyPA : paEdit;
+                  await saveSettings({ personalAllowance: Number(val) });
+                  setSettingsOpen(false);
+                }}
+                data-testid="button-save-settings"
+              >
+                {savingSettings ? "Saving…" : "Save"}
+              </Button>
             </div>
           </div>
         </DialogContent>
@@ -447,11 +523,16 @@ export default function Payroll() {
           </div>
           <div>
             <p className="text-muted-foreground text-xs">Personal Allowance</p>
-            <p className="font-semibold">min. {formatGYD(C.PERSONAL_ALLOWANCE)}/month or ⅓ of gross</p>
+            <p className="font-semibold">
+              min. {formatGYD(companyPA)}/month or ⅓ of gross
+              {companyPA !== C.PERSONAL_ALLOWANCE && (
+                <span className="ml-1 text-xs text-amber-600 font-normal">(company override)</span>
+              )}
+            </p>
           </div>
           <div>
             <p className="text-muted-foreground text-xs">Child Allowance</p>
-            <p className="font-semibold">{formatGYD(C.CHILD_ALLOWANCE)}/child/month</p>
+            <p className="font-semibold">{formatGYD(companySettingsData?.childAllowance ?? C.CHILD_ALLOWANCE)}/child/month</p>
           </div>
           <div>
             <p className="text-muted-foreground text-xs">PAYE — Progressive</p>

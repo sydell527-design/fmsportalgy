@@ -49,6 +49,7 @@ function monthsTo18(dob: string) {
 }
 function isQualifyingChild(child: EmployeeChild) {
   if (!child.active) return false;
+  if (child.taxEligible === false) return false;   // explicitly excluded from PAYE deduction
   const age = childAge(child.dob);
   if (age < 18) return true;
   if (age <= 25 && child.school) return true;
@@ -169,7 +170,7 @@ export default function EmployeeProfile() {
   const [childModal, setChildModal] = useState<Partial<EmployeeChild> | null>(null);
   const [loanModal,  setLoanModal]  = useState<Partial<EmployeeLoan>  | null>(null);
 
-  const EMPTY_CHILD = { firstName: "", lastName: "", dob: "", relationship: "biological", school: "", active: true };
+  const EMPTY_CHILD = { firstName: "", lastName: "", dob: "", relationship: "biological", school: "", active: true, taxEligible: true };
   const EMPTY_LOAN  = { description: "", principal: 0, balance: 0, monthlyPayment: 0, startDate: today(), status: "active", notes: "" };
 
   // Employees can only view their own profile; managers/admins can view any
@@ -624,8 +625,10 @@ export default function EmployeeProfile() {
                   const age        = childAge(child.dob);
                   const ageMonths  = childAgeMonths(child.dob);
                   const mLeft      = monthsTo18(child.dob);
+                  const ageQualifies = age < 18 || (age <= 25 && !!child.school);
                   const qualifying = isQualifyingChild(child);
                   const expired    = age >= 18 && !child.school;
+                  const taxExcluded = child.taxEligible === false;
                   return (
                     <Card key={child.id} className={`p-4 ${expired ? "opacity-60 border-dashed" : ""}`} data-testid={`child-card-${child.id}`}>
                       <div className="flex items-start justify-between mb-3">
@@ -634,6 +637,7 @@ export default function EmployeeProfile() {
                             <p className="font-semibold text-sm">{child.firstName} {child.lastName}</p>
                             {qualifying && <Badge className="text-[10px] bg-green-100 text-green-700 border-green-200">Qualifying</Badge>}
                             {expired    && <Badge variant="destructive" className="text-[10px]">Expired</Badge>}
+                            {taxExcluded && ageQualifies && <Badge className="text-[10px] bg-amber-100 text-amber-700 border-amber-200">Tax excluded</Badge>}
                           </div>
                           <p className="text-[10px] text-muted-foreground mt-0.5 capitalize">{child.relationship} · {child.dob}</p>
                           {child.school && <p className="text-[10px] text-muted-foreground flex items-center gap-1"><GraduationCap className="w-3 h-3" />{child.school}</p>}
@@ -655,9 +659,20 @@ export default function EmployeeProfile() {
                         </div>
                         <div className="flex justify-between text-[10px] text-muted-foreground"><span>Birth</span><span>Age 18</span></div>
                       </div>
-                      {qualifying && (
-                        <div className="mt-3 text-[10px] rounded bg-green-50 border border-green-200 px-2 py-1.5 text-green-800 text-center">
-                          GYD 10,000/mo tax deduction
+                      {ageQualifies && (
+                        <div className={`mt-3 text-[10px] rounded border px-2 py-1.5 text-center flex items-center justify-between ${
+                          qualifying
+                            ? "bg-green-50 border-green-200 text-green-800"
+                            : "bg-amber-50 border-amber-200 text-amber-800"
+                        }`}>
+                          <span>{qualifying ? "GYD 10,000/mo tax deduction" : "No tax deduction (excluded)"}</span>
+                          <button
+                            type="button"
+                            className="underline text-[10px] ml-2 hover:opacity-75"
+                            onClick={() => updateChild({ id: child.id, taxEligible: !qualifying })}
+                          >
+                            {qualifying ? "Exclude" : "Include"}
+                          </button>
                         </div>
                       )}
                     </Card>
@@ -1048,7 +1063,18 @@ export default function EmployeeProfile() {
                 className="rounded border-input"
                 data-testid="checkbox-child-active"
               />
-              <Label htmlFor="child-active">Active (receives allowance)</Label>
+              <Label htmlFor="child-active">Active (on record)</Label>
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="child-tax-eligible"
+                checked={childModal?.taxEligible !== false}
+                onChange={(e) => setChildModal((m) => m ? { ...m, taxEligible: e.target.checked } : m)}
+                className="rounded border-input"
+                data-testid="checkbox-child-tax-eligible"
+              />
+              <Label htmlFor="child-tax-eligible">Count for PAYE tax deduction (GYD 10,000/mo)</Label>
             </div>
             <div className="flex justify-end gap-2 pt-2 border-t border-border">
               <Button variant="outline" onClick={() => setChildModal(null)} data-testid="button-cancel-child">Cancel</Button>

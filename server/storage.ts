@@ -1,6 +1,6 @@
 import { db } from "./db";
 import {
-  users, timesheets, requests, geofences, employeeChildren, employeeLoans, schedules, callSigns,
+  users, timesheets, requests, geofences, employeeChildren, employeeLoans, schedules, callSigns, companySettings,
   type User, type InsertUser,
   type Timesheet, type InsertTimesheet,
   type Request, type InsertRequest,
@@ -9,6 +9,7 @@ import {
   type EmployeeLoan, type InsertEmployeeLoan,
   type Schedule, type InsertSchedule,
   type CallSign, type InsertCallSign,
+  type CompanySettings,
 } from "@shared/schema";
 import { eq, and, gte, lte, desc, inArray, sql } from "drizzle-orm";
 
@@ -70,6 +71,9 @@ export interface IStorage {
   getCallSigns(): Promise<CallSign[]>;
   importCallSigns(records: InsertCallSign[]): Promise<number>;
   clearCallSigns(): Promise<void>;
+
+  getCompanySettings(): Promise<CompanySettings>;
+  updateCompanySettings(updates: Partial<Omit<CompanySettings, "id">>): Promise<CompanySettings>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -279,6 +283,22 @@ export class DatabaseStorage implements IStorage {
 
   async clearCallSigns() {
     await db.delete(callSigns);
+  }
+
+  async getCompanySettings(): Promise<CompanySettings> {
+    const [row] = await db.select().from(companySettings).limit(1);
+    if (row) return row;
+    const [created] = await db.insert(companySettings).values({ personalAllowance: 140_000, childAllowance: 10_000 }).returning();
+    return created;
+  }
+
+  async updateCompanySettings(updates: Partial<Omit<CompanySettings, "id">>): Promise<CompanySettings> {
+    const existing = await this.getCompanySettings();
+    const [updated] = await db.update(companySettings)
+      .set(updates)
+      .where(eq(companySettings.id, existing.id))
+      .returning();
+    return updated;
   }
 }
 
