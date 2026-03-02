@@ -15,7 +15,7 @@ import {
   Plus, Edit2, Copy, CheckCircle, User, KeyRound,
   Trash2, RotateCcw, AlertTriangle, Search, UserCircle,
   CreditCard, ShieldCheck, Banknote, PlusCircle, X,
-  TrendingDown, TrendingUp, DollarSign, Info, Baby,
+  TrendingDown, TrendingUp, DollarSign, Info, Baby, Settings2,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import type { User as UserType, PayConfig } from "@shared/schema";
@@ -542,8 +542,9 @@ function gyCalc(hourlyRate: number, salary: number, cat: string, pc: PayConfig |
   const allowances = monthlyAllowances / ppm;
   const gross = periodBasic + allowances;
 
-  // NIS — ceiling prorated from monthly (GYD 280,000/mo)
-  const nisBase = Math.min(gross, GY_NIS_MAX_INSURABLE / ppm);
+  // NIS — ceiling prorated from monthly (use override if set, else statutory GYD 280,000/mo)
+  const effectiveNisCeiling = safePC.nisCeilingOverride ?? GY_NIS_MAX_INSURABLE;
+  const nisBase = Math.min(gross, effectiveNisCeiling / ppm);
   const nisEmployeeCalc = safePC.nisExempt ? 0 : Math.round(nisBase * GY_NIS_EMPLOYEE_RATE);
   const nisEmployee = (safePC.nisEmployeeOverride != null) ? safePC.nisEmployeeOverride : nisEmployeeCalc;
   const nisEmployerCalc = safePC.nisExempt ? 0 : Math.round(nisBase * GY_NIS_EMPLOYER_RATE);
@@ -556,13 +557,15 @@ function gyCalc(hourlyRate: number, salary: number, cat: string, pc: PayConfig |
     ? (safePC.healthSurchargeExempt ? 0 : safePC.healthSurchargeOverride)
     : healthSurchargeCalc;
 
-  // Personal allowance — GRA rule on monthly basis, prorated to period
+  // Personal allowance — use override if set, else GRA rule: max(140k/mo, ⅓ gross), prorated
   const monthlyGross = gross * ppm;
-  const monthlyPersonalAllow = Math.max(GY_PERSONAL_ALLOWANCE, Math.round(monthlyGross / 3));
+  const effectivePersonalAllow = safePC.personalAllowanceOverride ?? GY_PERSONAL_ALLOWANCE;
+  const monthlyPersonalAllow = Math.max(effectivePersonalAllow, Math.round(monthlyGross / 3));
   const personalAllow = Math.round(monthlyPersonalAllow / ppm);
 
-  // PAYE — tax bracket limit prorated to period
-  const periodLowerLimit = Math.round(GY_TAX_LOWER_LIMIT / ppm);
+  // PAYE — use override bracket limit if set, else statutory
+  const effectiveTaxLowerLimit = safePC.taxLowerLimitOverride ?? GY_TAX_LOWER_LIMIT;
+  const periodLowerLimit = Math.round(effectiveTaxLowerLimit / ppm);
   const chargeable = safePC.taxExempt ? 0 : Math.max(0, gross - nisEmployee - personalAllow);
   const taxCalc = safePC.taxExempt ? 0
     : chargeable <= periodLowerLimit
@@ -823,28 +826,34 @@ export function EmployeeFormDialog({
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-1.5">
                       <Label>Pay Category</Label>
-                      {sel(formData.cat, (v) => setFormData((prev) => ({ ...prev, cat: v })), [["Time","Time (Hourly)"],["Fixed","Fixed (Salary)"],["Executive","Executive"]], "select-employee-cat")}
+                      {sel(formData.cat, (v) => {
+                        setSalaryCalcInput("");
+                        setFormData((prev) => ({ ...prev, cat: v }));
+                      }, [["Time","Time (Hourly)"],["Fixed","Fixed (Salary)"],["Executive","Executive"]], "select-employee-cat")}
                     </div>
                     <div className="space-y-1.5">
                       <Label>Pay Frequency</Label>
-                      {sel(pc.frequency, (v) => setPc({ frequency: v as any }), [["bimonthly","Bi-monthly"],["weekly","Weekly"]], "select-pay-frequency")}
+                      {sel(pc.frequency, (v) => { setSalaryCalcInput(""); setPc({ frequency: v as any }); }, [["bimonthly","Bi-monthly"],["weekly","Weekly"]], "select-pay-frequency")}
                     </div>
                   </div>
 
+                  {/* ── Basic Rate ── */}
                   <div className="space-y-1.5">
                     {formData.cat === "Time" ? (<>
                       <Label>Hourly Rate (GYD)</Label>
-                      <Input type="number" min={0} step="0.01" value={formData.hourlyRate} onChange={(e) => { const v = Number(e.target.value); setSalaryCalcInput(""); setFormData((prev) => ({ ...prev, hourlyRate: v })); }} data-testid="input-employee-hourly" />
-                      <p className="text-xs text-muted-foreground">≈ {fmt(calc.gross)}/{calc.label} · {fmt(calc.gross * calc.ppm)}/mo</p>
-                      <div className="mt-3 pt-3 border-t border-border/50 space-y-1.5">
+                      <Input type="number" min={0} step="0.01" value={formData.hourlyRate || ""} placeholder="0.00"
+                        onChange={(e) => { const v = Number(e.target.value); setSalaryCalcInput(""); setFormData((prev) => ({ ...prev, hourlyRate: v })); }}
+                        data-testid="input-employee-hourly" />
+                      {formData.hourlyRate > 0 && (
+                        <p className="text-xs text-muted-foreground">≈ {fmt(calc.gross)}/{calc.label} · {fmt(calc.gross * calc.ppm)}/mo</p>
+                      )}
+                      <div className="mt-2 pt-3 border-t border-border/50 space-y-1.5">
                         <Label className="text-xs font-medium text-muted-foreground">
-                          Calculate from {pc.frequency === "weekly" ? "weekly (40 hrs)" : "bi-monthly (80 hrs)"}
+                          Back-calculate from {pc.frequency === "weekly" ? "weekly (40 hrs)" : "bi-monthly (80 hrs)"} pay
                         </Label>
                         <div className="flex gap-2 items-center">
-                          <Input
-                            type="number"
-                            min={0}
-                            placeholder={pc.frequency === "weekly" ? "Enter weekly amount…" : "Enter bi-monthly amount…"}
+                          <Input type="number" min={0}
+                            placeholder={pc.frequency === "weekly" ? "Weekly pay amount…" : "Bi-monthly pay amount…"}
                             value={salaryCalcInput}
                             onChange={(e) => {
                               setSalaryCalcInput(e.target.value);
@@ -852,10 +861,9 @@ export function EmployeeFormDialog({
                               const divisor = pc.frequency === "weekly" ? 40 : 80;
                               if (amount > 0) setFormData((prev) => ({ ...prev, hourlyRate: Math.round((amount / divisor) * 100) / 100 }));
                             }}
-                            data-testid="input-salary-calc"
-                          />
+                            data-testid="input-salary-calc" />
                           <span className="text-xs text-muted-foreground whitespace-nowrap shrink-0">
-                            {pc.frequency === "weekly" ? "wk" : "bi-mo"}
+                            {pc.frequency === "weekly" ? "/ wk" : "/ bi-mo"}
                           </span>
                         </div>
                         {salaryCalcInput && Number(salaryCalcInput) > 0 && (
@@ -865,28 +873,53 @@ export function EmployeeFormDialog({
                         )}
                       </div>
                     </>) : (<>
-                      <Label>
-                        {pc.frequency === "weekly" ? "Weekly" : "Bi-monthly"} Salary (GYD)
-                      </Label>
+                      {/* Fixed / Executive: primary field is Monthly Basic Salary */}
+                      <Label>Monthly Basic Salary (GYD)</Label>
                       <Input
                         type="number"
                         min={0}
-                        placeholder={`Enter ${pc.frequency === "weekly" ? "weekly" : "bi-monthly"} amount…`}
-                        value={salaryCalcInput || (formData.salary > 0 ? String(
-                          pc.frequency === "weekly" ? Math.round(formData.salary / (52 / 12))
-                          : Math.round(formData.salary / 2)
-                        ) : "")}
+                        placeholder="Enter monthly salary…"
+                        value={formData.salary || ""}
                         onChange={(e) => {
-                          setSalaryCalcInput(e.target.value);
-                          const amount = Number(e.target.value);
-                          const monthly = pc.frequency === "weekly" ? Math.round(amount * (52 / 12)) : Math.round(amount * 2);
+                          const monthly = Number(e.target.value);
+                          setSalaryCalcInput("");
                           setFormData((prev) => ({ ...prev, salary: monthly }));
                         }}
                         data-testid="input-employee-salary"
                       />
                       {formData.salary > 0 && (
-                        <p className="text-xs text-muted-foreground">≈ {fmt(formData.salary)}/mo</p>
+                        <p className="text-xs text-muted-foreground">
+                          ≈ {fmt(pc.frequency === "weekly"
+                            ? Math.round(formData.salary / (52 / 12))
+                            : Math.round(formData.salary / 2))}
+                          /{pc.frequency === "weekly" ? "wk" : "bi-mo"} · {fmt(calc.gross)}/{calc.label} gross
+                        </p>
                       )}
+                      <div className="mt-2 pt-3 border-t border-border/50 space-y-1.5">
+                        <Label className="text-xs font-medium text-muted-foreground">
+                          Or enter {pc.frequency === "weekly" ? "weekly" : "bi-monthly"} amount to back-calculate
+                        </Label>
+                        <div className="flex gap-2 items-center">
+                          <Input type="number" min={0}
+                            placeholder={pc.frequency === "weekly" ? "Weekly salary…" : "Bi-monthly salary…"}
+                            value={salaryCalcInput}
+                            onChange={(e) => {
+                              setSalaryCalcInput(e.target.value);
+                              const amount = Number(e.target.value);
+                              if (amount > 0) {
+                                const monthly = pc.frequency === "weekly" ? Math.round(amount * (52 / 12)) : Math.round(amount * 2);
+                                setFormData((prev) => ({ ...prev, salary: monthly }));
+                              }
+                            }}
+                            data-testid="input-salary-calc-fixed" />
+                          <span className="text-xs text-muted-foreground whitespace-nowrap shrink-0">
+                            {pc.frequency === "weekly" ? "/ wk" : "/ bi-mo"}
+                          </span>
+                        </div>
+                        {salaryCalcInput && Number(salaryCalcInput) > 0 && formData.salary > 0 && (
+                          <p className="text-xs text-emerald-600 font-medium">→ {fmt(formData.salary)}/mo</p>
+                        )}
+                      </div>
                     </>)}
                   </div>
 
@@ -993,12 +1026,82 @@ export function EmployeeFormDialog({
                     </p>
                   )}
 
+                  {/* GRA Threshold Overrides */}
+                  <div className="rounded-md border border-blue-200 bg-blue-50/60 p-3 space-y-2">
+                    <p className="text-xs font-semibold text-blue-800 flex items-center gap-1.5">
+                      <Settings2 className="w-3.5 h-3.5" /> GRA 2026 Threshold Overrides
+                    </p>
+                    <p className="text-[10px] text-blue-600">Statutory defaults apply unless overridden. Changes affect this employee only.</p>
+                    <div className="grid grid-cols-1 gap-2 mt-1">
+                      {/* Personal Allowance */}
+                      <div className="flex items-center gap-2">
+                        <div className="flex-1 min-w-0">
+                          <Label className="text-[10px] text-muted-foreground">Personal Allowance /mo</Label>
+                          <div className="flex items-center gap-1.5">
+                            <Input
+                              type="number" min={0}
+                              placeholder={String(GY_PERSONAL_ALLOWANCE)}
+                              value={pc.personalAllowanceOverride ?? ""}
+                              onChange={(e) => setPc({ personalAllowanceOverride: e.target.value === "" ? undefined : Number(e.target.value) })}
+                              className="h-7 text-xs"
+                              data-testid="input-personal-allowance-override"
+                            />
+                            {pc.personalAllowanceOverride != null && (
+                              <button type="button" className="text-[10px] text-primary underline whitespace-nowrap" onClick={() => setPc({ personalAllowanceOverride: undefined })}>reset</button>
+                            )}
+                          </div>
+                          <p className="text-[9px] text-muted-foreground">Statutory: {fmt(GY_PERSONAL_ALLOWANCE)}/mo</p>
+                        </div>
+                      </div>
+                      {/* NIS Ceiling */}
+                      <div className="flex items-center gap-2">
+                        <div className="flex-1 min-w-0">
+                          <Label className="text-[10px] text-muted-foreground">NIS Max Insurable Earnings /mo</Label>
+                          <div className="flex items-center gap-1.5">
+                            <Input
+                              type="number" min={0}
+                              placeholder={String(GY_NIS_MAX_INSURABLE)}
+                              value={pc.nisCeilingOverride ?? ""}
+                              onChange={(e) => setPc({ nisCeilingOverride: e.target.value === "" ? undefined : Number(e.target.value) })}
+                              className="h-7 text-xs"
+                              data-testid="input-nis-ceiling-override"
+                            />
+                            {pc.nisCeilingOverride != null && (
+                              <button type="button" className="text-[10px] text-primary underline whitespace-nowrap" onClick={() => setPc({ nisCeilingOverride: undefined })}>reset</button>
+                            )}
+                          </div>
+                          <p className="text-[9px] text-muted-foreground">Statutory: {fmt(GY_NIS_MAX_INSURABLE)}/mo</p>
+                        </div>
+                      </div>
+                      {/* PAYE Bracket */}
+                      <div className="flex items-center gap-2">
+                        <div className="flex-1 min-w-0">
+                          <Label className="text-[10px] text-muted-foreground">PAYE 25% Bracket Limit /yr</Label>
+                          <div className="flex items-center gap-1.5">
+                            <Input
+                              type="number" min={0}
+                              placeholder={String(GY_TAX_LOWER_LIMIT)}
+                              value={pc.taxLowerLimitOverride ?? ""}
+                              onChange={(e) => setPc({ taxLowerLimitOverride: e.target.value === "" ? undefined : Number(e.target.value) })}
+                              className="h-7 text-xs"
+                              data-testid="input-tax-lower-limit-override"
+                            />
+                            {pc.taxLowerLimitOverride != null && (
+                              <button type="button" className="text-[10px] text-primary underline whitespace-nowrap" onClick={() => setPc({ taxLowerLimitOverride: undefined })}>reset</button>
+                            )}
+                          </div>
+                          <p className="text-[9px] text-muted-foreground">Statutory: GYD {GY_TAX_LOWER_LIMIT.toLocaleString()}/yr · 35% above</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
                   {/* NIS */}
                   <div className="rounded-md border border-border bg-muted/30 p-3 space-y-2">
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <p className="font-medium text-sm">NIS — National Insurance Scheme</p>
-                        <p className="text-xs text-muted-foreground">Employee 5.6% · Employer 8.4% · Max {fmt(GY_NIS_MAX_INSURABLE)}/mo</p>
+                        <p className="text-xs text-muted-foreground">Employee 5.6% · Employer 8.4% · Max {fmt(pc.nisCeilingOverride ?? GY_NIS_MAX_INSURABLE)}/mo</p>
                       </div>
                       <label className="flex items-center gap-1.5 text-xs cursor-pointer shrink-0 mt-0.5">
                         <input type="checkbox" checked={pc.nisExempt} onChange={(e) => setPc({ nisExempt: e.target.checked, nisEmployeeOverride: undefined, nisEmployerOverride: undefined })} data-testid="checkbox-nis-exempt" /> Exempt

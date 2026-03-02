@@ -52,6 +52,10 @@ export interface PayConfig {
   advancesRecovery: number;
   unionDues: number;
   otherDeductions: Array<{ name: string; amount: number }>;
+  // GRA 2026 threshold overrides (per-employee, optional — falls back to statutory defaults)
+  personalAllowanceOverride?: number;  // default: 140,000/mo
+  nisCeilingOverride?: number;         // default: 280,000/mo
+  taxLowerLimitOverride?: number;      // default: 2,400,000/yr (PAYE bracket)
 }
 
 // ── Day / Holiday Status constants (from FMS formula documentation) ────────
