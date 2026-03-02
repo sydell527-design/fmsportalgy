@@ -559,7 +559,7 @@ export default function EmployeeProfile() {
                     <Bar label={`NIS Employee (5.6%)${pc.nisExempt ? " — EXEMPT" : ""}`} sub={fmt(pay.nisEmp) + "/mo"} value={pay.nisEmp} max={pay.gross || 1} color="bg-blue-500" />
                     <p className="text-[10px] text-muted-foreground">Employer: {fmt(pay.nisEmployer)}/mo · Max insurable: GYD 280,000</p>
                   </div>
-                  <Bar label={`Health Surcharge${pc.healthSurchargeExempt ? " — EXEMPT" : ` (${pc.healthSurchargeRate ?? "full"})`}`} sub={fmt(pay.health) + "/mo"} value={pay.health} max={pay.gross || 1} color="bg-teal-500" />
+                  <Bar label={`Hand In Hand Insurance${pc.healthSurchargeExempt ? " — EXEMPT" : pc.healthSurchargeRate === "custom" ? " (custom)" : ` (${pc.healthSurchargeRate ?? "full"})`}`} sub={fmt(pay.health) + "/mo"} value={pay.health} max={pay.gross || 1} color="bg-teal-500" />
                   <div className="space-y-2">
                     <Bar label={`PAYE Tax${pc.taxExempt ? " — EXEMPT" : ""}`} sub={fmt(pay.paye) + "/mo"} value={pay.paye} max={pay.gross || 1} color="bg-purple-500" />
                     <p className="text-[10px] text-muted-foreground">Chargeable: {fmt(pay.chargeable)} · Personal: {fmt(pay.personalAllow)}{pay.personalAllow > GY_PERSONAL_ALLOW ? " (⅓ gross)" : ""} · Child: {fmt(pay.childDeduct)}</p>

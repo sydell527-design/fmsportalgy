@@ -371,7 +371,7 @@ export default function Payroll() {
             <p className="font-semibold">{formatGYD(C.NIS_CEILING_MONTHLY)}/month</p>
           </div>
           <div>
-            <p className="text-muted-foreground text-xs">Health Surcharge</p>
+            <p className="text-muted-foreground text-xs">Hand In Hand Insurance</p>
             <p className="font-semibold">{formatGYD(C.HEALTH_SURCHARGE_FULL)} full · {formatGYD(C.HEALTH_SURCHARGE_HALF)} casual/mo</p>
           </div>
           <div>
@@ -449,7 +449,7 @@ export default function Payroll() {
                 <Row label={`Employee NIS (${(C.NIS_EMP_RATE * 100).toFixed(1)}%${pc?.nisExempt ? " — EXEMPT" : ""})`}
                      sub={`ceiling ${formatGYD(C.NIS_CEILING_MONTHLY)}/mo`}
                      value={pc?.nisExempt ? "GYD 0" : `- ${formatGYD(r.employeeNIS)}`} red={!pc?.nisExempt} />
-                <Row label={`Health Surcharge${pc?.healthSurchargeExempt ? " — EXEMPT" : ` (${pc?.healthSurchargeRate ?? "full"})`}`}
+                <Row label={`Hand In Hand Insurance${pc?.healthSurchargeExempt ? " — EXEMPT" : pc?.healthSurchargeRate === "custom" ? " (custom)" : ` (${pc?.healthSurchargeRate ?? "full"})`}`}
                      value={pc?.healthSurchargeExempt ? "GYD 0" : `- ${formatGYD(r.healthSurcharge)}`} red={!pc?.healthSurchargeExempt} />
                 <Row label={`Personal Allowance${r.personalAllowance > C.PERSONAL_ALLOWANCE ? " (⅓ gross)" : ""}`}
                      sub={r.personalAllowance > C.PERSONAL_ALLOWANCE ? `min. ${formatGYD(C.PERSONAL_ALLOWANCE)} — ⅓ gross applies` : undefined}

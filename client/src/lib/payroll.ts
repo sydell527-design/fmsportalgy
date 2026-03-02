@@ -163,8 +163,9 @@ export function calcPayroll(
   const monthlyPersonalAl = Math.max(C.PERSONAL_ALLOWANCE, Math.round(monthlyGross / 3));
   const personalAllowance = Math.round(monthlyPersonalAl / ppm);
 
+  // Insurance (healthSurcharge) is deductible before PAYE alongside NIS
   const chargeableIncome = pc.taxExempt ? 0
-    : Math.max(0, grossPay - employeeNIS - personalAllowance - childAllowance);
+    : Math.max(0, grossPay - employeeNIS - healthSurcharge - personalAllowance - childAllowance);
 
   const periodLowerLimit = Math.round(C.TAX_LOWER_LIMIT / ppm);
   const payeCalc = pc.taxExempt ? 0
@@ -228,7 +229,7 @@ export function generateQuickBooksCSV(results: PayrollResult[]): string {
     "Employee Name", "Employee ID", "Department", "Position", "Pay Category",
     "Period", "Regular Hours", "OT Hours",
     "Basic Pay (GYD)", "OT Pay (GYD)", "Allowances (GYD)", "Gross Pay (GYD)",
-    "Employee NIS (GYD)", "Health Surcharge (GYD)", "Qualifying Children",
+    "Employee NIS (GYD)", "Hand In Hand Insurance (GYD)", "Qualifying Children",
     "Child Allowance (GYD)", "Chargeable Income (GYD)", "PAYE (GYD)",
     "Credit Union (GYD)", "Loan Repayment (GYD)", "Advances Recovery (GYD)",
     "Union Dues (GYD)", "Other Deductions (GYD)",

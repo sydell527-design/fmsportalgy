@@ -568,7 +568,8 @@ function gyCalc(hourlyRate: number, salary: number, cat: string, pc: PayConfig |
   // PAYE — use override bracket limit if set, else statutory
   const effectiveTaxLowerLimit = safePC.taxLowerLimitOverride ?? GY_TAX_LOWER_LIMIT;
   const periodLowerLimit = Math.round(effectiveTaxLowerLimit / ppm);
-  const chargeable = safePC.taxExempt ? 0 : Math.max(0, gross - nisEmployee - personalAllow);
+  // Insurance is deductible before PAYE (same as NIS)
+  const chargeable = safePC.taxExempt ? 0 : Math.max(0, gross - nisEmployee - healthSurcharge - personalAllow);
   const taxCalc = safePC.taxExempt ? 0
     : chargeable <= periodLowerLimit
       ? Math.round(chargeable * GY_TAX_LOWER_RATE)
@@ -1164,11 +1165,11 @@ export function EmployeeFormDialog({
                     )}
                   </div>
 
-                  {/* Health Surcharge */}
+                  {/* Hand In Hand Insurance */}
                   <div className="rounded-md border border-border bg-muted/30 p-3 space-y-2">
                     <div className="flex items-start justify-between gap-3">
                       <div>
-                        <p className="font-medium text-sm">Health Surcharge</p>
+                        <p className="font-medium text-sm">Hand In Hand Insurance</p>
                         <p className="text-xs text-muted-foreground">Full GYD 1,200/mo · Reduced GYD 600/mo (prorated to pay period)</p>
                       </div>
                       <label className="flex items-center gap-1.5 text-xs cursor-pointer shrink-0 mt-0.5">
@@ -1299,7 +1300,7 @@ export function EmployeeFormDialog({
                     </div>
                     <div className="space-y-1 text-sm border-t border-border pt-1.5">
                       {!pc.nisExempt && <div className="flex justify-between text-red-600"><span>NIS (5.6%)</span><span>− {fmt(calc.nisEmployee)}</span></div>}
-                      {!pc.healthSurchargeExempt && <div className="flex justify-between text-red-600"><span>Health Surcharge</span><span>− {fmt(calc.healthSurcharge)}</span></div>}
+                      {!pc.healthSurchargeExempt && <div className="flex justify-between text-red-600"><span>Hand In Hand Insurance</span><span>− {fmt(calc.healthSurcharge)}</span></div>}
                       {!pc.taxExempt && calc.tax > 0 && <div className="flex justify-between text-red-600"><span>PAYE</span><span>− {fmt(calc.tax)}</span></div>}
                       {calc.voluntary > 0 && <div className="flex justify-between text-amber-600"><span>Voluntary</span><span>− {fmt(calc.voluntary)}</span></div>}
                     </div>
