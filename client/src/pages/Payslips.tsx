@@ -6,8 +6,8 @@ import { apiRequest } from "@/lib/queryClient";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { FileText, ChevronRight, Download, FileDown } from "lucide-react";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { FileText, ChevronRight, FileDown, AlertCircle } from "lucide-react";
 import { format } from "date-fns";
 import { formatGYD, PAYROLL_CONSTANTS } from "@/lib/payroll";
 import { downloadPayslipPDF } from "@/lib/payslip-pdf";
@@ -16,142 +16,150 @@ import type { Payslip } from "@shared/schema";
 
 const C = PAYROLL_CONSTANTS;
 
-function Row({ label, value, sub, red, bold, indent, muted }: {
-  label: string; value: string; sub?: string;
-  red?: boolean; bold?: boolean; indent?: boolean; muted?: boolean;
-}) {
-  return (
-    <div className={`flex justify-between items-baseline ${indent ? "pl-4" : ""}`}>
-      <span className={`${bold ? "font-semibold" : muted ? "text-muted-foreground text-xs" : "text-muted-foreground"} ${indent ? "text-xs" : "text-sm"}`}>
-        {label}
-        {sub && <span className="text-xs text-muted-foreground ml-1">{sub}</span>}
-      </span>
-      <span className={`font-mono ${indent ? "text-xs" : "text-sm"} ${red ? "text-red-600 font-medium" : bold ? "font-semibold" : ""}`}>
-        {value}
-      </span>
-    </div>
-  );
-}
+function PayslipLandscape({ r }: { r: PayrollResult }) {
+  if (!r?.employee) {
+    return (
+      <div className="flex flex-col items-center justify-center py-10 text-muted-foreground gap-2">
+        <AlertCircle className="w-8 h-8" />
+        <p className="text-sm">This payslip could not be loaded — the data is invalid. Please ask your administrator to re-send it.</p>
+      </div>
+    );
+  }
 
-function Divider({ label }: { label?: string }) {
-  if (label) return (
-    <div className="flex items-center gap-2 py-1">
-      <div className="h-px flex-1 bg-border" />
-      <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{label}</span>
-      <div className="h-px flex-1 bg-border" />
-    </div>
-  );
-  return <div className="h-px bg-border my-1" />;
-}
-
-function PayslipDetail({ r }: { r: PayrollResult }) {
-  const pc = r.employee.payConfig;
+  const pc  = r.employee.payConfig;
   const freq = pc?.frequency ?? "bimonthly";
-  const ppm  = freq === "weekly" ? 52 / 12 : 2;
+  const ppm  = freq === "weekly" ? 52/12 : freq === "biweekly" ? 26/12 : freq === "monthly" ? 1 : 2;
+  const freqLabel = freq === "weekly" ? "Weekly" : freq === "biweekly" ? "Bi-Weekly" : freq === "monthly" ? "Monthly" : "Bi-Monthly";
+
+  const incomeItems: Array<{label: string; amount: number; sub?: string}> = [];
+  incomeItems.push({ label: "Basic Salary", amount: r.basicPay, sub: `${r.regularHours.toFixed(2)} h × ${formatGYD(r.effectiveRate)}/hr` });
+  if (r.otPay  > 0) incomeItems.push({ label: `Overtime (${pc?.otMultiplier ?? 1.5}×)`,    amount: r.otPay });
+  if (r.phPay  > 0) incomeItems.push({ label: `Public Holiday (${pc?.phMultiplier ?? 2}×)`, amount: r.phPay });
+  if ((pc?.housingAllowance   ?? 0) > 0) incomeItems.push({ label: "Housing Allowance",   amount: (pc!.housingAllowance)   / ppm });
+  if ((pc?.transportAllowance ?? 0) > 0) incomeItems.push({ label: "Transport Allowance", amount: (pc!.transportAllowance) / ppm });
+  if ((pc?.mealAllowance      ?? 0) > 0) incomeItems.push({ label: "Meal Allowance",      amount: (pc!.mealAllowance)      / ppm });
+  if ((pc?.uniformAllowance   ?? 0) > 0) incomeItems.push({ label: "Uniform Allowance",   amount: (pc!.uniformAllowance)   / ppm });
+  if ((pc?.riskAllowance      ?? 0) > 0) incomeItems.push({ label: "Risk Allowance",      amount: (pc!.riskAllowance)      / ppm });
+  if ((pc?.shiftAllowance     ?? 0) > 0) incomeItems.push({ label: "Shift Allowance",     amount: (pc!.shiftAllowance)     / ppm });
+  (pc?.otherAllowances ?? []).forEach((a) => incomeItems.push({ label: a.name, amount: a.amount / ppm }));
+
+  const freeItems: Array<{label: string; amount: number}> = [];
+  freeItems.push({ label: "Statutory Free Pay", amount: r.personalAllowance });
+  if (r.qualifyingChildren > 0) freeItems.push({ label: `Child Tax Credit (${r.qualifyingChildren})`, amount: r.childAllowance });
+  if (!pc?.nisExempt)             freeItems.push({ label: `Emp. NIS (${(C.NIS_EMP_RATE*100).toFixed(1)}%)`, amount: r.employeeNIS });
+  if (!pc?.healthSurchargeExempt) freeItems.push({ label: "Health Surcharge",    amount: r.healthSurcharge });
+
+  const dedItems: Array<{label: string; amount: number}> = [];
+  if (!pc?.taxExempt)        dedItems.push({ label: `PAYE${r.chargeableIncome > C.TAX_LOWER_LIMIT/ppm ? " (25%/35%)" : " (25%)"}`, amount: r.paye });
+  if (r.creditUnion      > 0) dedItems.push({ label: "Credit Union",      amount: r.creditUnion });
+  if (r.loanRepayment    > 0) dedItems.push({ label: "Loan Repayment",    amount: r.loanRepayment });
+  if (r.advancesRecovery > 0) dedItems.push({ label: "Advances Recovery", amount: r.advancesRecovery });
+  if (r.unionDues        > 0) dedItems.push({ label: "Union Dues",        amount: r.unionDues });
+  (pc?.otherDeductions ?? []).forEach((d) => dedItems.push({ label: d.name, amount: d.amount }));
+
+  const totalFreePay = r.personalAllowance + r.childAllowance + r.employeeNIS + r.healthSurcharge;
+  const totalDeduct  = r.paye + r.totalVoluntary;
+  const maxRows = Math.max(incomeItems.length, freeItems.length, dedItems.length);
+
   return (
-    <div className="space-y-3 mt-1 text-sm">
-      <div className="flex items-center gap-3 p-4 bg-primary text-primary-foreground rounded-md">
-        <div className="w-12 h-12 rounded-full bg-primary-foreground/20 flex items-center justify-center font-bold text-lg shrink-0">
-          {r.employee.av}
+    <div className="text-xs">
+      <div className="text-center py-3 border-b border-border">
+        <p className="font-bold text-sm text-foreground tracking-wide">FACILITY MANAGEMENT SERVICES (GUYANA) INC.</p>
+        <p className="text-muted-foreground text-xs">{r.employee.dept} — {r.employee.pos}</p>
+      </div>
+
+      <div className="flex justify-between items-center px-2 py-2 border-b border-border bg-muted/20 text-xs">
+        <div className="space-y-0.5">
+          <p><span className="font-semibold">ID:</span> {r.employee.userId}&emsp;<span className="font-semibold">Name:</span> {r.employee.name}</p>
+          <p className="text-muted-foreground">D.O.E: {r.employee.joined ?? "N/A"} · {r.approvedTimesheets} approved timesheet{r.approvedTimesheets !== 1 ? "s" : ""} · {formatGYD(r.effectiveRate)}/hr</p>
         </div>
-        <div className="min-w-0">
-          <p className="font-bold text-base leading-tight">{r.employee.name}</p>
-          <p className="text-primary-foreground/80 text-sm">{r.employee.pos} · {r.employee.dept}</p>
-          <p className="text-primary-foreground/60 text-xs font-mono">{r.employee.userId} · {r.period}</p>
+        <div className="text-right space-y-0.5">
+          <p><span className="font-semibold">{freqLabel} Work Period:</span> {r.periodStart} to {r.periodEnd}</p>
+          <p className="text-muted-foreground">Pay Period: {r.periodStart} – {r.periodEnd}</p>
         </div>
       </div>
 
-      <div className="text-xs bg-muted/40 rounded px-3 py-2 text-muted-foreground">
-        <span className="font-semibold text-foreground">Data source:</span> {r.approvedTimesheets} approved timesheet{r.approvedTimesheets !== 1 ? "s" : ""} ({r.periodStart} – {r.periodEnd}) · rate {formatGYD(r.effectiveRate)}/hr · {freq} pay frequency
+      <table className="w-full border-collapse mt-1" style={{ fontSize: "11px" }}>
+        <thead>
+          <tr>
+            <th colSpan={2} className="bg-blue-700 text-white text-center py-1 px-2 border border-border">Income</th>
+            <th colSpan={2} className="bg-emerald-700 text-white text-center py-1 px-2 border border-border">FreePay</th>
+            <th colSpan={2} className="bg-red-700 text-white text-center py-1 px-2 border border-border">Deductions</th>
+          </tr>
+          <tr className="bg-muted/50 text-muted-foreground text-[10px]">
+            <th className="text-left py-0.5 px-2 border border-border font-medium">Description</th>
+            <th className="text-right py-0.5 px-2 border border-border font-medium">Amount (GYD)</th>
+            <th className="text-left py-0.5 px-2 border border-border font-medium">Description</th>
+            <th className="text-right py-0.5 px-2 border border-border font-medium">Amount (GYD)</th>
+            <th className="text-left py-0.5 px-2 border border-border font-medium">Description</th>
+            <th className="text-right py-0.5 px-2 border border-border font-medium">Amount (GYD)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {Array.from({ length: maxRows }, (_, i) => {
+            const inc = incomeItems[i];
+            const fp  = freeItems[i];
+            const ded = dedItems[i];
+            return (
+              <tr key={i} className={i % 2 === 0 ? "bg-background" : "bg-muted/20"}>
+                <td className="py-0.5 px-2 border border-border">
+                  {inc?.label ?? ""}
+                  {inc?.sub && <span className="text-muted-foreground ml-1">({inc.sub})</span>}
+                </td>
+                <td className="py-0.5 px-2 border border-border text-right font-mono">{inc ? formatGYD(inc.amount) : ""}</td>
+                <td className="py-0.5 px-2 border border-border">{fp?.label ?? ""}</td>
+                <td className="py-0.5 px-2 border border-border text-right font-mono">{fp ? formatGYD(fp.amount) : ""}</td>
+                <td className="py-0.5 px-2 border border-border">{ded?.label ?? ""}</td>
+                <td className="py-0.5 px-2 border border-border text-right font-mono text-red-600">{ded ? formatGYD(ded.amount) : ""}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+        <tfoot>
+          <tr className="bg-yellow-50 dark:bg-yellow-900/20 font-semibold">
+            <td className="py-1 px-2 border border-border">Gross</td>
+            <td className="py-1 px-2 border border-border text-right font-mono">{formatGYD(r.grossPay)}</td>
+            <td className="py-1 px-2 border border-border">Total FreePay</td>
+            <td className="py-1 px-2 border border-border text-right font-mono">{formatGYD(totalFreePay)}</td>
+            <td className="py-1 px-2 border border-border">Total Deduction</td>
+            <td className="py-1 px-2 border border-border text-right font-mono text-red-600">{formatGYD(totalDeduct)}</td>
+          </tr>
+        </tfoot>
+      </table>
+
+      <div className="flex justify-between items-center bg-green-600 text-white rounded-sm px-4 py-2 mt-1">
+        <span className="font-bold text-sm">Net Pay</span>
+        <span className="font-bold text-xl font-mono">{formatGYD(r.netPay)}</span>
       </div>
 
-      <Divider label="Hours Worked" />
-      <Row label="Regular Hours" value={`${r.regularHours.toFixed(2)} h`} />
-      {r.otHours > 0 && <Row label={`Overtime (${pc?.otMultiplier ?? 1.5}×)`} value={`${r.otHours.toFixed(2)} h`} />}
-      {r.phHours > 0 && <Row label={`Public Holiday (${pc?.phMultiplier ?? 2}×)`} value={`${r.phHours.toFixed(2)} h`} />}
-      <Row label="Approved Timesheets" value={String(r.approvedTimesheets)} muted />
-
-      <Divider label="Earnings" />
-      <Row label="Basic Pay" sub={`${r.regularHours.toFixed(2)} h × GYD ${r.effectiveRate.toFixed(2)}/hr`} value={formatGYD(r.basicPay)} />
-      {r.otPay > 0 && <Row label="Overtime Pay" sub={`${r.otHours.toFixed(2)} h × ${r.effectiveRate.toFixed(2)} × ${pc?.otMultiplier ?? 1.5}`} value={formatGYD(r.otPay)} />}
-      {r.phPay > 0 && <Row label="Public Holiday Pay" sub={`${r.phHours.toFixed(2)} h × ${r.effectiveRate.toFixed(2)} × ${pc?.phMultiplier ?? 2}`} value={formatGYD(r.phPay)} />}
-      {r.allowances > 0 && (
-        <>
-          <Row label="Allowances (period)" value={formatGYD(r.allowances)} />
-          {(pc?.housingAllowance   ?? 0) > 0 && <Row label="Housing"   value={formatGYD((pc!.housingAllowance)   / ppm)} indent />}
-          {(pc?.transportAllowance ?? 0) > 0 && <Row label="Transport" value={formatGYD((pc!.transportAllowance) / ppm)} indent />}
-          {(pc?.mealAllowance      ?? 0) > 0 && <Row label="Meal"      value={formatGYD((pc!.mealAllowance)      / ppm)} indent />}
-          {(pc?.uniformAllowance   ?? 0) > 0 && <Row label="Uniform"   value={formatGYD((pc!.uniformAllowance)   / ppm)} indent />}
-          {(pc?.riskAllowance      ?? 0) > 0 && <Row label="Risk"      value={formatGYD((pc!.riskAllowance)      / ppm)} indent />}
-          {(pc?.shiftAllowance     ?? 0) > 0 && <Row label="Shift"     value={formatGYD((pc!.shiftAllowance)     / ppm)} indent />}
-          {(pc?.otherAllowances ?? []).map((a, i) => <Row key={i} label={a.name} value={formatGYD(a.amount / ppm)} indent />)}
-        </>
-      )}
-      <div className="flex justify-between font-semibold bg-muted/40 rounded px-3 py-1.5 mt-1">
-        <span>Gross Pay</span>
-        <span className="font-mono">{formatGYD(r.grossPay)}</span>
-      </div>
-
-      <Divider label="Statutory Deductions" />
-      <Row
-        label={`Employee NIS ${pc?.nisExempt ? "(EXEMPT)" : `(${(C.NIS_EMP_RATE * 100).toFixed(1)}%)`}`}
-        sub={pc?.nisExempt ? undefined : `ceiling ${formatGYD(C.NIS_CEILING_MONTHLY)}/mo`}
-        value={pc?.nisExempt ? "GYD 0" : `− ${formatGYD(r.employeeNIS)}`}
-        red={!pc?.nisExempt}
-      />
-      <Row
-        label={`Hand In Hand Insurance${pc?.healthSurchargeExempt ? " (EXEMPT)" : pc?.healthSurchargeRate === "custom" ? " (custom)" : pc?.healthSurchargeRate === "half" ? " (half/casual)" : ""}`}
-        value={pc?.healthSurchargeExempt ? "GYD 0" : `− ${formatGYD(r.healthSurcharge)}`}
-        red={!pc?.healthSurchargeExempt}
-      />
-
-      <div className="bg-muted/20 rounded p-2.5 space-y-1">
-        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">PAYE Computation</p>
-        <Row label="Gross Pay" value={formatGYD(r.grossPay)} indent />
-        <Row label="Less: Employee NIS" value={`− ${formatGYD(r.employeeNIS)}`} indent red />
-        <Row label="Less: Insurance" value={`− ${formatGYD(r.healthSurcharge)}`} indent red />
-        <Row
-          label={`Less: Personal Allowance${r.personalAllowance * ppm > C.PERSONAL_ALLOWANCE ? " (⅓ gross)" : ""}`}
-          sub={`max(${formatGYD(C.PERSONAL_ALLOWANCE)}/mo, ⅓ gross) ÷ ${ppm}`}
-          value={`− ${formatGYD(r.personalAllowance)}`}
-          indent
-        />
-        {r.qualifyingChildren > 0 && (
-          <Row label={`Less: Child Allowance (${r.qualifyingChildren} child${r.qualifyingChildren > 1 ? "ren" : ""})`}
-               value={`− ${formatGYD(r.childAllowance)}`} indent />
-        )}
-        <div className="border-t border-border/60 pt-1 mt-1">
-          <Row label="Chargeable Income" value={formatGYD(r.chargeableIncome)} bold />
+      <div className="mt-1 grid grid-cols-2 gap-2">
+        <div className="bg-muted/20 rounded p-2 space-y-0.5 text-[10px]">
+          <p className="font-semibold text-muted-foreground uppercase tracking-wide mb-1">PAYE Computation</p>
+          <div className="flex justify-between"><span>Gross Pay</span><span className="font-mono">{formatGYD(r.grossPay)}</span></div>
+          <div className="flex justify-between text-red-600"><span>Less: Employee NIS</span><span className="font-mono">− {formatGYD(r.employeeNIS)}</span></div>
+          <div className="flex justify-between text-red-600"><span>Less: Insurance</span><span className="font-mono">− {formatGYD(r.healthSurcharge)}</span></div>
+          <div className="flex justify-between text-red-600"><span>Less: Personal Allowance</span><span className="font-mono">− {formatGYD(r.personalAllowance)}</span></div>
+          {r.qualifyingChildren > 0 && (
+            <div className="flex justify-between text-red-600"><span>Less: Child Allowance</span><span className="font-mono">− {formatGYD(r.childAllowance)}</span></div>
+          )}
+          <div className="flex justify-between font-semibold border-t border-border pt-0.5">
+            <span>Chargeable Income</span><span className="font-mono">{formatGYD(r.chargeableIncome)}</span>
+          </div>
+          <div className="flex justify-between font-semibold text-red-600">
+            <span>PAYE</span><span className="font-mono">− {formatGYD(r.paye)}</span>
+          </div>
         </div>
-        <Row
-          label={`PAYE ${pc?.taxExempt ? "(EXEMPT)" : r.chargeableIncome > C.TAX_LOWER_LIMIT / ppm ? `(${(C.TAX_LOWER_RATE*100).toFixed(0)}%/${(C.TAX_UPPER_RATE*100).toFixed(0)}%)` : `(${(C.TAX_LOWER_RATE*100).toFixed(0)}%)`}`}
-          value={pc?.taxExempt ? "GYD 0" : `− ${formatGYD(r.paye)}`}
-          bold red={!pc?.taxExempt}
-          indent
-        />
+        <div className="bg-muted/20 rounded p-2 text-[10px] space-y-1">
+          <p className="font-semibold text-muted-foreground uppercase tracking-wide mb-1">Employer NIS (Not deducted from employee)</p>
+          <div className="flex justify-between">
+            <span>Employer NIS ({(C.NIS_ER_RATE*100).toFixed(1)}%)</span>
+            <span className="font-mono">{formatGYD(r.employerNIS)}</span>
+          </div>
+          <p className="text-muted-foreground mt-1 italic">
+            National Insurance values shown under FreePay will be remitted to the National Insurance Scheme.
+          </p>
+        </div>
       </div>
-
-      {r.totalVoluntary > 0 && (
-        <>
-          <Divider label="Voluntary Deductions" />
-          {r.creditUnion      > 0 && <Row label="Credit Union"      value={`− ${formatGYD(r.creditUnion)}`}      red />}
-          {r.loanRepayment    > 0 && <Row label="Loan Repayment"    value={`− ${formatGYD(r.loanRepayment)}`}    red />}
-          {r.advancesRecovery > 0 && <Row label="Advances Recovery" value={`− ${formatGYD(r.advancesRecovery)}`} red />}
-          {r.unionDues        > 0 && <Row label="Union Dues"        value={`− ${formatGYD(r.unionDues)}`}        red />}
-          {(pc?.otherDeductions ?? []).map((d, i) => <Row key={i} label={d.name} value={`− ${formatGYD(d.amount)}`} red />)}
-        </>
-      )}
-
-      <Divider />
-      <div className="flex justify-between items-center bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800 rounded-md px-4 py-3">
-        <span className="font-bold text-base">Net Pay</span>
-        <span className="font-bold text-2xl text-green-600">{formatGYD(r.netPay)}</span>
-      </div>
-      <Row
-        label={`Employer NIS (${(C.NIS_ER_RATE * 100).toFixed(1)}%) — not deducted from employee`}
-        value={formatGYD(r.employerNIS)}
-        muted
-      />
     </div>
   );
 }
@@ -177,6 +185,14 @@ export default function Payslips() {
   }
 
   const unread = payslips.filter((p) => !p.seen).length;
+
+  function safeNetPay(data: unknown): string {
+    try {
+      const r = data as PayrollResult;
+      if (typeof r?.netPay === "number") return formatGYD(r.netPay);
+    } catch {}
+    return "N/A";
+  }
 
   return (
     <Layout>
@@ -208,51 +224,55 @@ export default function Payslips() {
         </Card>
       ) : (
         <div className="space-y-2">
-          {payslips.map((p) => {
-            const r = p.data as unknown as PayrollResult;
-            return (
-              <Card
-                key={p.id}
-                className={`flex items-center justify-between px-4 py-3 cursor-pointer hover:bg-muted/30 transition-colors ${!p.seen ? "border-primary/40 bg-primary/5" : ""}`}
-                onClick={() => open(p)}
-                data-testid={`payslip-card-${p.id}`}
-              >
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className={`w-2 h-2 rounded-full shrink-0 ${!p.seen ? "bg-primary" : "bg-transparent"}`} />
-                  <div className="min-w-0">
-                    <p className="font-semibold text-sm leading-tight">{p.period}</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      Issued {format(new Date(p.sentAt), "d MMM yyyy, h:mm a")} · Net Pay: <span className="font-semibold text-green-600">{formatGYD(r.netPay)}</span>
-                    </p>
-                  </div>
+          {payslips.map((p) => (
+            <Card
+              key={p.id}
+              className={`flex items-center justify-between px-4 py-3 cursor-pointer hover:bg-muted/30 transition-colors ${!p.seen ? "border-primary/40 bg-primary/5" : ""}`}
+              onClick={() => open(p)}
+              data-testid={`payslip-card-${p.id}`}
+            >
+              <div className="flex items-center gap-3 min-w-0">
+                <div className={`w-2 h-2 rounded-full shrink-0 ${!p.seen ? "bg-primary" : "bg-transparent"}`} />
+                <div className="min-w-0">
+                  <p className="font-semibold text-sm leading-tight">{p.period}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Issued {format(new Date(p.sentAt), "d MMM yyyy, h:mm a")} · Net Pay:{" "}
+                    <span className="font-semibold text-green-600">{safeNetPay(p.data)}</span>
+                  </p>
                 </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  {!p.seen && <Badge variant="default" className="text-xs">New</Badge>}
-                  <ChevronRight className="w-4 h-4 text-muted-foreground" />
-                </div>
-              </Card>
-            );
-          })}
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                {!p.seen && <Badge variant="default" className="text-xs">New</Badge>}
+                <ChevronRight className="w-4 h-4 text-muted-foreground" />
+              </div>
+            </Card>
+          ))}
         </div>
       )}
 
       <Dialog open={!!selected} onOpenChange={() => setSelected(null)}>
-        <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Payslip — {selected?.period}</DialogTitle>
-          </DialogHeader>
-          {selected && <PayslipDetail r={selected.data as unknown as PayrollResult} />}
-          <div className="flex gap-2 justify-end pt-2 flex-wrap">
-            {selected && (
-              <Button variant="outline" size="sm"
-                onClick={() => downloadPayslipPDF(selected.data as unknown as PayrollResult)}
-                data-testid="button-download-pdf"
-              >
-                <FileDown className="w-4 h-4 mr-1.5" /> Download PDF
-              </Button>
-            )}
-            <Button size="sm" onClick={() => setSelected(null)}>Close</Button>
-          </div>
+        <DialogContent className="max-w-5xl w-[95vw] max-h-[90vh] overflow-y-auto" aria-describedby="payslip-desc">
+          <DialogTitle className="sr-only">Payslip — {selected?.period}</DialogTitle>
+          <p id="payslip-desc" className="sr-only">Payslip detail view</p>
+          {selected && (
+            <>
+              <div className="text-base font-bold mb-2 text-foreground">
+                Payslip — {selected.period}
+              </div>
+              <PayslipLandscape r={selected.data as unknown as PayrollResult} />
+              <div className="flex gap-2 justify-end pt-3 flex-wrap">
+                {(selected.data as unknown as PayrollResult)?.employee && (
+                  <Button variant="outline" size="sm"
+                    onClick={() => downloadPayslipPDF(selected.data as unknown as PayrollResult)}
+                    data-testid="button-download-pdf"
+                  >
+                    <FileDown className="w-4 h-4 mr-1.5" /> Download PDF
+                  </Button>
+                )}
+                <Button size="sm" onClick={() => setSelected(null)}>Close</Button>
+              </div>
+            </>
+          )}
         </DialogContent>
       </Dialog>
     </Layout>
