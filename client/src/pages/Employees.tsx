@@ -1294,7 +1294,7 @@ export function EmployeeFormDialog({
                       <Badge variant="outline" className="text-xs ml-auto capitalize">{pc.frequency}</Badge>
                     </div>
                     <div className="space-y-1.5 text-sm">
-                      <div className="flex justify-between"><span className="text-muted-foreground">Basic {formData.cat === "Time" ? "Wage" : "Salary"}</span><span>{fmt(calc.monthlyBasic)}</span></div>
+                      <div className="flex justify-between"><span className="text-muted-foreground">Basic {formData.cat === "Time" ? "Wage" : "Salary"}</span><span>{fmt(calc.periodBasic)}</span></div>
                       {calc.allowances > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Allowances</span><span className="text-green-700">+ {fmt(calc.allowances)}</span></div>}
                       <div className="flex justify-between border-t border-border pt-1 font-semibold"><span>Gross</span><span>{fmt(calc.gross)}</span></div>
                     </div>
