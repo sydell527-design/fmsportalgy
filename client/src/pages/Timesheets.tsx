@@ -148,6 +148,10 @@ export default function Timesheets() {
   const [approverModal, setApproverModal] = useState<Timesheet | null>(null);
   const [approverSigName, setApproverSigName] = useState("");
 
+  // Admin bypass (force approve) modal
+  const [bypassModal, setBypassModal] = useState<Timesheet | null>(null);
+  const [bypassSigName, setBypassSigName] = useState("");
+
   // Admin override edit modal
   const [adminEditModal, setAdminEditModal] = useState<Timesheet | null>(null);
   const [adminForm, setAdminForm] = useState({
@@ -461,6 +465,14 @@ export default function Timesheets() {
   const canAdminEdit = (ts: Timesheet) =>
     (isFullAccess || user.pos === "Junior General Manager") && ts.status !== "pending_employee";
 
+  // Admin bypass: skip all signature stages and force-approve immediately
+  // Requires: admin/manager role, shift has ended (co exists), not already approved/rejected
+  const canAdminBypass = (ts: Timesheet) =>
+    isFullAccess &&
+    !!ts.co &&
+    ts.status !== "approved" &&
+    ts.status !== "rejected";
+
   // Shift Supervisor can edit a timesheet that awaits their 1st sign-off (not yet locked by JGM)
   const canSupervisorEdit = (ts: Timesheet) => {
     if (!isSupervisor) return false;
@@ -541,6 +553,28 @@ export default function Timesheets() {
       toast({ title: "Timesheet updated (admin override)" });
       setAdminEditModal(null);
     } catch { toast({ title: "Failed to update", variant: "destructive" }); }
+  };
+
+  const submitAdminBypass = async () => {
+    if (!bypassModal) return;
+    const sigObj = { name: bypassSigName.trim(), time: format(new Date(), "yyyy-MM-dd HH:mm"), ip: "web" };
+    const auditNote = `[Admin bypass approval by ${user.name} at ${format(new Date(), "yyyy-MM-dd HH:mm")} — all signature stages overridden]`;
+    try {
+      await updateTimesheet({
+        id: bypassModal.id,
+        f1Sig: sigObj,
+        f2Sig: sigObj,
+        eSig: bypassModal.eSig ?? sigObj,
+        status: "approved",
+        notes: bypassModal.notes ? `${bypassModal.notes}\n${auditNote}` : auditNote,
+        edited: true,
+      });
+      toast({ title: "Timesheet approved (admin bypass)", description: "All signature stages have been overridden." });
+      setBypassModal(null);
+      setBypassSigName("");
+    } catch {
+      toast({ title: "Failed to approve", variant: "destructive" });
+    }
   };
 
   const submitApproverSig = async () => {
@@ -984,6 +1018,19 @@ export default function Timesheets() {
                       </>
                     )}
 
+                    {/* Admin bypass — force approve skipping all signature stages */}
+                    {canAdminBypass(ts) && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="text-emerald-700 border-emerald-300 bg-emerald-50 hover:bg-emerald-100"
+                        onClick={() => { setBypassModal(ts); setBypassSigName(user.name); }}
+                        data-testid={`button-admin-bypass-${ts.id}`}
+                      >
+                        <ShieldCheck className="w-3.5 h-3.5 mr-1" /> Force Approve
+                      </Button>
+                    )}
+
                     {/* Supervisor can edit pending_first_approval records before JGM signs */}
                     {canSupervisorEdit(ts) && (
                       <Button size="sm" variant="outline" onClick={() => openAdminEdit(ts)} data-testid={`button-sup-edit-ts-${ts.id}`}>
@@ -1306,6 +1353,55 @@ export default function Timesheets() {
                 <Button variant="outline" onClick={() => setAdminEditModal(null)}>Cancel</Button>
                 <Button onClick={submitAdminEdit} className="bg-amber-600 hover:bg-amber-700">
                   <ShieldCheck className="w-4 h-4 mr-1.5" /> Save Override
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Admin Bypass (Force Approve) Modal ────────────────────────────── */}
+      <Dialog open={!!bypassModal} onOpenChange={() => { setBypassModal(null); setBypassSigName(""); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ShieldCheck className="w-5 h-5 text-emerald-600" />
+              Admin Override Approval
+            </DialogTitle>
+          </DialogHeader>
+          {bypassModal && (
+            <div className="space-y-4 mt-2">
+              <div className="rounded-md border border-emerald-200 bg-emerald-50 p-4 text-sm space-y-1.5">
+                <p><span className="text-muted-foreground">Employee:</span> <strong>{empName(bypassModal.eid)}</strong></p>
+                <p><span className="text-muted-foreground">Date:</span> <strong>{bypassModal.date}</strong> · <strong>{bypassModal.ci} – {bypassModal.co}</strong></p>
+                <p><span className="text-muted-foreground">Hours:</span> <strong>{bypassModal.reg}h reg + {bypassModal.ot ?? 0}h OT</strong></p>
+                <p><span className="text-muted-foreground">Current stage:</span> <strong className="capitalize">{bypassModal.status.replace(/_/g, " ")}</strong></p>
+              </div>
+              <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 flex gap-2">
+                <ShieldCheck className="w-4 h-4 shrink-0 mt-0.5 text-amber-600" />
+                <span>This will <strong>skip all pending signature stages</strong> (employee sign-off, 1st and 2nd approver) and immediately mark the timesheet as <strong>Approved</strong>. An audit note will be recorded. Use only when operationally necessary.</span>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Your Full Name (typed signature)</Label>
+                <Input
+                  value={bypassSigName}
+                  onChange={(e) => setBypassSigName(e.target.value)}
+                  placeholder="Type your full name to confirm"
+                  data-testid="input-bypass-sig-name"
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">
+                By typing your name you apply a binding admin-override signature. Timestamp and override reason will be recorded in the timesheet notes.
+              </p>
+              <div className="flex gap-2 justify-end">
+                <Button variant="outline" onClick={() => { setBypassModal(null); setBypassSigName(""); }}>Cancel</Button>
+                <Button
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                  onClick={submitAdminBypass}
+                  disabled={!bypassSigName.trim()}
+                  data-testid="button-confirm-bypass-approve"
+                >
+                  <ShieldCheck className="w-4 h-4 mr-1.5" /> Approve Now
                 </Button>
               </div>
             </div>
