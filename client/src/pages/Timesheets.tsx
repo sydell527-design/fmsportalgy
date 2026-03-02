@@ -211,14 +211,29 @@ export default function Timesheets() {
           const cleaned = raw.trim();
           // yyyy-MM-dd
           if (/^\d{4}-\d{2}-\d{2}$/.test(cleaned)) return cleaned;
-          // MM/DD/YYYY or DD/MM/YYYY — try both, prefer ISO
-          const slash = cleaned.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-          if (slash) {
-            const [, a, b, y] = slash;
-            const m = parseInt(a) > 12 ? `${y}-${b.padStart(2, "0")}-${a.padStart(2, "0")}` : `${y}-${a.padStart(2, "0")}-${b.padStart(2, "0")}`;
-            return m;
+          // MM/DD/YYYY or DD/MM/YYYY — 4-digit year
+          const slash4 = cleaned.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+          if (slash4) {
+            const [, a, b, y] = slash4;
+            return parseInt(a) > 12
+              ? `${y}-${b.padStart(2, "0")}-${a.padStart(2, "0")}`
+              : `${y}-${a.padStart(2, "0")}-${b.padStart(2, "0")}`;
           }
-          // Date serial from Excel (xlsx with raw:false returns strings)
+          // M/D/YY or MM/DD/YY — 2-digit year (Excel short date)
+          const slash2 = cleaned.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2})$/);
+          if (slash2) {
+            const [, a, b, yy] = slash2;
+            const year = parseInt(yy) >= 0 ? `20${yy.padStart(2, "0")}` : `19${yy.padStart(2, "0")}`;
+            return parseInt(a) > 12
+              ? `${year}-${b.padStart(2, "0")}-${a.padStart(2, "0")}`
+              : `${year}-${a.padStart(2, "0")}-${b.padStart(2, "0")}`;
+          }
+          // Excel date serial number (numeric string)
+          const serial = parseInt(cleaned);
+          if (!isNaN(serial) && serial > 40000 && serial < 60000) {
+            const d = new Date(Date.UTC(1899, 11, 30) + serial * 86400000);
+            return d.toISOString().slice(0, 10);
+          }
           return cleaned;
         };
 
