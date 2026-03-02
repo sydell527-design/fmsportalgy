@@ -15,7 +15,7 @@ import {
   Plus, Edit2, Copy, CheckCircle, User, KeyRound,
   Trash2, RotateCcw, AlertTriangle, Search, UserCircle,
   CreditCard, ShieldCheck, Banknote, PlusCircle, X,
-  TrendingDown, TrendingUp, DollarSign, Info, Baby, Settings2,
+  TrendingDown, TrendingUp, DollarSign, Info, Baby, Settings2, Landmark,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import type { User as UserType, PayConfig } from "@shared/schema";
@@ -24,6 +24,60 @@ const POSITIONS = [
   "Security Officer", "Office Clerk", "Warehouse Supervisor", "Shift Supervisor",
   "Operations Manager", "Junior General Manager", "Driver", "Cleaner", "Technician",
 ];
+
+const GUYANA_BANKS: Record<string, string[]> = {
+  "Republic Bank": [
+    "Camp Street, Georgetown",
+    "Water Street, Georgetown",
+    "Church Street, Georgetown",
+    "Hadfield Street, Georgetown",
+    "Sheriff Street, Georgetown",
+    "Anna Regina, Essequibo",
+    "Bartica, Essequibo",
+    "New Amsterdam, Berbice",
+    "Corriverton, Berbice",
+    "Linden, Demerara",
+    "Rose Hall, Berbice",
+  ],
+  "Demerara Bank": [
+    "Camp Street, Georgetown (Head Office)",
+    "Church Street, Georgetown",
+    "Parika, Essequibo",
+    "New Amsterdam, Berbice",
+    "Linden, Demerara",
+  ],
+  "Scotiabank (Bank of Nova Scotia)": [
+    "Camp Street, Georgetown",
+    "Robb Street, Georgetown",
+    "Linden, Demerara",
+    "New Amsterdam, Berbice",
+  ],
+  "GBTI (Guyana Bank for Trade and Industry)": [
+    "Camp Street, Georgetown (Head Office)",
+    "Water Street, Georgetown",
+    "Mahaica, East Coast Demerara",
+    "Vreed-en-Hoop, West Demerara",
+    "New Amsterdam, Berbice",
+    "Bartica, Essequibo",
+  ],
+  "Citizens Bank": [
+    "Camp Street, Georgetown",
+    "Water Street, Georgetown",
+    "East Bank Demerara Branch",
+    "Berbice Branch",
+  ],
+  "First Citizens Bank": [
+    "Camp Street, Georgetown",
+    "Robb Street, Georgetown",
+  ],
+  "Bank of Baroda": [
+    "Avenue of the Republic, Georgetown",
+  ],
+  "Hand-in-Hand Trust": [
+    "Camp Street, Georgetown",
+    "Water Street, Georgetown",
+  ],
+};
 
 function getInitials(name: string) {
   return name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2);
@@ -60,6 +114,13 @@ const EMPTY_FORM = {
   geo: ["HEAD OFFICE"] as string[], av: "",
   mobility: "fixed",
   payConfig: { ...DEFAULT_PAY_CONFIG } as PayConfig,
+  tin: "",
+  nisNumber: "",
+  bankAccountNumber: "",
+  bankName: "",
+  bankBranch: "",
+  graFilingReference: "",
+  taxCode: "",
 };
 
 export default function Employees() {
@@ -613,7 +674,7 @@ export function EmployeeFormDialog({
   const { toast } = useToast();
 
   const availableLocations = (geofences ?? []).filter((g) => g.active).map((g) => g.name);
-  const [tab, setTab] = useState<"personal" | "pay" | "deductions">("personal");
+  const [tab, setTab] = useState<"personal" | "pay" | "deductions" | "statutory">("personal");
   const [salaryCalcInput, setSalaryCalcInput] = useState("");
 
   const initPayConfig = (): PayConfig => ({
@@ -715,6 +776,9 @@ export function EmployeeFormDialog({
           </button>
           <button type="button" onClick={() => setTab("deductions")} className={tabCls(tab === "deductions")} data-testid="tab-deductions">
             <ShieldCheck className="w-4 h-4" /> Deductions &amp; Compliance
+          </button>
+          <button type="button" onClick={() => setTab("statutory")} className={tabCls(tab === "statutory")} data-testid="tab-statutory">
+            <Landmark className="w-4 h-4" /> Statutory &amp; Banking
           </button>
         </div>
 
@@ -1315,31 +1379,135 @@ export function EmployeeFormDialog({
               </div>
               </div>
             )}
+
+            {/* ══ TAB 4: STATUTORY & BANKING ═══════════════════════════════ */}
+            {tab === "statutory" && (
+              <div className="space-y-6">
+                <div>
+                  <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
+                    <ShieldCheck className="w-4 h-4 text-primary" /> Government Identification Numbers
+                  </h3>
+                  <div className="grid grid-cols-3 gap-4">
+                    <div className="space-y-1.5">
+                      <Label>TIN <span className="text-muted-foreground text-xs">(Taxpayer ID Number)</span></Label>
+                      <Input
+                        value={(formData as any).tin ?? ""}
+                        onChange={(e) => setFormData((prev) => ({ ...prev, tin: e.target.value }))}
+                        placeholder="e.g. 123456789"
+                        data-testid="input-employee-tin"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>NIS Number</Label>
+                      <Input
+                        value={(formData as any).nisNumber ?? ""}
+                        onChange={(e) => setFormData((prev) => ({ ...prev, nisNumber: e.target.value }))}
+                        placeholder="e.g. NIS-123456"
+                        data-testid="input-employee-nis-number"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>GRA Filing Reference</Label>
+                      <Input
+                        value={(formData as any).graFilingReference ?? ""}
+                        onChange={(e) => setFormData((prev) => ({ ...prev, graFilingReference: e.target.value }))}
+                        placeholder="e.g. GRA-2026-XXXXX"
+                        data-testid="input-employee-gra-ref"
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-3 gap-4 mt-4">
+                    <div className="space-y-1.5">
+                      <Label>Pay Period Tax Code</Label>
+                      <Input
+                        value={(formData as any).taxCode ?? ""}
+                        onChange={(e) => setFormData((prev) => ({ ...prev, taxCode: e.target.value }))}
+                        placeholder="e.g. T1, T2, Exempt"
+                        data-testid="input-employee-tax-code"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="h-px bg-border" />
+
+                <div>
+                  <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
+                    <Landmark className="w-4 h-4 text-primary" /> Banking Information
+                  </h3>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <Label>Bank Name</Label>
+                      <select
+                        className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm"
+                        value={(formData as any).bankName ?? ""}
+                        onChange={(e) => setFormData((prev: any) => ({ ...prev, bankName: e.target.value, bankBranch: "" }))}
+                        data-testid="select-employee-bank-name"
+                      >
+                        <option value="">— Select bank —</option>
+                        {Object.keys(GUYANA_BANKS).map((b) => (
+                          <option key={b} value={b}>{b}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>Branch / Location</Label>
+                      <select
+                        className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm"
+                        value={(formData as any).bankBranch ?? ""}
+                        onChange={(e) => setFormData((prev: any) => ({ ...prev, bankBranch: e.target.value }))}
+                        disabled={!(formData as any).bankName}
+                        data-testid="select-employee-bank-branch"
+                      >
+                        <option value="">— Select branch —</option>
+                        {((formData as any).bankName ? GUYANA_BANKS[(formData as any).bankName] ?? [] : []).map((br: string) => (
+                          <option key={br} value={br}>{br}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4 mt-4">
+                    <div className="space-y-1.5">
+                      <Label>Account Number</Label>
+                      <Input
+                        value={(formData as any).bankAccountNumber ?? ""}
+                        onChange={(e) => setFormData((prev) => ({ ...prev, bankAccountNumber: e.target.value }))}
+                        placeholder="e.g. 123456789"
+                        data-testid="input-employee-bank-account"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-md px-4 py-3 text-xs text-blue-800 dark:text-blue-300 flex gap-2">
+                  <Info className="w-4 h-4 shrink-0 mt-0.5" />
+                  <p>TIN and NIS Number appear on all payslips. Bank details are used for payment processing and appear on payslip payment tables. This information is confidential and stored securely.</p>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Footer */}
           <div className="flex items-center justify-between px-6 py-4 border-t border-border bg-muted/20 shrink-0">
             <div className="flex gap-1.5">
-              {(["personal","pay","deductions"] as const).map((t) => (
+              {(["personal","pay","deductions","statutory"] as const).map((t) => (
                 <div key={t} className={`h-1.5 rounded-full transition-all ${tab === t ? "w-6 bg-primary" : "w-3 bg-muted-foreground/30"}`} />
               ))}
             </div>
             <div className="flex gap-2">
               <Button type="button" variant="outline" onClick={onClose} data-testid="button-cancel-employee">Cancel</Button>
               {user ? (
-                /* Editing: Save available on every tab + optional Next */
                 <>
-                  {tab !== "deductions" && (
-                    <Button type="button" variant="ghost" onClick={() => setTab(tab === "personal" ? "pay" : "deductions")} data-testid="button-next-tab">Next →</Button>
+                  {tab !== "statutory" && (
+                    <Button type="button" variant="ghost" onClick={() => setTab(tab === "personal" ? "pay" : tab === "pay" ? "deductions" : "statutory")} data-testid="button-next-tab">Next →</Button>
                   )}
                   <Button type="submit" disabled={creating || updating} data-testid="button-submit-employee">
                     {creating || updating ? "Saving..." : "Save Changes"}
                   </Button>
                 </>
               ) : (
-                /* Creating: navigate through tabs, submit only on last tab */
-                tab !== "deductions"
-                  ? <Button type="button" onClick={() => setTab(tab === "personal" ? "pay" : "deductions")} data-testid="button-next-tab">Next →</Button>
+                tab !== "statutory"
+                  ? <Button type="button" onClick={() => setTab(tab === "personal" ? "pay" : tab === "pay" ? "deductions" : "statutory")} data-testid="button-next-tab">Next →</Button>
                   : <Button type="submit" disabled={creating || updating} data-testid="button-submit-employee">{creating || updating ? "Creating..." : "Create Profile"}</Button>
               )}
             </div>

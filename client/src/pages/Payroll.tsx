@@ -694,6 +694,12 @@ export default function Payroll() {
                   <div className="space-y-0.5">
                     <p><span className="font-semibold">Payslip#</span> {r.employee.userId}&emsp;{r.employee.name}</p>
                     <p className="text-muted-foreground">D.O.E: {r.employee.joined ?? "N/A"} · {r.approvedTimesheets} approved sheet{r.approvedTimesheets !== 1 ? "s" : ""} · {formatGYD(r.effectiveRate)}/hr</p>
+                    {((r.employee as any).tin || (r.employee as any).nisNumber) && (
+                      <p className="text-muted-foreground">
+                        {(r.employee as any).tin && <span className="mr-3"><span className="font-semibold text-foreground">TIN:</span> {(r.employee as any).tin}</span>}
+                        {(r.employee as any).nisNumber && <span><span className="font-semibold text-foreground">NIS#:</span> {(r.employee as any).nisNumber}</span>}
+                      </p>
+                    )}
                   </div>
                   <div className="text-right space-y-0.5">
                     <p><span className="font-semibold">{freqLabel} Work Period:</span> {r.periodStart} to {r.periodEnd}</p>

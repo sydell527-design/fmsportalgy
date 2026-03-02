@@ -37,6 +37,10 @@ export function generatePayslipPDF(r: PayrollResult) {
   doc.setFont("helvetica", "bold");
   doc.text(`Payslip# ${r.employee.userId}`, L, 27);
   doc.setFont("helvetica", "normal");
+  const tin        = (r.employee as any).tin        ? `TIN: ${(r.employee as any).tin}` : "";
+  const nisNum     = (r.employee as any).nisNumber   ? `NIS#: ${(r.employee as any).nisNumber}` : "";
+  const idParts    = [tin, nisNum].filter(Boolean).join("   ");
+  if (idParts) doc.text(idParts, pw / 2, 27, { align: "center" });
   const freqLabel = pc?.frequency === "weekly" ? "Weekly" : pc?.frequency === "biweekly" ? "Bi-Weekly" : pc?.frequency === "monthly" ? "Monthly" : "Bi-Monthly";
   doc.text(`${freqLabel} Work Period: ${fmtDate(r.periodStart)} to ${fmtDate(r.periodEnd)}`, R, 27, { align: "right" });
 
@@ -151,14 +155,19 @@ export function generatePayslipPDF(r: PayrollResult) {
 
   // ── BANK / PAYMENT ROW ───────────────────────────────────────────────────
   const bankY = finalY + 14;
+  const empBankName   = (r.employee as any).bankName   ? `${(r.employee as any).bankName}` : "—";
+  const empBankBranch = (r.employee as any).bankBranch ? ` — ${(r.employee as any).bankBranch}` : "";
+  const empBankAcct   = (r.employee as any).bankAccountNumber ? `A/C: ${(r.employee as any).bankAccountNumber}` : "";
+  const bankDisplay   = empBankName !== "—" ? `${empBankName}${empBankBranch}` : "Not specified";
   autoTable(doc, {
     startY: bankY,
-    head: [["Bank Name", "Payment Mode", "Amount (GYD)"]],
-    body: [["Bank of Nova Scotia (Main Branch)", "BANK", gyd(r.netPay)]],
+    head: [["Bank Name / Branch", "Account Number", "Payment Mode", "Amount (GYD)"]],
+    body: [[bankDisplay, empBankAcct || "—", "BANK TRANSFER", gyd(r.netPay)]],
     columnStyles: {
-      0: { cellWidth: 90 },
-      1: { cellWidth: 50 },
-      2: { cellWidth: 50, halign: "right" },
+      0: { cellWidth: 100 },
+      1: { cellWidth: 55 },
+      2: { cellWidth: 45 },
+      3: { cellWidth: 45, halign: "right" },
     },
     styles: { fontSize: 8 },
     headStyles: { fillColor: [60, 80, 120], textColor: 255, fontSize: 8 },

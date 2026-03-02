@@ -26,6 +26,13 @@ export const users = pgTable("users", {
   mobility: text("mobility").notNull().default("fixed"),
   armed: text("armed").notNull().default("Unarmed"),
   payConfig: jsonb("pay_config").$type<PayConfig>(),
+  tin: text("tin"),
+  nisNumber: text("nis_number"),
+  bankAccountNumber: text("bank_account_number"),
+  bankName: text("bank_name"),
+  bankBranch: text("bank_branch"),
+  graFilingReference: text("gra_filing_reference"),
+  taxCode: text("tax_code"),
 });
 
 export interface PayConfig {
