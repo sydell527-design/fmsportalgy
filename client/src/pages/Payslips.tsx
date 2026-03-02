@@ -16,7 +16,7 @@ import type { Payslip } from "@shared/schema";
 
 const C = PAYROLL_CONSTANTS;
 
-function PayslipLandscape({ r }: { r: PayrollResult }) {
+function PayslipLandscape({ r, tin, nisNumber }: { r: PayrollResult; tin?: string | null; nisNumber?: string | null }) {
   if (!r?.employee) {
     return (
       <div className="flex flex-col items-center justify-center py-10 text-muted-foreground gap-2">
@@ -72,10 +72,10 @@ function PayslipLandscape({ r }: { r: PayrollResult }) {
         <div className="space-y-0.5">
           <p><span className="font-semibold">ID:</span> {r.employee.userId}&emsp;<span className="font-semibold">Name:</span> {r.employee.name}</p>
           <p className="text-muted-foreground">D.O.E: {r.employee.joined ?? "N/A"} · {r.approvedTimesheets} approved timesheet{r.approvedTimesheets !== 1 ? "s" : ""} · {formatGYD(r.effectiveRate)}/hr</p>
-          {((r.employee as any).tin || (r.employee as any).nisNumber) && (
+          {(tin || nisNumber) && (
             <p className="text-muted-foreground">
-              {(r.employee as any).tin && <span className="mr-3"><span className="font-semibold text-foreground">TIN:</span> {(r.employee as any).tin}</span>}
-              {(r.employee as any).nisNumber && <span><span className="font-semibold text-foreground">NIS#:</span> {(r.employee as any).nisNumber}</span>}
+              {tin && <span className="mr-3"><span className="font-semibold text-foreground">TIN:</span> {tin}</span>}
+              {nisNumber && <span><span className="font-semibold text-foreground">NIS#:</span> {nisNumber}</span>}
             </p>
           )}
         </div>
@@ -265,11 +265,28 @@ export default function Payslips() {
               <div className="text-base font-bold mb-2 text-foreground">
                 Payslip — {selected.period}
               </div>
-              <PayslipLandscape r={selected.data as unknown as PayrollResult} />
+              <PayslipLandscape
+                r={selected.data as unknown as PayrollResult}
+                tin={(user as any).tin}
+                nisNumber={(user as any).nisNumber}
+              />
               <div className="flex gap-2 justify-end pt-3 flex-wrap">
                 {(selected.data as unknown as PayrollResult)?.employee && (
                   <Button variant="outline" size="sm"
-                    onClick={() => downloadPayslipPDF(selected.data as unknown as PayrollResult)}
+                    onClick={() => {
+                      const r = selected.data as unknown as PayrollResult;
+                      downloadPayslipPDF({
+                        ...r,
+                        employee: {
+                          ...r.employee,
+                          tin: (user as any).tin ?? (r.employee as any).tin,
+                          nisNumber: (user as any).nisNumber ?? (r.employee as any).nisNumber,
+                          bankName: (user as any).bankName ?? (r.employee as any).bankName,
+                          bankBranch: (user as any).bankBranch ?? (r.employee as any).bankBranch,
+                          bankAccountNumber: (user as any).bankAccountNumber ?? (r.employee as any).bankAccountNumber,
+                        } as any,
+                      });
+                    }}
                     data-testid="button-download-pdf"
                   >
                     <FileDown className="w-4 h-4 mr-1.5" /> Download PDF
