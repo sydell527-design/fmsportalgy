@@ -1,6 +1,6 @@
 import { db } from "./db";
 import {
-  users, timesheets, requests, geofences, employeeChildren, employeeLoans, schedules, callSigns, companySettings,
+  users, timesheets, requests, geofences, employeeChildren, employeeLoans, schedules, callSigns, companySettings, payslips,
   type User, type InsertUser,
   type Timesheet, type InsertTimesheet,
   type Request, type InsertRequest,
@@ -10,6 +10,7 @@ import {
   type Schedule, type InsertSchedule,
   type CallSign, type InsertCallSign,
   type CompanySettings,
+  type Payslip, type InsertPayslip,
 } from "@shared/schema";
 import { eq, and, gte, lte, desc, inArray, sql } from "drizzle-orm";
 
@@ -74,6 +75,11 @@ export interface IStorage {
 
   getCompanySettings(): Promise<CompanySettings>;
   updateCompanySettings(updates: Partial<Omit<CompanySettings, "id">>): Promise<CompanySettings>;
+
+  getPayslipsByEid(eid: string): Promise<Payslip[]>;
+  getAllPayslips(): Promise<Payslip[]>;
+  createPayslip(p: InsertPayslip): Promise<Payslip>;
+  markPayslipSeen(id: number): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -299,6 +305,23 @@ export class DatabaseStorage implements IStorage {
       .where(eq(companySettings.id, existing.id))
       .returning();
     return updated;
+  }
+
+  async getPayslipsByEid(eid: string): Promise<Payslip[]> {
+    return db.select().from(payslips).where(eq(payslips.eid, eid)).orderBy(desc(payslips.id));
+  }
+
+  async getAllPayslips(): Promise<Payslip[]> {
+    return db.select().from(payslips).orderBy(desc(payslips.id));
+  }
+
+  async createPayslip(p: InsertPayslip): Promise<Payslip> {
+    const [row] = await db.insert(payslips).values(p).returning();
+    return row;
+  }
+
+  async markPayslipSeen(id: number): Promise<void> {
+    await db.update(payslips).set({ seen: true }).where(eq(payslips.id, id));
   }
 }
 

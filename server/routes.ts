@@ -321,6 +321,60 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     }
   });
 
+  // ── PAYSLIPS ──────────────────────────────────────────────────────────────
+  app.get("/api/payslips", async (req, res) => {
+    try {
+      const { eid } = req.query;
+      if (eid) {
+        res.json(await storage.getPayslipsByEid(String(eid)));
+      } else {
+        res.json(await storage.getAllPayslips());
+      }
+    } catch { res.status(500).json({ message: "Server error" }); }
+  });
+
+  app.post("/api/payslips/send", async (req, res) => {
+    try {
+      const schema = z.object({
+        sentBy: z.string(),
+        payslips: z.array(z.object({
+          eid: z.string(),
+          period: z.string(),
+          periodStart: z.string(),
+          periodEnd: z.string(),
+          data: z.any(),
+        })),
+      });
+      const body = schema.parse(req.body);
+      const sentAt = new Date().toISOString();
+      const created = [];
+      for (const p of body.payslips) {
+        const row = await storage.createPayslip({
+          eid: p.eid,
+          period: p.period,
+          periodStart: p.periodStart,
+          periodEnd: p.periodEnd,
+          sentAt,
+          sentBy: body.sentBy,
+          data: p.data,
+          seen: false,
+        });
+        created.push(row);
+      }
+      res.status(201).json({ sent: created.length });
+    } catch (err) {
+      if (err instanceof z.ZodError) return res.status(400).json({ message: err.errors[0].message });
+      res.status(500).json({ message: "Server error" });
+    }
+  });
+
+  app.put("/api/payslips/:id/seen", async (req, res) => {
+    try {
+      await storage.markPayslipSeen(Number(req.params.id));
+      res.json({ ok: true });
+    } catch { res.status(500).json({ message: "Server error" }); }
+  });
+
   await seedDatabase();
   return httpServer;
 }

@@ -6,6 +6,8 @@ import { useTimesheets } from "@/hooks/use-timesheets";
 import { useAllChildren } from "@/hooks/use-children";
 import { useAuth } from "@/hooks/use-auth";
 import { useCompanySettings, useUpdateCompanySettings } from "@/hooks/use-settings";
+import { useMutation } from "@tanstack/react-query";
+import { apiRequest } from "@/lib/queryClient";
 import { Redirect } from "wouter";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -15,8 +17,10 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   Download, FileText, TrendingUp, DollarSign, Building2, ShieldCheck,
-  Upload, FileSpreadsheet, CheckCircle2, XCircle, Clock, AlertCircle, Settings2,
+  Upload, FileSpreadsheet, CheckCircle2, XCircle, Clock, AlertCircle, Settings2, Send,
 } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useToast } from "@/hooks/use-toast";
 import {
   calcPayroll, formatGYD, generateQuickBooksCSV, downloadCSV,
   PAYROLL_CONSTANTS, periodDates,
@@ -74,9 +78,18 @@ export default function Payroll() {
   const [selectedResult, setSelectedResult] = useState<PayrollResult | null>(null);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [sendOpen, setSendOpen] = useState(false);
+  const [sendTarget, setSendTarget] = useState<"all" | string>("all");
+
+  const { mutateAsync: sendPayslips, isPending: sending } = useMutation({
+    mutationFn: (payload: { sentBy: string; payslips: Array<{ eid: string; period: string; periodStart: string; periodEnd: string; data: unknown }> }) =>
+      apiRequest("POST", "/api/payslips/send", payload),
+  });
   const [uploadResults, setUploadResults] = useState<UploadResult[]>([]);
   const [uploading, setUploading] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  const { toast } = useToast();
 
   // Company-level personal allowance threshold (GYD/month)
   const companyPA = companySettingsData?.personalAllowance ?? C.PERSONAL_ALLOWANCE;
@@ -252,6 +265,9 @@ export default function Payroll() {
           </Button>
           <Button onClick={handleExport} disabled={results.length === 0} data-testid="button-export-quickbooks">
             <Download className="w-4 h-4 mr-2" /> QuickBooks CSV
+          </Button>
+          <Button variant="secondary" onClick={() => { setSendTarget("all"); setSendOpen(true); }} disabled={results.length === 0} data-testid="button-send-payslips">
+            <Send className="w-4 h-4 mr-2" /> Send Payslip
           </Button>
         </div>
       </div>
@@ -560,6 +576,66 @@ export default function Payroll() {
           </div>
         </div>
       </Card>
+
+      {/* ── Send Payslip Dialog ────────────────────────────────────────── */}
+      <Dialog open={sendOpen} onOpenChange={setSendOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Send className="w-5 h-5" /> Send Payslip
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Choose who to send the payslip for <span className="font-semibold text-foreground">{pd.label}</span>. Payslips will appear in each employee's portal.
+            </p>
+            <div className="space-y-1.5">
+              <Label>Recipients</Label>
+              <Select value={sendTarget} onValueChange={(v) => setSendTarget(v)}>
+                <SelectTrigger data-testid="select-send-target">
+                  <SelectValue placeholder="Choose recipients" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All employees ({results.length})</SelectItem>
+                  {results.map((r) => (
+                    <SelectItem key={r.employee.userId} value={r.employee.userId}>
+                      {r.employee.name} ({r.employee.userId})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex gap-2 justify-end pt-1">
+              <Button variant="outline" onClick={() => setSendOpen(false)}>Cancel</Button>
+              <Button
+                disabled={sending}
+                data-testid="button-confirm-send-payslips"
+                onClick={async () => {
+                  const toSend = sendTarget === "all" ? results : results.filter((r) => r.employee.userId === sendTarget);
+                  if (toSend.length === 0) return;
+                  await sendPayslips({
+                    sentBy: user.userId,
+                    payslips: toSend.map((r) => ({
+                      eid: r.employee.userId,
+                      period: r.period,
+                      periodStart: r.periodStart,
+                      periodEnd: r.periodEnd,
+                      data: r,
+                    })),
+                  });
+                  setSendOpen(false);
+                  toast({
+                    title: "Payslips sent",
+                    description: `Sent ${toSend.length} payslip${toSend.length !== 1 ? "s" : ""} to the employee portal.`,
+                  });
+                }}
+              >
+                {sending ? "Sending…" : sendTarget === "all" ? `Send to all (${results.length})` : `Send to ${results.find((r) => r.employee.userId === sendTarget)?.employee.name ?? sendTarget}`}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* ── Payslip Modal ─────────────────────────────────────────────── */}
       <Dialog open={!!selectedResult} onOpenChange={() => setSelectedResult(null)}>

@@ -199,6 +199,18 @@ export const companySettings = pgTable("company_settings", {
   childAllowance: integer("child_allowance").notNull().default(10_000),
 });
 
+export const payslips = pgTable("payslips", {
+  id: serial("id").primaryKey(),
+  eid: text("eid").notNull(),
+  period: text("period").notNull(),
+  periodStart: text("period_start").notNull(),
+  periodEnd: text("period_end").notNull(),
+  sentAt: text("sent_at").notNull(),
+  sentBy: text("sent_by").notNull(),
+  data: jsonb("data").notNull(),
+  seen: boolean("seen").notNull().default(false),
+});
+
 // ── Insert schemas ─────────────────────────────────────────────────────────
 export const insertEmployeeChildSchema = createInsertSchema(employeeChildren).omit({ id: true });
 export const insertEmployeeLoanSchema = createInsertSchema(employeeLoans).omit({ id: true });
@@ -237,3 +249,7 @@ export type CallSign = typeof callSigns.$inferSelect;
 export type InsertCallSign = z.infer<typeof insertCallSignSchema>;
 
 export type CompanySettings = typeof companySettings.$inferSelect;
+
+export type Payslip = typeof payslips.$inferSelect;
+export const insertPayslipSchema = createInsertSchema(payslips).omit({ id: true });
+export type InsertPayslip = z.infer<typeof insertPayslipSchema>;
