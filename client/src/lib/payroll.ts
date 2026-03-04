@@ -375,9 +375,10 @@ function redistributeTimeHours(approvedTs: Timesheet[], carryForwardHours: numbe
     if (dayStatus === "Annual Leave") {
       dayReg = 8; weekContrib = 8;
     } else if (dayStatus === "Sick") {
-      // Paid sick leave — treated as a standard 8-hr regular day for both pay AND
-      // the weekly 40-hr cap so that later days in the same week overflow to OT correctly.
-      dayReg = 8; weekContrib = 8;
+      // No pay for sick leave. But the day still consumes the 8-hr slot in the
+      // weekly 40-hr cap — the employee was SCHEDULED to work that day, so any
+      // later days in the same week that push past 40 hrs correctly flow to OT.
+      dayReg = 0; weekContrib = 8;
     } else if (dayStatus === "Off Day") {
       dayOT = rawHours; // all OT; Off Day does NOT count toward weekly cap
     } else if (dayStatus === "Absent") {
