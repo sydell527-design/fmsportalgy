@@ -685,7 +685,7 @@ export default function Payroll() {
               <div className="text-xs" data-testid="payslip-modal">
                 {/* Company header */}
                 <div className="text-center py-3 border-b border-border">
-                  <p className="font-bold text-sm text-foreground tracking-wide">FACILITY MANAGEMENT SERVICES (GUYANA) INC.</p>
+                  <p className="font-bold text-sm text-foreground tracking-wide">FEDERAL MANAGEMENT SYSTEMS INC.</p>
                   <p className="text-muted-foreground text-xs">{r.employee.dept} — {r.employee.pos}</p>
                 </div>
 

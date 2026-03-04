@@ -6,6 +6,8 @@ import { format } from "date-fns";
 
 const C = PAYROLL_CONSTANTS;
 
+export const COMPANY_NAME = "FEDERAL MANAGEMENT SYSTEMS INC.";
+
 function gyd(n: number) {
   return n.toLocaleString("en-GY", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
@@ -14,12 +16,98 @@ function fmtDate(d: string) {
   try { return format(new Date(d + "T00:00"), "MMM dd yyyy"); } catch { return d; }
 }
 
-export function generatePayslipPDF(r: PayrollResult) {
+export interface YTDFigures {
+  basicPay: number;
+  otPay: number;
+  phPay: number;
+  housingAllowance: number;
+  transportAllowance: number;
+  mealAllowance: number;
+  uniformAllowance: number;
+  riskAllowance: number;
+  shiftAllowance: number;
+  otherAllowances: Record<string, number>;
+  grossPay: number;
+  personalAllowance: number;
+  childAllowance: number;
+  employeeNIS: number;
+  healthSurcharge: number;
+  totalFreePay: number;
+  paye: number;
+  creditUnion: number;
+  loanRepayment: number;
+  advancesRecovery: number;
+  unionDues: number;
+  otherDeductions: Record<string, number>;
+  totalDeductions: number;
+  netPay: number;
+}
+
+export function computeYTD(payslipDataList: PayrollResult[], currentPeriodEnd: string): YTDFigures {
+  const currentYear = new Date(currentPeriodEnd + "T00:00").getFullYear();
+  const relevant = payslipDataList.filter((r) => {
+    const year = new Date((r.periodEnd ?? "") + "T00:00").getFullYear();
+    return year === currentYear && (r.periodEnd ?? "") <= currentPeriodEnd;
+  });
+
+  const ytd: YTDFigures = {
+    basicPay: 0, otPay: 0, phPay: 0,
+    housingAllowance: 0, transportAllowance: 0, mealAllowance: 0,
+    uniformAllowance: 0, riskAllowance: 0, shiftAllowance: 0,
+    otherAllowances: {},
+    grossPay: 0,
+    personalAllowance: 0, childAllowance: 0, employeeNIS: 0, healthSurcharge: 0,
+    totalFreePay: 0,
+    paye: 0, creditUnion: 0, loanRepayment: 0, advancesRecovery: 0, unionDues: 0,
+    otherDeductions: {},
+    totalDeductions: 0,
+    netPay: 0,
+  };
+
+  for (const r of relevant) {
+    const pc  = r.employee.payConfig;
+    const ppm = pc?.frequency === "weekly" ? 52 / 12 : pc?.frequency === "biweekly" ? 26 / 12 : pc?.frequency === "monthly" ? 1 : 2;
+
+    ytd.basicPay              += r.basicPay ?? 0;
+    ytd.otPay                 += r.otPay ?? 0;
+    ytd.phPay                 += r.phPay ?? 0;
+    ytd.housingAllowance      += (pc?.housingAllowance   ?? 0) / ppm;
+    ytd.transportAllowance    += (pc?.transportAllowance ?? 0) / ppm;
+    ytd.mealAllowance         += (pc?.mealAllowance      ?? 0) / ppm;
+    ytd.uniformAllowance      += (pc?.uniformAllowance   ?? 0) / ppm;
+    ytd.riskAllowance         += (pc?.riskAllowance      ?? 0) / ppm;
+    ytd.shiftAllowance        += (pc?.shiftAllowance     ?? 0) / ppm;
+    ytd.grossPay              += r.grossPay ?? 0;
+    ytd.personalAllowance     += r.personalAllowance ?? 0;
+    ytd.childAllowance        += r.childAllowance ?? 0;
+    ytd.employeeNIS           += r.employeeNIS ?? 0;
+    ytd.healthSurcharge       += r.healthSurcharge ?? 0;
+    ytd.totalFreePay          += (r.personalAllowance ?? 0) + (r.childAllowance ?? 0) + (r.employeeNIS ?? 0) + (r.healthSurcharge ?? 0);
+    ytd.paye                  += r.paye ?? 0;
+    ytd.creditUnion           += r.creditUnion ?? 0;
+    ytd.loanRepayment         += r.loanRepayment ?? 0;
+    ytd.advancesRecovery      += r.advancesRecovery ?? 0;
+    ytd.unionDues             += r.unionDues ?? 0;
+    ytd.totalDeductions       += (r.paye ?? 0) + (r.totalVoluntary ?? 0);
+    ytd.netPay                += r.netPay ?? 0;
+
+    (pc?.otherAllowances ?? []).forEach((a) => {
+      ytd.otherAllowances[a.name] = (ytd.otherAllowances[a.name] ?? 0) + a.amount / ppm;
+    });
+    (pc?.otherDeductions ?? []).forEach((d) => {
+      ytd.otherDeductions[d.name] = (ytd.otherDeductions[d.name] ?? 0) + d.amount;
+    });
+  }
+
+  return ytd;
+}
+
+export function generatePayslipPDF(r: PayrollResult, ytd?: YTDFigures) {
   const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
-  const pw = doc.internal.pageSize.getWidth();   // 297
-  const ph = doc.internal.pageSize.getHeight();  // 210
-  const L  = 14;  // left margin
-  const R  = pw - L; // right margin
+  const pw = doc.internal.pageSize.getWidth();
+  const ph = doc.internal.pageSize.getHeight();
+  const L  = 14;
+  const R  = pw - L;
 
   const pc  = r.employee.payConfig;
   const ppm = (pc?.frequency === "weekly" ? 52 / 12 : pc?.frequency === "biweekly" ? 26 / 12 : pc?.frequency === "monthly" ? 1 : 2);
@@ -27,7 +115,7 @@ export function generatePayslipPDF(r: PayrollResult) {
   // ── HEADER ────────────────────────────────────────────────────────────────
   doc.setFont("helvetica", "bold");
   doc.setFontSize(13);
-  doc.text("FACILITY MANAGEMENT SERVICES (GUYANA) INC.", pw / 2, 14, { align: "center" });
+  doc.text(COMPANY_NAME, pw / 2, 14, { align: "center" });
   doc.setFont("helvetica", "normal");
   doc.setFontSize(10);
   doc.text(`${r.employee.dept} — ${r.employee.pos}`, pw / 2, 20, { align: "center" });
@@ -37,8 +125,8 @@ export function generatePayslipPDF(r: PayrollResult) {
   doc.setFont("helvetica", "bold");
   doc.text(`Payslip# ${r.employee.userId}`, L, 27);
   doc.setFont("helvetica", "normal");
-  const tin        = (r.employee as any).tin        ? `TIN: ${(r.employee as any).tin}` : "";
-  const nisNum     = (r.employee as any).nisNumber   ? `NIS#: ${(r.employee as any).nisNumber}` : "";
+  const tin        = (r.employee as any).tin      ? `TIN: ${(r.employee as any).tin}` : "";
+  const nisNum     = (r.employee as any).nisNumber ? `NIS#: ${(r.employee as any).nisNumber}` : "";
   const idParts    = [tin, nisNum].filter(Boolean).join("   ");
   if (idParts) doc.text(idParts, pw / 2, 27, { align: "center" });
   const freqLabel = pc?.frequency === "weekly" ? "Weekly" : pc?.frequency === "biweekly" ? "Bi-Weekly" : pc?.frequency === "monthly" ? "Monthly" : "Bi-Monthly";
@@ -55,36 +143,57 @@ export function generatePayslipPDF(r: PayrollResult) {
   doc.setLineWidth(0.3);
   doc.line(L, 36, R, 36);
 
+  // ── YTD LABEL MAP ─────────────────────────────────────────────────────────
+  const ytdMap: Record<string, string> = ytd ? {
+    "Basic Salary":              gyd(ytd.basicPay),
+    "Overtime Pay":              gyd(ytd.otPay),
+    "Public Holiday Pay":        gyd(ytd.phPay),
+    "Housing Allowance":         gyd(ytd.housingAllowance),
+    "Transport Allowance":       gyd(ytd.transportAllowance),
+    "Meal Allowance":            gyd(ytd.mealAllowance),
+    "Uniform Allowance":         gyd(ytd.uniformAllowance),
+    "Risk Allowance":            gyd(ytd.riskAllowance),
+    "Shift Allowance":           gyd(ytd.shiftAllowance),
+    "Statutory Free Pay":        gyd(ytd.personalAllowance),
+    "Child Tax Credit":          gyd(ytd.childAllowance),
+    "National Insurance (EE)":   gyd(ytd.employeeNIS),
+    "Health Surcharge (Ins.)":   gyd(ytd.healthSurcharge),
+    "PAYE":                      gyd(ytd.paye),
+    "Credit Union":              gyd(ytd.creditUnion),
+    "Loan Repayment":            gyd(ytd.loanRepayment),
+    "Advances Recovery":         gyd(ytd.advancesRecovery),
+    "Union Dues":                gyd(ytd.unionDues),
+    ...Object.fromEntries(Object.entries(ytd.otherAllowances).map(([k, v]) => [k, gyd(v)])),
+    ...Object.fromEntries(Object.entries(ytd.otherDeductions).map(([k, v]) => [k, gyd(v)])),
+  } : {};
+
   // ── BUILD TABLE DATA ──────────────────────────────────────────────────────
-  // FreePay = items that reduce taxable income
   const freePayRows: Array<[string, string]> = [];
   freePayRows.push(["Statutory Free Pay", gyd(r.personalAllowance)]);
   if (r.qualifyingChildren > 0) freePayRows.push(["Child Tax Credit", gyd(r.childAllowance)]);
   if (!pc?.nisExempt)           freePayRows.push(["National Insurance (EE)", gyd(r.employeeNIS)]);
   if (!pc?.healthSurchargeExempt) freePayRows.push(["Health Surcharge (Ins.)", gyd(r.healthSurcharge)]);
 
-  // Income rows
   const incomeRows: Array<[string, string]> = [];
   incomeRows.push(["Basic Salary", gyd(r.basicPay)]);
   if (r.otPay > 0) incomeRows.push(["Overtime Pay", gyd(r.otPay)]);
   if (r.phPay > 0) incomeRows.push(["Public Holiday Pay", gyd(r.phPay)]);
   if (r.allowances > 0) {
-    if ((pc?.housingAllowance   ?? 0) > 0) incomeRows.push(["Housing Allowance",    gyd((pc!.housingAllowance)   / ppm)]);
-    if ((pc?.transportAllowance ?? 0) > 0) incomeRows.push(["Transport Allowance",  gyd((pc!.transportAllowance) / ppm)]);
-    if ((pc?.mealAllowance      ?? 0) > 0) incomeRows.push(["Meal Allowance",       gyd((pc!.mealAllowance)      / ppm)]);
-    if ((pc?.uniformAllowance   ?? 0) > 0) incomeRows.push(["Uniform Allowance",    gyd((pc!.uniformAllowance)   / ppm)]);
-    if ((pc?.riskAllowance      ?? 0) > 0) incomeRows.push(["Risk Allowance",       gyd((pc!.riskAllowance)      / ppm)]);
-    if ((pc?.shiftAllowance     ?? 0) > 0) incomeRows.push(["Shift Allowance",      gyd((pc!.shiftAllowance)     / ppm)]);
+    if ((pc?.housingAllowance   ?? 0) > 0) incomeRows.push(["Housing Allowance",   gyd((pc!.housingAllowance)   / ppm)]);
+    if ((pc?.transportAllowance ?? 0) > 0) incomeRows.push(["Transport Allowance", gyd((pc!.transportAllowance) / ppm)]);
+    if ((pc?.mealAllowance      ?? 0) > 0) incomeRows.push(["Meal Allowance",      gyd((pc!.mealAllowance)      / ppm)]);
+    if ((pc?.uniformAllowance   ?? 0) > 0) incomeRows.push(["Uniform Allowance",   gyd((pc!.uniformAllowance)   / ppm)]);
+    if ((pc?.riskAllowance      ?? 0) > 0) incomeRows.push(["Risk Allowance",      gyd((pc!.riskAllowance)      / ppm)]);
+    if ((pc?.shiftAllowance     ?? 0) > 0) incomeRows.push(["Shift Allowance",     gyd((pc!.shiftAllowance)     / ppm)]);
     (pc?.otherAllowances ?? []).forEach((a) => incomeRows.push([a.name, gyd(a.amount / ppm)]));
   }
 
-  // Deduction rows
   const deductionRows: Array<[string, string]> = [];
-  if (!pc?.taxExempt)   deductionRows.push(["PAYE", gyd(r.paye)]);
-  if (r.creditUnion      > 0) deductionRows.push(["Credit Union",      gyd(r.creditUnion)]);
-  if (r.loanRepayment    > 0) deductionRows.push(["Loan Repayment",    gyd(r.loanRepayment)]);
-  if (r.advancesRecovery > 0) deductionRows.push(["Advances Recovery", gyd(r.advancesRecovery)]);
-  if (r.unionDues        > 0) deductionRows.push(["Union Dues",        gyd(r.unionDues)]);
+  if (!pc?.taxExempt)           deductionRows.push(["PAYE", gyd(r.paye)]);
+  if (r.creditUnion      > 0)   deductionRows.push(["Credit Union",      gyd(r.creditUnion)]);
+  if (r.loanRepayment    > 0)   deductionRows.push(["Loan Repayment",    gyd(r.loanRepayment)]);
+  if (r.advancesRecovery > 0)   deductionRows.push(["Advances Recovery", gyd(r.advancesRecovery)]);
+  if (r.unionDues        > 0)   deductionRows.push(["Union Dues",        gyd(r.unionDues)]);
   (pc?.otherDeductions ?? []).forEach((d) => deductionRows.push([d.name, gyd(d.amount)]));
 
   const totalFreePay  = r.personalAllowance + r.childAllowance + r.employeeNIS + r.healthSurcharge;
@@ -92,28 +201,36 @@ export function generatePayslipPDF(r: PayrollResult) {
   const maxRows = Math.max(incomeRows.length, freePayRows.length, deductionRows.length);
 
   const body: any[][] = [];
-  const HDR_STYLE = { fillColor: [220, 220, 220], fontStyle: "bold", fontSize: 8 };
-
   for (let i = 0; i < maxRows; i++) {
-    const inc  = incomeRows[i]  ?? ["", ""];
-    const fp   = freePayRows[i] ?? ["", ""];
+    const inc  = incomeRows[i]    ?? ["", ""];
+    const fp   = freePayRows[i]   ?? ["", ""];
     const ded  = deductionRows[i] ?? ["", ""];
-    body.push([inc[0], inc[1], "", fp[0], fp[1], "", ded[0], ded[1], ""]);
+    body.push([
+      inc[0], inc[1], inc[0] && ytd ? (ytdMap[inc[0]] ?? "") : "",
+      fp[0],  fp[1],  fp[0]  && ytd ? (ytdMap[fp[0]]  ?? "") : "",
+      ded[0], ded[1], ded[0] && ytd ? (ytdMap[ded[0]] ?? "") : "",
+    ]);
   }
 
   // Totals row
   body.push([
-    { content: "Gross", styles: { fontStyle: "bold" } }, { content: gyd(r.grossPay), styles: { fontStyle: "bold" } }, "",
-    { content: "Total FreePay", styles: { fontStyle: "bold" } }, { content: gyd(totalFreePay), styles: { fontStyle: "bold" } }, "",
-    { content: "Total Deduction", styles: { fontStyle: "bold" } }, { content: gyd(totalDeduct), styles: { fontStyle: "bold" } }, "",
+    { content: "Gross",           styles: { fontStyle: "bold" } },
+    { content: gyd(r.grossPay),   styles: { fontStyle: "bold" } },
+    { content: ytd ? gyd(ytd.grossPay)       : "", styles: { fontStyle: "bold", textColor: [80, 80, 80] } },
+    { content: "Total FreePay",   styles: { fontStyle: "bold" } },
+    { content: gyd(totalFreePay), styles: { fontStyle: "bold" } },
+    { content: ytd ? gyd(ytd.totalFreePay)   : "", styles: { fontStyle: "bold", textColor: [80, 80, 80] } },
+    { content: "Total Deduction", styles: { fontStyle: "bold" } },
+    { content: gyd(totalDeduct),  styles: { fontStyle: "bold" } },
+    { content: ytd ? gyd(ytd.totalDeductions): "", styles: { fontStyle: "bold", textColor: [80, 80, 80] } },
   ]);
 
   autoTable(doc, {
     startY: 38,
     head: [[
-      { content: "Income",    colSpan: 3, styles: { halign: "center", fillColor: [60, 80, 120], textColor: 255 } },
-      { content: "FreePay",   colSpan: 3, styles: { halign: "center", fillColor: [60, 100, 80],  textColor: 255 } },
-      { content: "Deductions",colSpan: 3, styles: { halign: "center", fillColor: [120, 60, 60],  textColor: 255 } },
+      { content: "Income",     colSpan: 3, styles: { halign: "center", fillColor: [60, 80, 120], textColor: 255 } },
+      { content: "FreePay",    colSpan: 3, styles: { halign: "center", fillColor: [60, 100, 80], textColor: 255 } },
+      { content: "Deductions", colSpan: 3, styles: { halign: "center", fillColor: [120, 60, 60], textColor: 255 } },
     ], [
       "Description", "Amount (GYD)", "YTD",
       "Description", "Amount (GYD)", "YTD",
@@ -121,15 +238,15 @@ export function generatePayslipPDF(r: PayrollResult) {
     ]],
     body,
     columnStyles: {
-      0: { cellWidth: 40 },
-      1: { cellWidth: 25, halign: "right" },
-      2: { cellWidth: 20, halign: "right", textColor: [160, 160, 160] },
-      3: { cellWidth: 40 },
-      4: { cellWidth: 25, halign: "right" },
-      5: { cellWidth: 20, halign: "right", textColor: [160, 160, 160] },
-      6: { cellWidth: 40 },
-      7: { cellWidth: 25, halign: "right" },
-      8: { cellWidth: 20, halign: "right", textColor: [160, 160, 160] },
+      0: { cellWidth: 38 },
+      1: { cellWidth: 24, halign: "right" },
+      2: { cellWidth: 22, halign: "right", textColor: [100, 100, 100] },
+      3: { cellWidth: 38 },
+      4: { cellWidth: 24, halign: "right" },
+      5: { cellWidth: 22, halign: "right", textColor: [100, 100, 100] },
+      6: { cellWidth: 38 },
+      7: { cellWidth: 24, halign: "right" },
+      8: { cellWidth: 22, halign: "right", textColor: [100, 100, 100] },
     },
     styles: { fontSize: 8, cellPadding: 1.5 },
     headStyles: { fontSize: 8 },
@@ -150,6 +267,13 @@ export function generatePayslipPDF(r: PayrollResult) {
   doc.setFont("helvetica", "bold");
   doc.setFontSize(10);
   doc.text("Net Pay", L + 3, finalY + 6);
+  if (ytd) {
+    doc.setFontSize(7);
+    doc.setFont("helvetica", "normal");
+    doc.text(`YTD: GYD ${gyd(ytd.netPay)}`, pw / 2, finalY + 6, { align: "center" });
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+  }
   doc.text(`GYD ${gyd(r.netPay)}`, R - 3, finalY + 6, { align: "right" });
   doc.setTextColor(0);
 
@@ -202,7 +326,7 @@ export function generatePayslipPDF(r: PayrollResult) {
   return doc;
 }
 
-export function downloadPayslipPDF(r: PayrollResult) {
-  const doc = generatePayslipPDF(r);
+export function downloadPayslipPDF(r: PayrollResult, ytd?: YTDFigures) {
+  const doc = generatePayslipPDF(r, ytd);
   doc.save(`FMS_Payslip_${r.employee.userId}_${r.periodStart}_${r.periodEnd}.pdf`);
 }
