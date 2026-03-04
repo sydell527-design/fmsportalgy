@@ -275,7 +275,7 @@ export default function Timesheets() {
 
           // Detect day-status from the Notes column (e.g. "Report Sick" → Sick)
           const autoStatus = notesRaw ? detectDayStatusFromNote(notesRaw) : null;
-          const noClockNeeded = autoStatus === "Sick" || autoStatus === "Absent" || autoStatus === "Annual Leave";
+          const noClockNeeded = autoStatus === "Sick" || autoStatus === "Absent" || autoStatus === "Annual Leave" || autoStatus === "Off Day";
 
           let error: string | undefined;
           if (!empRaw) error = "Missing employee name";
@@ -368,7 +368,7 @@ export default function Timesheets() {
         continue;
       }
 
-      const isSickAbsent = row.dayStatus === "Sick" || row.dayStatus === "Absent" || row.dayStatus === "Annual Leave";
+      const isSickAbsent = row.dayStatus === "Sick" || row.dayStatus === "Absent" || row.dayStatus === "Annual Leave" || row.dayStatus === "Off Day";
       const hours = (row.ci && row.co && !isSickAbsent) ? calcHours(row.ci, row.co, row.brk) : { reg: 0, ot: 0 };
       seq++;
       records.push({
