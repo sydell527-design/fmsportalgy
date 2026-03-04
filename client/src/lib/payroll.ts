@@ -430,9 +430,20 @@ function redistributeTimeHours(approvedTs: Timesheet[], carryForwardHours: numbe
       armedDays++;
       armedDates.add(ts.date);
     }
-    // Track Sick/Absent/AL days separately for risk-pay table input.
-    // Off Days are NOT missed days — they are scheduled rest.
-    if (isArmed && !isPhysicallyWorked && !missedArmedDates.has(ts.date)) {
+    // Track missed days for risk-pay table input (14 - missedDays → lookupRiskPay).
+    // Off Days are NOT missed — they are scheduled rest.
+    //
+    // For Sick days, the note distinguishes two cases:
+    //   • Notes contain "sick leave" or "sickleave" (case-insensitive)
+    //     → employee has a medical certificate → does NOT reduce risk pay
+    //   • Any other sick entry ("sick", "report sick", etc.)
+    //     → no medical certificate → DOES reduce risk pay (counts as missed)
+    const noteLC = (ts.notes ?? "").toLowerCase().trim();
+    const hasMedCert = dayStatus === "Sick" &&
+      (noteLC.includes("sick leave") || noteLC.includes("sickleave"));
+    const countsAsMissed = !isPhysicallyWorked && !hasMedCert;
+
+    if (isArmed && countsAsMissed && !missedArmedDates.has(ts.date)) {
       armedMissedDays++;
       missedArmedDates.add(ts.date);
     }
