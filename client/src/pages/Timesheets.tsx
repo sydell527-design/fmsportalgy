@@ -359,7 +359,7 @@ export default function Timesheets() {
       }
 
       const isSickAbsent = row.dayStatus === "Sick" || row.dayStatus === "Absent" || row.dayStatus === "Annual Leave";
-      const hours = (row.ci && row.co && !isSickAbsent) ? calcHours(row.ci, row.co, row.brk) : { reg: isSickAbsent ? 0 : 0, ot: 0 };
+      const hours = (row.ci && row.co && !isSickAbsent) ? calcHours(row.ci, row.co, row.brk) : { reg: 0, ot: 0 };
       seq++;
       records.push({
         tsId: `TS-${Date.now()}-${Math.random().toString(36).slice(2, 7)}-${seq}`,
@@ -367,11 +367,13 @@ export default function Timesheets() {
         date: row.date,
         ci: row.ci || "00:00",
         co: row.co ?? null,
-        brk: row.brk,
+        brk: row.brk ?? 0,
         zone: row.zone ?? null,
         post: row.post ?? null,
         reg: hours.reg,
         ot: hours.ot,
+        ph: 0,
+        meals: 0,
         dayStatus: row.dayStatus ?? null,
         notes: row.notes ?? null,
         status: "pending_first_approval",
