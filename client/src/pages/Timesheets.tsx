@@ -376,7 +376,7 @@ export default function Timesheets() {
         eid: found.userId,
         date: row.date,
         ci: row.ci || "00:00",
-        co: row.co ?? null,
+        co: row.co || null,
         brk: row.brk ?? 0,
         zone: row.zone ?? null,
         post: row.post ?? null,
