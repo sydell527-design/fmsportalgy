@@ -18,6 +18,7 @@ import {
   Search, Filter,
 } from "lucide-react";
 import { format, startOfMonth, endOfMonth, subMonths, addMonths } from "date-fns";
+import { lookupGuyanaHoliday } from "@/lib/payroll";
 import { useToast } from "@/hooks/use-toast";
 import type { Timesheet } from "@shared/schema";
 import { DAY_STATUSES, HOLIDAY_TYPES, ARMED_STATUSES, CLIENT_AGENCIES } from "@shared/schema";
@@ -100,6 +101,7 @@ export default function Timesheets() {
     brk: number;
     notes?: string;
     dayStatus?: string;
+    holidayType?: string;
     matched: boolean;
     error?: string;
     mergedFrom: number; // 1 = single row, >1 = merged from multiple rows in the file
@@ -277,10 +279,22 @@ export default function Timesheets() {
           const dateStr = parseDate(dateRaw);
 
           // Detect day-status from Notes column, OR from raw clock-in/out values (e.g. "OFF DUTY", "Rest Day")
-          const autoStatus =
+          let autoStatus: string | null =
             (notesRaw ? detectDayStatusFromNote(notesRaw) : null) ||
             detectDayStatusFromNote(ciRawStr) ||
             detectDayStatusFromNote(coRawStr);
+
+          // Auto-detect Guyana public holidays — if the date is a known holiday and
+          // the employee has clock times, mark as Holiday so payroll pays at PH rate (2×).
+          let autoHolidayType: string | undefined;
+          if (dateStr) {
+            const phName = lookupGuyanaHoliday(dateStr);
+            if (phName && !autoStatus) {
+              autoStatus = "Holiday";
+              autoHolidayType = phName;
+            }
+          }
+
           const noClockNeeded = autoStatus === "Sick" || autoStatus === "Absent" || autoStatus === "Annual Leave" || autoStatus === "Off Day";
 
           let error: string | undefined;
@@ -300,6 +314,7 @@ export default function Timesheets() {
             brk: parseInt(brkRaw) || 0,
             notes: notesRaw || undefined,
             dayStatus: autoStatus ?? undefined,
+            holidayType: autoHolidayType,
             matched: false,
             error,
             mergedFrom: 1,
@@ -358,6 +373,7 @@ export default function Timesheets() {
       if (existing) {
         // Auto-update: patch the existing record with any new/better values from the file
         try {
+          const dedupIsHoliday = row.dayStatus === "Holiday";
           const hours = row.ci && row.co ? calcHours(row.ci, row.co, row.brk) : { reg: existing.reg ?? 0, ot: existing.ot ?? 0 };
           await updateTimesheet({
             id: existing.id,
@@ -365,8 +381,11 @@ export default function Timesheets() {
             zone: row.zone ?? existing.zone ?? undefined,
             post: row.post ?? existing.post ?? undefined,
             notes: row.notes ?? existing.notes ?? undefined,
-            reg: hours.reg,
+            dayStatus: row.dayStatus ?? existing.dayStatus ?? undefined,
+            holidayType: row.holidayType ?? existing.holidayType ?? undefined,
+            reg: dedupIsHoliday ? 0 : hours.reg,
             ot: hours.ot,
+            ph: dedupIsHoliday ? hours.reg : (existing.ph ?? 0),
             edited: true,
           });
           updatedDups++;
@@ -374,8 +393,9 @@ export default function Timesheets() {
         continue;
       }
 
-      const isSickAbsent = row.dayStatus === "Sick" || row.dayStatus === "Absent" || row.dayStatus === "Annual Leave" || row.dayStatus === "Off Day";
-      const hours = (row.ci && row.co && !isSickAbsent) ? calcHours(row.ci, row.co, row.brk) : { reg: 0, ot: 0 };
+      const isNoHours = row.dayStatus === "Sick" || row.dayStatus === "Absent" || row.dayStatus === "Annual Leave" || row.dayStatus === "Off Day";
+      const isHoliday = row.dayStatus === "Holiday";
+      const hours = (row.ci && row.co && !isNoHours) ? calcHours(row.ci, row.co, row.brk) : { reg: 0, ot: 0 };
       seq++;
       records.push({
         tsId: `TS-${Date.now()}-${Math.random().toString(36).slice(2, 7)}-${seq}`,
@@ -386,11 +406,12 @@ export default function Timesheets() {
         brk: row.brk ?? 0,
         zone: row.zone ?? null,
         post: row.post ?? null,
-        reg: isNaN(hours.reg) ? 0 : hours.reg,
+        reg: isHoliday ? 0 : (isNaN(hours.reg) ? 0 : hours.reg),
         ot: isNaN(hours.ot) ? 0 : hours.ot,
-        ph: 0,
+        ph: isHoliday ? (isNaN(hours.reg) ? 0 : hours.reg) : 0,
         meals: 0,
         dayStatus: row.dayStatus ?? null,
+        holidayType: row.holidayType ?? null,
         notes: row.notes ?? null,
         status: "pending_first_approval",
         disputed: false,
@@ -1955,9 +1976,13 @@ export default function Timesheets() {
                             <td className="px-3 py-1.5 font-medium">{row.empName}</td>
                             <td className="px-3 py-1.5">{row.date}</td>
                             <td className="px-3 py-1.5">
-                              {row.dayStatus ? <span className="text-orange-600 font-medium">{row.dayStatus}</span> : row.ci}
+                              {row.dayStatus ? (
+                                <span className="text-orange-600 font-medium">
+                                  {row.dayStatus}{row.holidayType ? ` · ${row.holidayType}` : ""}
+                                </span>
+                              ) : row.ci}
                             </td>
-                            <td className="px-3 py-1.5">{row.dayStatus ? "—" : (row.co ?? "—")}</td>
+                            <td className="px-3 py-1.5">{row.dayStatus && row.dayStatus !== "Holiday" ? "—" : (row.co ?? "—")}</td>
                             <td className="px-3 py-1.5">{row.zone ?? "—"}</td>
                             <td className="px-3 py-1.5">{row.post ?? "—"}</td>
                             <td className="px-3 py-1.5">{row.brk}m</td>

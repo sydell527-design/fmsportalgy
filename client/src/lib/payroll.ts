@@ -26,9 +26,77 @@ export const TIME_CONSTANTS = {
     "Hebrews", "Romans", "Romans-2", "Globe", "Globe-12", "Neptune P1",
   ] as string[],
   RECOGNIZED_HOLIDAY_TYPES: [
-    "Phagwah", "Good Friday", "Easter Monday", "Labour Day", "Christmas", "Eid ul Azha",
+    "New Year's Day", "Republic Day", "Phagwah", "Good Friday", "Easter Monday",
+    "Labour Day", "Arrival Day", "Emancipation Day", "Eid ul Adha", "Eid ul Azha",
+    "Youman Nabi", "Christmas Day", "Boxing Day", "Christmas",
   ] as string[],
 };
+
+// ── Guyana Public Holidays 2024–2027 ─────────────────────────────────────────
+// Fixed public holidays are the same every year; variable ones are based on
+// the lunar/ecclesiastical calendar and are confirmed by the GoG each year.
+export const GUYANA_PUBLIC_HOLIDAYS: Record<string, string> = {
+  // ── 2024 ─────────────────────────────────────────────────────────────────
+  "2024-01-01": "New Year's Day",
+  "2024-02-23": "Republic Day",
+  "2024-03-25": "Phagwah",
+  "2024-03-29": "Good Friday",
+  "2024-04-01": "Easter Monday",
+  "2024-05-01": "Labour Day",
+  "2024-05-05": "Arrival Day",
+  "2024-06-17": "Eid ul Adha",
+  "2024-08-01": "Emancipation Day",
+  "2024-09-16": "Youman Nabi",
+  "2024-12-25": "Christmas Day",
+  "2024-12-26": "Boxing Day",
+
+  // ── 2025 ─────────────────────────────────────────────────────────────────
+  "2025-01-01": "New Year's Day",
+  "2025-02-23": "Republic Day",
+  "2025-03-14": "Phagwah",
+  "2025-04-18": "Good Friday",
+  "2025-04-21": "Easter Monday",
+  "2025-05-01": "Labour Day",
+  "2025-05-05": "Arrival Day",
+  "2025-06-06": "Eid ul Adha",
+  "2025-08-01": "Emancipation Day",
+  "2025-10-05": "Youman Nabi",
+  "2025-12-25": "Christmas Day",
+  "2025-12-26": "Boxing Day",
+
+  // ── 2026 ─────────────────────────────────────────────────────────────────
+  "2026-01-01": "New Year's Day",
+  "2026-02-23": "Republic Day",
+  "2026-03-04": "Phagwah",
+  "2026-04-03": "Good Friday",
+  "2026-04-06": "Easter Monday",
+  "2026-05-01": "Labour Day",
+  "2026-05-05": "Arrival Day",
+  "2026-05-27": "Eid ul Adha",
+  "2026-08-01": "Emancipation Day",
+  "2026-10-24": "Youman Nabi",
+  "2026-12-25": "Christmas Day",
+  "2026-12-26": "Boxing Day",
+
+  // ── 2027 ─────────────────────────────────────────────────────────────────
+  "2027-01-01": "New Year's Day",
+  "2027-02-23": "Republic Day",
+  "2027-03-23": "Phagwah",
+  "2027-03-26": "Good Friday",
+  "2027-03-29": "Easter Monday",
+  "2027-05-01": "Labour Day",
+  "2027-05-05": "Arrival Day",
+  "2027-05-17": "Eid ul Adha",
+  "2027-08-01": "Emancipation Day",
+  "2027-09-24": "Youman Nabi",
+  "2027-12-25": "Christmas Day",
+  "2027-12-26": "Boxing Day",
+};
+
+/** Returns the Guyana holiday name for a given YYYY-MM-DD date, or null if not a holiday. */
+export function lookupGuyanaHoliday(dateStr: string): string | null {
+  return GUYANA_PUBLIC_HOLIDAYS[dateStr] ?? null;
+}
 
 const C = PAYROLL_CONSTANTS;
 
