@@ -351,6 +351,10 @@ function redistributeTimeHours(approvedTs: Timesheet[], carryForwardHours: numbe
   let weeklyBefore = carryForwardHours;
   let totalReg = 0, totalOT = 0, totalPH = 0, totalHD = 0;
   let mealsCount = 0, armedDays = 0, responsibilityDays = 0;
+  // Per-date dedup sets — meals/armed/responsibility are counted once per calendar day
+  const mealDates   = new Set<string>();
+  const armedDates  = new Set<string>();
+  const respDates   = new Set<string>();
 
   for (const ts of sorted) {
     if (!ts.date) continue;
@@ -400,10 +404,10 @@ function redistributeTimeHours(approvedTs: Timesheet[], carryForwardHours: numbe
     totalPH  += dayPH;
     totalHD  += dayHD;
 
-    // ── Meals eligibility ──────────────────────────────────────────────────
+    // ── Meals eligibility (once per calendar date) ────────────────────────
     const client = (ts.client ?? "").trim();
     const notExcluded = !["Canteen", "Head Office"].includes(client);
-    if (notExcluded && rawHours > 0 && ts.ci) {
+    if (notExcluded && rawHours > 0 && ts.ci && !mealDates.has(ts.date)) {
       const parts = (ts.ci as string).split(":");
       const minOfDay = Number(parts[0]) * 60 + Number(parts[1] ?? 0);
       if (
@@ -411,17 +415,20 @@ function redistributeTimeHours(approvedTs: Timesheet[], carryForwardHours: numbe
         (minOfDay >= 840  && minOfDay <= 900)  || // 14:00–15:00 inclusive
         (minOfDay >= 1080 && minOfDay <= 1140) || // 18:00–19:00 inclusive
         (minOfDay >= 1320 && minOfDay <= 1380)    // 22:00–23:00 inclusive
-      ) mealsCount++;
+      ) { mealsCount++; mealDates.add(ts.date); }
     }
 
-    // ── Armed days (risk pay) ──────────────────────────────────────────────
-    if ((ts.armed ?? employeeArmed) === "Armed" && rawHours > 0) armedDays++;
+    // ── Armed days — once per calendar date ───────────────────────────────
+    if ((ts.armed ?? employeeArmed) === "Armed" && rawHours > 0 && !armedDates.has(ts.date)) {
+      armedDays++;
+      armedDates.add(ts.date);
+    }
 
-    // ── Responsibility days (special locations) ────────────────────────────
+    // ── Responsibility days — once per calendar date ───────────────────────
     const post = (ts.post ?? "").trim();
-    if (notExcluded && rawHours > 0 && TIME_CONSTANTS.SPECIAL_RESPONSIBILITY_LOCATIONS.some(
+    if (notExcluded && rawHours > 0 && !respDates.has(ts.date) && TIME_CONSTANTS.SPECIAL_RESPONSIBILITY_LOCATIONS.some(
       (loc) => post.toLowerCase().includes(loc.toLowerCase()),
-    )) responsibilityDays++;
+    )) { responsibilityDays++; respDates.add(ts.date); }
   }
 
   // ── Period-level cap: ensure regular hours never exceed the standard hours ──
