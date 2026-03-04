@@ -18,15 +18,44 @@ export const PAYROLL_CONSTANTS = {
   PH_MULTIPLIER_DEFAULT: 2.0,
 };
 
+// ── Time Employee Constants ───────────────────────────────────────────────────
+export const TIME_CONSTANTS = {
+  MEAL_RATE: 300,
+  RESPONSIBILITY_RATE: 260,
+  SPECIAL_RESPONSIBILITY_LOCATIONS: [
+    "Hebrews", "Romans", "Romans-2", "Globe", "Globe-12", "Neptune P1",
+  ] as string[],
+  RECOGNIZED_HOLIDAY_TYPES: [
+    "Phagwah", "Good Friday", "Easter Monday", "Labour Day", "Christmas", "Eid ul Azha",
+  ] as string[],
+};
+
 const C = PAYROLL_CONSTANTS;
 
+// ── Risk pay table (Armed guards only) ───────────────────────────────────────
+export function lookupRiskPay(armedDays: number): number {
+  if (armedDays <= 0)   return 0;
+  if (armedDays === 1)  return 384;
+  if (armedDays === 2)  return 769;
+  if (armedDays <= 4)   return 1_153;
+  if (armedDays === 5)  return 1_538;
+  if (armedDays === 6)  return 1_923;
+  if (armedDays === 7)  return 2_307;
+  if (armedDays === 8)  return 2_692;
+  if (armedDays === 9)  return 3_076;
+  if (armedDays === 10) return 3_461;
+  if (armedDays === 11) return 3_846;
+  if (armedDays === 12) return 4_239;
+  if (armedDays === 13) return 4_615;
+  return 5_000; // 14+
+}
+
 // ── Pay frequency helpers ─────────────────────────────────────────────────────
-// ppm = periods per calendar month (used to prorate monthly statutory values)
 export function freqPpm(freq: string): number {
-  if (freq === "weekly")    return 52 / 12;   // ≈ 4.333 weeks/month
-  if (freq === "biweekly")  return 26 / 12;   // ≈ 2.167 fortnights/month
+  if (freq === "weekly")    return 52 / 12;
+  if (freq === "biweekly")  return 26 / 12;
   if (freq === "monthly")   return 1;
-  return 2;                                   // bimonthly (default)
+  return 2; // bimonthly (default)
 }
 
 export function freqHrsPerPeriod(freq: string): number {
@@ -39,7 +68,7 @@ export function freqHrsPerPeriod(freq: string): number {
 // ── Qualifying child for PAYE child allowance ─────────────────────────────────
 function isQualifyingChild(child: EmployeeChild): boolean {
   if (!child.active) return false;
-  if (child.taxEligible === false) return false;   // explicitly excluded from PAYE deduction
+  if (child.taxEligible === false) return false;
   const age = differenceInYears(new Date(), parseISO(child.dob));
   if (age < 18) return true;
   if (age <= 25 && child.school) return true;
@@ -47,7 +76,6 @@ function isQualifyingChild(child: EmployeeChild): boolean {
 }
 
 // ── Date range helpers ────────────────────────────────────────────────────────
-// periodHalf: "1" = 1st–15th, "2" = 16th–end of month
 export function periodDates(yearMonth: string, half: "1" | "2"): { start: string; end: string; label: string } {
   const [y, m] = yearMonth.split("-").map(Number);
   const lastDay = getDaysInMonth(new Date(y, m - 1));
@@ -65,9 +93,93 @@ export function periodDates(yearMonth: string, half: "1" | "2"): { start: string
   };
 }
 
+// ── Time employee: weekly 40-hr cap redistribution ───────────────────────────
+interface TimeDistResult {
+  reg: number;
+  ot: number;
+  ph: number;
+  mealsCount: number;
+  armedDays: number;
+  responsibilityDays: number;
+}
+
+function redistributeTimeHours(approvedTs: Timesheet[], carryForwardHours: number): TimeDistResult {
+  const sorted = [...approvedTs].sort((a, b) => (a.date ?? "").localeCompare(b.date ?? ""));
+  let weeklyBefore = carryForwardHours;
+  let totalReg = 0, totalOT = 0, totalPH = 0;
+  let mealsCount = 0, armedDays = 0, responsibilityDays = 0;
+
+  for (const ts of sorted) {
+    if (!ts.date) continue;
+    const dow = new Date(ts.date + "T00:00:00").getDay(); // 0=Sun
+
+    if (dow === 0) weeklyBefore = 0; // new week — reset cap
+
+    const rawHours  = (ts.reg ?? 0) + (ts.ot ?? 0) + (ts.ph ?? 0);
+    const dayStatus = ts.dayStatus ?? "On Day";
+    const holType   = ts.holidayType ?? "";
+
+    let dayReg = 0, dayOT = 0, dayPH = 0, weekContrib = 0;
+
+    if (dayStatus === "Annual Leave") {
+      dayReg = 8; weekContrib = 8;
+    } else if (dayStatus === "Off Day") {
+      dayOT = rawHours; // all OT; Off Day does NOT count toward weekly cap
+    } else if (dayStatus === "Sick" || dayStatus === "Absent") {
+      // no hours, no pay
+    } else if (dayStatus === "Holiday") {
+      if (TIME_CONSTANTS.RECOGNIZED_HOLIDAY_TYPES.includes(holType)) {
+        dayPH = rawHours; weekContrib = rawHours; // holiday hours count toward weekly cap
+      } else {
+        dayOT = rawHours; // "Holiday Double" → all OT, does not count toward cap
+      }
+    } else {
+      // On Day: daily 8-hr cap + weekly 40-hr cap (Guyana Labour Law)
+      const weeklyAvail = Math.max(0, 40 - weeklyBefore);
+      const origReg     = Math.min(rawHours, 8);
+      const dailyOT     = Math.max(0, rawHours - 8);
+      const weeklyOTAdj = Math.max(0, origReg - weeklyAvail);
+      dayReg = origReg - weeklyOTAdj;
+      dayOT  = dailyOT + weeklyOTAdj;
+      weekContrib = dayReg;
+    }
+
+    weeklyBefore += weekContrib;
+    totalReg += dayReg;
+    totalOT  += dayOT;
+    totalPH  += dayPH;
+
+    // ── Meals eligibility ──────────────────────────────────────────────────
+    const client = (ts.client ?? "").trim();
+    const notExcluded = !["Canteen", "Head Office"].includes(client);
+    if (notExcluded && rawHours > 0 && ts.ci) {
+      const parts = (ts.ci as string).split(":");
+      const minOfDay = Number(parts[0]) * 60 + Number(parts[1] ?? 0);
+      if (
+        (minOfDay >= 360  && minOfDay < 420)  || // 06:00–07:00
+        (minOfDay >= 840  && minOfDay < 900)  || // 14:00–15:00
+        (minOfDay >= 1080 && minOfDay < 1140) || // 18:00–19:00
+        (minOfDay >= 1320 && minOfDay < 1380)    // 22:00–23:00
+      ) mealsCount++;
+    }
+
+    // ── Armed days (risk pay) ──────────────────────────────────────────────
+    if (ts.armed === "Armed" && rawHours > 0) armedDays++;
+
+    // ── Responsibility days (special locations) ────────────────────────────
+    const post = (ts.post ?? "").trim();
+    if (notExcluded && rawHours > 0 && TIME_CONSTANTS.SPECIAL_RESPONSIBILITY_LOCATIONS.some(
+      (loc) => post.toLowerCase().includes(loc.toLowerCase()),
+    )) responsibilityDays++;
+  }
+
+  return { reg: totalReg, ot: totalOT, ph: totalPH, mealsCount, armedDays, responsibilityDays };
+}
+
+// ── PayrollResult ─────────────────────────────────────────────────────────────
 export interface PayrollResult {
   employee: User;
-  period: string;        // display label
+  period: string;
   periodStart: string;
   periodEnd: string;
 
@@ -82,6 +194,16 @@ export interface PayrollResult {
   phPay: number;
   allowances: number;
   grossPay: number;
+
+  // Time employee extras (undefined for Fixed/Executive)
+  isTimeEmployee?: boolean;
+  mealsPay?: number;
+  responsibilitiesPay?: number;
+  riskPay?: number;
+  mealsCount?: number;
+  responsibilityDays?: number;
+  armedDays?: number;
+  carryForwardHours?: number;
 
   // Statutory deductions
   employeeNIS: number;
@@ -110,57 +232,90 @@ export interface PayrollResult {
   pendingTimesheets: number;
   totalTimesheets: number;
 
-  // Derived: hourly rate used
+  // Derived
   effectiveRate: number;
 }
 
 export function calcPayroll(
   employee: User,
   timesheets: Timesheet[],
-  periodStart: string,                       // "2026-03-01"
-  periodEnd: string,                         // "2026-03-15"
+  periodStart: string,
+  periodEnd: string,
   allChildren: EmployeeChild[] = [],
   periodLabel?: string,
-  companyPersonalAllowance?: number,         // company-wide threshold override (e.g. 130_000)
+  companyPersonalAllowance?: number,
+  carryForwardTimesheets?: Timesheet[],   // previous-period timesheets for weekly CF calculation
 ): PayrollResult {
   const pc: PayConfig = employee.payConfig ?? ({} as PayConfig);
+  const isTimeEmployee = employee.cat === "Time";
 
-  // ── Timesheets — exact date range for this pay period ─────────────────────
+  // ── Filter timesheets to this period ──────────────────────────────────────
   const periodTs = timesheets.filter(
     (ts) =>
       ts.eid === employee.userId &&
       ts.date != null &&
       ts.date >= periodStart &&
-      ts.date <= periodEnd
+      ts.date <= periodEnd,
   );
   const approvedTs = periodTs.filter((ts) => ts.status === "approved");
   const approvedTimesheets = approvedTs.length;
-  const pendingTimesheets = periodTs.filter(
+  const pendingTimesheets  = periodTs.filter(
     (ts) =>
       ts.status === "pending_first_approval" ||
       ts.status === "pending_second_approval" ||
-      ts.status === "pending_employee"
+      ts.status === "pending_employee",
   ).length;
 
-  // Sum hours from approved timesheets only — no invented figures
-  const regularHours = approvedTs.reduce((s, ts) => s + (ts.reg ?? 0), 0);
-  const otHours      = approvedTs.reduce((s, ts) => s + (ts.ot ?? 0), 0);
-  const phHours      = approvedTs.reduce((s, ts) => s + (ts.ph ?? 0), 0);
-
   // ── Pay frequency ─────────────────────────────────────────────────────────
-  const freq = pc.frequency ?? "bimonthly";
-  const ppm  = freqPpm(freq);            // periods per calendar month
+  const freq         = pc.frequency ?? "bimonthly";
+  const ppm          = freqPpm(freq);
   const hrsPerPeriod = freqHrsPerPeriod(freq);
 
   // ── Effective hourly rate ─────────────────────────────────────────────────
-  // Primary: hourlyRate from employee profile (supports decimals e.g. 937.50)
-  // Fallback: legacy Fixed/Executive records that only have salary (no hourlyRate)
   let effectiveRate = employee.hourlyRate ?? 0;
   if (effectiveRate === 0 && (employee.salary ?? 0) > 0) {
     effectiveRate = (employee.salary ?? 0) / (hrsPerPeriod * ppm);
   }
 
-  // ── Earnings — all from actual approved timesheet hours × rate ────────────
+  // ── Hours — Time employees get weekly-cap redistribution; others sum stored values ──
+  let regularHours: number, otHours: number, phHours: number;
+  let mealsCount = 0, armedDays = 0, responsibilityDays = 0;
+  let carryForwardHours = 0;
+
+  if (isTimeEmployee) {
+    // Compute carry-forward from the partial week before periodStart
+    const pdStartDate     = new Date(periodStart + "T00:00:00");
+    const dayOfWeekStart  = pdStartDate.getDay();
+    if (dayOfWeekStart > 0 && carryForwardTimesheets && carryForwardTimesheets.length > 0) {
+      const prevSun = new Date(pdStartDate);
+      prevSun.setDate(prevSun.getDate() - dayOfWeekStart);
+      const prevSunStr = prevSun.toISOString().slice(0, 10);
+      const cfApproved = carryForwardTimesheets.filter(
+        (ts) =>
+          ts.eid === employee.userId &&
+          ts.status === "approved" &&
+          ts.date != null &&
+          ts.date >= prevSunStr &&
+          ts.date < periodStart,
+      );
+      // Use stored reg + ph from those timesheets as the carry-forward (daily cap was applied at clock-out)
+      carryForwardHours = cfApproved.reduce((s, ts) => s + (ts.reg ?? 0) + (ts.ph ?? 0), 0);
+    }
+
+    const dist = redistributeTimeHours(approvedTs, carryForwardHours);
+    regularHours      = dist.reg;
+    otHours           = dist.ot;
+    phHours           = dist.ph;
+    mealsCount        = dist.mealsCount;
+    armedDays         = dist.armedDays;
+    responsibilityDays = dist.responsibilityDays;
+  } else {
+    regularHours = approvedTs.reduce((s, ts) => s + (ts.reg ?? 0), 0);
+    otHours      = approvedTs.reduce((s, ts) => s + (ts.ot ?? 0), 0);
+    phHours      = approvedTs.reduce((s, ts) => s + (ts.ph ?? 0), 0);
+  }
+
+  // ── Earnings ──────────────────────────────────────────────────────────────
   const otMultiplier = pc.otMultiplier ?? C.OT_MULTIPLIER_DEFAULT;
   const phMultiplier = pc.phMultiplier ?? C.PH_MULTIPLIER_DEFAULT;
 
@@ -168,21 +323,26 @@ export function calcPayroll(
   const otPay    = otHours      * effectiveRate * otMultiplier;
   const phPay    = phHours      * effectiveRate * phMultiplier;
 
-  // Allowances are stored as monthly amounts → prorate to this pay period
+  // For Time employees: riskAllowance and mealAllowance are computed dynamically;
+  // exclude them from the PayConfig-based allowances sum.
   const monthlyAllowances =
     (pc.housingAllowance   ?? 0) +
     (pc.transportAllowance ?? 0) +
-    (pc.mealAllowance      ?? 0) +
+    (isTimeEmployee ? 0 : (pc.mealAllowance  ?? 0)) +
     (pc.uniformAllowance   ?? 0) +
-    (pc.riskAllowance      ?? 0) +
+    (isTimeEmployee ? 0 : (pc.riskAllowance  ?? 0)) +
     (pc.shiftAllowance     ?? 0) +
     (pc.otherAllowances ?? []).reduce((s, x) => s + x.amount, 0);
   const allowances = Math.round(monthlyAllowances / ppm);
 
-  const grossPay = basicPay + otPay + phPay + allowances;
+  // Time-specific computed earnings
+  const mealsPay           = isTimeEmployee ? Math.round(mealsCount        * TIME_CONSTANTS.MEAL_RATE)        : 0;
+  const responsibilitiesPay = isTimeEmployee ? Math.round(responsibilityDays * TIME_CONSTANTS.RESPONSIBILITY_RATE) : 0;
+  const riskPay             = isTimeEmployee ? lookupRiskPay(armedDays) : 0;
 
-  // ── NIS — employee 5.6%, employer 8.4%, ceiling prorated to period ────────
-  // Auto-exempt: employees aged 60 or over are not liable for NIS contributions
+  const grossPay = basicPay + otPay + phPay + allowances + mealsPay + responsibilitiesPay + riskPay;
+
+  // ── NIS ───────────────────────────────────────────────────────────────────
   const dob = (employee as any).dob as string | null | undefined;
   const ageExemptFromNIS = dob
     ? (() => {
@@ -202,38 +362,30 @@ export function calcPayroll(
   const employerNISCalc = effectiveNisExempt ? 0 : Math.round(nisBase * C.NIS_ER_RATE);
   const employerNIS     = pc.nisEmployerOverride != null ? pc.nisEmployerOverride : employerNISCalc;
 
-  // ── Hand In Hand Insurance — flat monthly fee prorated to period ──────────
+  // ── Health Surcharge ──────────────────────────────────────────────────────
   const hsMonthlyFlat = pc.healthSurchargeRate === "half"
     ? C.HEALTH_SURCHARGE_HALF
     : C.HEALTH_SURCHARGE_FULL;
-  const healthSurchargeCalc =
-    pc.healthSurchargeExempt ? 0 : Math.round(hsMonthlyFlat / ppm);
+  const healthSurchargeCalc = pc.healthSurchargeExempt ? 0 : Math.round(hsMonthlyFlat / ppm);
   const healthSurcharge =
     pc.healthSurchargeRate === "custom" && pc.healthSurchargeOverride != null
       ? pc.healthSurchargeExempt ? 0 : pc.healthSurchargeOverride
       : healthSurchargeCalc;
 
-  // ── PAYE — GRA 2026 progressive tax ──────────────────────────────────────
+  // ── PAYE ──────────────────────────────────────────────────────────────────
   const empChildren        = allChildren.filter((ch) => ch.eid === employee.userId);
   const qualifyingChildren = empChildren.filter(isQualifyingChild).length;
-  // Child allowance: monthly GYD 10,000/child → prorated to this period
   const childAllowance     = Math.round((qualifyingChildren * C.CHILD_ALLOWANCE) / ppm);
 
-  // Personal allowance: GRA rule = max(company threshold/month, ⅓ of monthly gross)
-  // companyPersonalAllowance overrides the statutory constant for company-wide config.
-  // Per-employee personalAllowanceOverride takes highest precedence.
   const basePersonalAllowance = companyPersonalAllowance ?? C.PERSONAL_ALLOWANCE;
   const effectivePaMonthly = pc.personalAllowanceOverride ?? basePersonalAllowance;
-  const monthlyGrossEquiv  = grossPay * ppm;   // annualise to monthly for GRA ⅓-rule
+  const monthlyGrossEquiv  = grossPay * ppm;
   const monthlyPersonalAl  = Math.max(effectivePaMonthly, Math.round(monthlyGrossEquiv / 3));
   const personalAllowance  = Math.round(monthlyPersonalAl / ppm);
 
-  // Chargeable income: gross − NIS − insurance − personal − child allowances
-  // (insurance deducted before PAYE per GRA guidance)
   const chargeableIncome = pc.taxExempt ? 0
     : Math.max(0, grossPay - employeeNIS - healthSurcharge - personalAllowance - childAllowance);
 
-  // PAYE bracket prorated to this pay period
   const effectiveLowerLimit =
     pc.taxLowerLimitOverride != null
       ? pc.taxLowerLimitOverride / ppm
@@ -244,11 +396,11 @@ export function calcPayroll(
       ? Math.round(chargeableIncome * C.TAX_LOWER_RATE)
       : Math.round(
           effectiveLowerLimit * C.TAX_LOWER_RATE +
-          (chargeableIncome - effectiveLowerLimit) * C.TAX_UPPER_RATE
+          (chargeableIncome - effectiveLowerLimit) * C.TAX_UPPER_RATE,
         );
   const paye = pc.taxOverride != null ? (pc.taxExempt ? 0 : pc.taxOverride) : payeCalc;
 
-  // ── Voluntary deductions — stored as per-period amounts ──────────────────
+  // ── Voluntary deductions ──────────────────────────────────────────────────
   const creditUnion      = pc.creditUnion      ?? 0;
   const loanRepayment    = pc.loanRepayment    ?? 0;
   const advancesRecovery = pc.advancesRecovery ?? 0;
@@ -273,6 +425,14 @@ export function calcPayroll(
     phPay:        Math.round(phPay),
     allowances:   Math.round(allowances),
     grossPay:     Math.round(grossPay),
+    isTimeEmployee,
+    mealsPay:           isTimeEmployee ? Math.round(mealsPay)            : undefined,
+    responsibilitiesPay: isTimeEmployee ? Math.round(responsibilitiesPay) : undefined,
+    riskPay:             isTimeEmployee ? riskPay                         : undefined,
+    mealsCount:          isTimeEmployee ? mealsCount                      : undefined,
+    responsibilityDays:  isTimeEmployee ? responsibilityDays              : undefined,
+    armedDays:           isTimeEmployee ? armedDays                       : undefined,
+    carryForwardHours:   isTimeEmployee ? carryForwardHours               : undefined,
     employeeNIS,
     employerNIS,
     healthSurcharge,
@@ -309,7 +469,10 @@ export function generateQuickBooksCSV(results: PayrollResult[]): string {
     "Period Start", "Period End",
     "Regular Hours", "OT Hours", "PH Hours",
     "Hourly Rate (GYD)",
-    "Basic Pay (GYD)", "OT Pay (GYD)", "PH Pay (GYD)", "Allowances (GYD)", "Gross Pay (GYD)",
+    "Basic Pay (GYD)", "OT Pay (GYD)", "PH Pay (GYD)",
+    "Meals Pay (GYD)", "Responsibilities Pay (GYD)", "Risk Pay (GYD)",
+    "Meals Count", "Responsibility Days", "Armed Days", "Carry Forward Hrs",
+    "Allowances (GYD)", "Gross Pay (GYD)",
     "Employee NIS (GYD)", "Hand In Hand Insurance (GYD)",
     "Personal Allowance (GYD)", "Child Allowance (GYD)", "Qualifying Children",
     "Chargeable Income (GYD)", "PAYE (GYD)",
@@ -333,6 +496,13 @@ export function generateQuickBooksCSV(results: PayrollResult[]): string {
     r.basicPay.toFixed(2),
     r.otPay.toFixed(2),
     r.phPay.toFixed(2),
+    (r.mealsPay ?? 0).toFixed(2),
+    (r.responsibilitiesPay ?? 0).toFixed(2),
+    (r.riskPay ?? 0).toFixed(2),
+    String(r.mealsCount ?? ""),
+    String(r.responsibilityDays ?? ""),
+    String(r.armedDays ?? ""),
+    String(r.carryForwardHours ?? ""),
     r.allowances.toFixed(2),
     r.grossPay.toFixed(2),
     r.employeeNIS.toFixed(2),

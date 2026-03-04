@@ -105,17 +105,25 @@ export default function Payroll() {
   // ── Compute exact date range for the selected period ────────────────────
   const pd = periodDates(yearMonth, half);
 
-  // ── Fetch timesheets for this date range only ─────────────────────────
+  // ── Carry-forward window: up to 6 days before period start (partial week) ─
+  const cfWindowEnd   = (() => { const d = new Date(pd.start + "T00:00:00"); d.setDate(d.getDate() - 1); return d.toISOString().slice(0, 10); })();
+  const cfWindowStart = (() => { const d = new Date(pd.start + "T00:00:00"); d.setDate(d.getDate() - 7); return d.toISOString().slice(0, 10); })();
+
+  // ── Fetch timesheets for this period and for the carry-forward window ──
   const { data: timesheets = [] } = useTimesheets({
     startDate: pd.start,
     endDate:   pd.end,
+  });
+  const { data: cfTimesheets = [] } = useTimesheets({
+    startDate: cfWindowStart,
+    endDate:   cfWindowEnd,
   });
 
   // ── Compute payroll for all active non-admin employees ────────────────
   const activeEmployees = (users ?? []).filter((u) => u.status === "active" && u.role !== "admin");
 
   const allResults = activeEmployees.map((emp) =>
-    calcPayroll(emp, timesheets, pd.start, pd.end, allChildren, pd.label, companyPA)
+    calcPayroll(emp, timesheets, pd.start, pd.end, allChildren, pd.label, companyPA, cfTimesheets)
   );
 
   // Show employees who have at least one approved timesheet in this period

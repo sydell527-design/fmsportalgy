@@ -27,6 +27,10 @@ export interface YTDFigures {
   riskAllowance: number;
   shiftAllowance: number;
   otherAllowances: Record<string, number>;
+  // Time employee extras
+  mealsPay: number;
+  responsibilitiesPay: number;
+  riskPay: number;
   grossPay: number;
   personalAllowance: number;
   childAllowance: number;
@@ -55,6 +59,7 @@ export function computeYTD(payslipDataList: PayrollResult[], currentPeriodEnd: s
     housingAllowance: 0, transportAllowance: 0, mealAllowance: 0,
     uniformAllowance: 0, riskAllowance: 0, shiftAllowance: 0,
     otherAllowances: {},
+    mealsPay: 0, responsibilitiesPay: 0, riskPay: 0,
     grossPay: 0,
     personalAllowance: 0, childAllowance: 0, employeeNIS: 0, healthSurcharge: 0,
     totalFreePay: 0,
@@ -77,6 +82,9 @@ export function computeYTD(payslipDataList: PayrollResult[], currentPeriodEnd: s
     ytd.uniformAllowance      += (pc?.uniformAllowance   ?? 0) / ppm;
     ytd.riskAllowance         += (pc?.riskAllowance      ?? 0) / ppm;
     ytd.shiftAllowance        += (pc?.shiftAllowance     ?? 0) / ppm;
+    ytd.mealsPay              += r.mealsPay              ?? 0;
+    ytd.responsibilitiesPay   += r.responsibilitiesPay   ?? 0;
+    ytd.riskPay               += r.riskPay               ?? 0;
     ytd.grossPay              += r.grossPay ?? 0;
     ytd.personalAllowance     += r.personalAllowance ?? 0;
     ytd.childAllowance        += r.childAllowance ?? 0;
@@ -154,6 +162,9 @@ export function generatePayslipPDF(r: PayrollResult, ytd?: YTDFigures) {
     "Uniform Allowance":         gyd(ytd.uniformAllowance),
     "Risk Allowance":            gyd(ytd.riskAllowance),
     "Shift Allowance":           gyd(ytd.shiftAllowance),
+    "Meals Pay":                 gyd(ytd.mealsPay),
+    "Responsibilities Pay":      gyd(ytd.responsibilitiesPay),
+    "Risk Pay":                  gyd(ytd.riskPay),
     "Statutory Free Pay":        gyd(ytd.personalAllowance),
     "Child Tax Credit":          gyd(ytd.childAllowance),
     "National Insurance (EE)":   gyd(ytd.employeeNIS),
@@ -174,16 +185,21 @@ export function generatePayslipPDF(r: PayrollResult, ytd?: YTDFigures) {
   if (!pc?.nisExempt)           freePayRows.push(["National Insurance (EE)", gyd(r.employeeNIS)]);
   if (!pc?.healthSurchargeExempt) freePayRows.push(["Health Surcharge (Ins.)", gyd(r.healthSurcharge)]);
 
+  const isTimeEmployee = r.isTimeEmployee ?? false;
   const incomeRows: Array<[string, string]> = [];
   incomeRows.push(["Basic Salary", gyd(r.basicPay)]);
   if (r.otPay > 0) incomeRows.push(["Overtime Pay", gyd(r.otPay)]);
   if (r.phPay > 0) incomeRows.push(["Public Holiday Pay", gyd(r.phPay)]);
+  // Time employee computed extras
+  if ((r.mealsPay ?? 0) > 0)            incomeRows.push([`Meals Pay (${r.mealsCount ?? 0} meals)`,            gyd(r.mealsPay ?? 0)]);
+  if ((r.responsibilitiesPay ?? 0) > 0) incomeRows.push([`Responsibilities Pay (${r.responsibilityDays ?? 0} days)`, gyd(r.responsibilitiesPay ?? 0)]);
+  if ((r.riskPay ?? 0) > 0)             incomeRows.push([`Risk Pay (${r.armedDays ?? 0} armed days)`,         gyd(r.riskPay ?? 0)]);
   if (r.allowances > 0) {
     if ((pc?.housingAllowance   ?? 0) > 0) incomeRows.push(["Housing Allowance",   gyd((pc!.housingAllowance)   / ppm)]);
     if ((pc?.transportAllowance ?? 0) > 0) incomeRows.push(["Transport Allowance", gyd((pc!.transportAllowance) / ppm)]);
-    if ((pc?.mealAllowance      ?? 0) > 0) incomeRows.push(["Meal Allowance",      gyd((pc!.mealAllowance)      / ppm)]);
+    if (!isTimeEmployee && (pc?.mealAllowance ?? 0) > 0) incomeRows.push(["Meal Allowance", gyd((pc!.mealAllowance) / ppm)]);
     if ((pc?.uniformAllowance   ?? 0) > 0) incomeRows.push(["Uniform Allowance",   gyd((pc!.uniformAllowance)   / ppm)]);
-    if ((pc?.riskAllowance      ?? 0) > 0) incomeRows.push(["Risk Allowance",      gyd((pc!.riskAllowance)      / ppm)]);
+    if (!isTimeEmployee && (pc?.riskAllowance ?? 0) > 0) incomeRows.push(["Risk Allowance", gyd((pc!.riskAllowance) / ppm)]);
     if ((pc?.shiftAllowance     ?? 0) > 0) incomeRows.push(["Shift Allowance",     gyd((pc!.shiftAllowance)     / ppm)]);
     (pc?.otherAllowances ?? []).forEach((a) => incomeRows.push([a.name, gyd(a.amount / ppm)]));
   }

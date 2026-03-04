@@ -1,5 +1,5 @@
 import { AlertCircle } from "lucide-react";
-import { formatGYD, PAYROLL_CONSTANTS } from "@/lib/payroll";
+import { formatGYD, PAYROLL_CONSTANTS, TIME_CONSTANTS } from "@/lib/payroll";
 import type { PayrollResult } from "@/lib/payroll";
 import type { YTDFigures } from "@/lib/payslip-pdf";
 import { COMPANY_NAME } from "@/lib/payslip-pdf";
@@ -29,16 +29,25 @@ export function PayslipLandscape({
   const freq = pc?.frequency ?? "bimonthly";
   const ppm  = freq === "weekly" ? 52/12 : freq === "biweekly" ? 26/12 : freq === "monthly" ? 1 : 2;
   const freqLabel = freq === "weekly" ? "Weekly" : freq === "biweekly" ? "Bi-Weekly" : freq === "monthly" ? "Monthly" : "Bi-Monthly";
+  const isTime = r.isTimeEmployee ?? false;
 
   const incomeItems: Array<{label: string; amount: number; sub?: string; ytd?: number}> = [];
   incomeItems.push({ label: "Basic Salary", amount: r.basicPay, sub: `${r.regularHours.toFixed(2)} h × ${fmt(r.effectiveRate)}/hr`, ytd: ytd?.basicPay });
   if (r.otPay  > 0) incomeItems.push({ label: `Overtime (${pc?.otMultiplier ?? 1.5}×)`,    amount: r.otPay,  ytd: ytd?.otPay });
   if (r.phPay  > 0) incomeItems.push({ label: `Public Holiday (${pc?.phMultiplier ?? 2}×)`, amount: r.phPay,  ytd: ytd?.phPay });
+  // Time employee computed income (replaces flat allowances for meals & risk)
+  if (isTime && (r.mealsPay ?? 0) > 0)
+    incomeItems.push({ label: `Meals Pay (${r.mealsCount ?? 0} × GYD ${TIME_CONSTANTS.MEAL_RATE})`, amount: r.mealsPay!, ytd: ytd?.mealsPay });
+  if (isTime && (r.responsibilitiesPay ?? 0) > 0)
+    incomeItems.push({ label: `Responsibilities (${r.responsibilityDays ?? 0} days × GYD ${TIME_CONSTANTS.RESPONSIBILITY_RATE})`, amount: r.responsibilitiesPay!, ytd: ytd?.responsibilitiesPay });
+  if (isTime && (r.riskPay ?? 0) > 0)
+    incomeItems.push({ label: `Risk Pay (${r.armedDays ?? 0} armed days)`, amount: r.riskPay!, ytd: ytd?.riskPay });
+  // Allowances from PayConfig (skip mealAllowance + riskAllowance for Time employees)
   if ((pc?.housingAllowance   ?? 0) > 0) incomeItems.push({ label: "Housing Allowance",   amount: (pc!.housingAllowance)   / ppm, ytd: ytd?.housingAllowance });
   if ((pc?.transportAllowance ?? 0) > 0) incomeItems.push({ label: "Transport Allowance", amount: (pc!.transportAllowance) / ppm, ytd: ytd?.transportAllowance });
-  if ((pc?.mealAllowance      ?? 0) > 0) incomeItems.push({ label: "Meal Allowance",      amount: (pc!.mealAllowance)      / ppm, ytd: ytd?.mealAllowance });
+  if (!isTime && (pc?.mealAllowance ?? 0) > 0) incomeItems.push({ label: "Meal Allowance", amount: (pc!.mealAllowance) / ppm, ytd: ytd?.mealAllowance });
   if ((pc?.uniformAllowance   ?? 0) > 0) incomeItems.push({ label: "Uniform Allowance",   amount: (pc!.uniformAllowance)   / ppm, ytd: ytd?.uniformAllowance });
-  if ((pc?.riskAllowance      ?? 0) > 0) incomeItems.push({ label: "Risk Allowance",      amount: (pc!.riskAllowance)      / ppm, ytd: ytd?.riskAllowance });
+  if (!isTime && (pc?.riskAllowance ?? 0) > 0) incomeItems.push({ label: "Risk Allowance", amount: (pc!.riskAllowance) / ppm, ytd: ytd?.riskAllowance });
   if ((pc?.shiftAllowance     ?? 0) > 0) incomeItems.push({ label: "Shift Allowance",     amount: (pc!.shiftAllowance)     / ppm, ytd: ytd?.shiftAllowance });
   (pc?.otherAllowances ?? []).forEach((a) => incomeItems.push({ label: a.name, amount: a.amount / ppm, ytd: ytd?.otherAllowances?.[a.name] }));
 

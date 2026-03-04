@@ -216,3 +216,45 @@ server/
 ### 2026-03-04 — Payroll format confirmation (Fixed / Executive)
 - Fixed and Executive employees confirmed to use the same payroll calculation and payslip format as the current implementation
 - Time employee payslip format to be defined separately in a future session
+
+### 2026-03-04 — Time Employee Payroll Engine (FMS Logic PDF)
+Implemented full Time-category payroll calculation per FMS Labour Law rules:
+
+**Weekly 40-hour cap redistribution**
+- `redistributeTimeHours()` in `payroll.ts` processes approved timesheets chronologically
+- Tracks `weeklyBefore` hours (Sun–Sat window), resets each Sunday
+- Daily cap: first 8 hours = Regular, excess = Daily OT
+- Weekly cap: once cumulative Regular + Holiday hours = 40, further On-Day hours → Weekly OT
+- Carry-forward: if period starts mid-week (not Sunday), approved timesheets from the preceding partial week are fetched separately (7-day window before period start) and their (reg + ph) hours seed the opening `weeklyBefore`
+
+**Day status rules**
+- Annual Leave → 8 reg hrs (counts toward weekly cap)
+- Off Day → all OT (does NOT count toward weekly cap)
+- Sick / Absent → 0 hrs, 0 pay
+- Holiday (Phagwah / Good Friday / Easter Monday / Labour Day / Christmas / Eid ul Azha) → all PH @ 2× (counts toward weekly cap)
+- "Holiday Double" → all OT (does NOT count toward weekly cap)
+- On Day → daily 8h cap + weekly 40h cap
+
+**Meals Pay — GYD 300/meal**
+- Eligibility: Agency ≠ Canteen/Head Office, has worked hours, clock-in within on-time window
+- Windows: 06:00–07:00 (Morning), 14:00–15:00 (Afternoon), 18:00–19:00 (Evening), 22:00–23:00 (Night)
+
+**Responsibilities Pay — GYD 260/day**
+- Eligibility: Agency ≠ Canteen/Head Office, has worked hours, post in special locations
+- Special locations: Hebrews, Romans-2, Globe, Globe-12, Neptune P1
+
+**Risk Pay — Armed guards only (table lookup)**
+- Days armed → GYD: 0→0, 1→384, 2→769, 3-4→1153, 5→1538, 6→1923, 7→2307, 8→2692, 9→3076, 10→3461, 11→3846, 12→4239, 13→4615, 14+→5000
+
+**Engine changes**
+- `TIME_CONSTANTS` and `lookupRiskPay()` exported from `payroll.ts`
+- `calcPayroll()` now accepts optional `carryForwardTimesheets` 8th parameter
+- `PayrollResult` has new optional fields: `mealsPay`, `responsibilitiesPay`, `riskPay`, `mealsCount`, `responsibilityDays`, `armedDays`, `carryForwardHours`, `isTimeEmployee`
+- For Time employees: `mealAllowance` and `riskAllowance` from PayConfig are excluded from allowances sum (replaced by computed values)
+- `Payroll.tsx` fetches carry-forward window (7 days before period start) via second `useTimesheets` call
+- QuickBooks CSV export updated with Time-specific columns
+
+**Payslip / PDF updates**
+- `PayslipLandscape` and PDF show Meals Pay, Responsibilities Pay, Risk Pay rows (with counts/days in label) for Time employees
+- `YTDFigures` and `computeYTD` accumulate `mealsPay`, `responsibilitiesPay`, `riskPay`
+- Fixed/Executive allowances (flat `riskAllowance`, `mealAllowance`) continue unchanged
