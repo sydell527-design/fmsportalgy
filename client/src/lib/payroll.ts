@@ -182,11 +182,24 @@ export function calcPayroll(
   const grossPay = basicPay + otPay + phPay + allowances;
 
   // ── NIS — employee 5.6%, employer 8.4%, ceiling prorated to period ────────
+  // Auto-exempt: employees aged 60 or over are not liable for NIS contributions
+  const dob = (employee as any).dob as string | null | undefined;
+  const ageExemptFromNIS = dob
+    ? (() => {
+        const birth = new Date(dob + "T00:00");
+        const ref   = new Date(periodStart + "T00:00");
+        let age = ref.getFullYear() - birth.getFullYear();
+        const m = ref.getMonth() - birth.getMonth();
+        if (m < 0 || (m === 0 && ref.getDate() < birth.getDate())) age--;
+        return age >= 60;
+      })()
+    : false;
+  const effectiveNisExempt  = pc.nisExempt || ageExemptFromNIS;
   const effectiveNisCeiling = (pc.nisCeilingOverride ?? C.NIS_CEILING_MONTHLY) / ppm;
   const nisBase         = Math.min(grossPay, effectiveNisCeiling);
-  const employeeNISCalc = pc.nisExempt ? 0 : Math.round(nisBase * C.NIS_EMP_RATE);
+  const employeeNISCalc = effectiveNisExempt ? 0 : Math.round(nisBase * C.NIS_EMP_RATE);
   const employeeNIS     = pc.nisEmployeeOverride != null ? pc.nisEmployeeOverride : employeeNISCalc;
-  const employerNISCalc = pc.nisExempt ? 0 : Math.round(nisBase * C.NIS_ER_RATE);
+  const employerNISCalc = effectiveNisExempt ? 0 : Math.round(nisBase * C.NIS_ER_RATE);
   const employerNIS     = pc.nisEmployerOverride != null ? pc.nisEmployerOverride : employerNISCalc;
 
   // ── Hand In Hand Insurance — flat monthly fee prorated to period ──────────

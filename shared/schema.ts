@@ -21,6 +21,7 @@ export const users = pgTable("users", {
   status: text("status").notNull().default("active"),
   fpc: boolean("fpc").notNull().default(true),
   joined: text("joined"),
+  dob: text("dob"),
   geo: jsonb("geo").$type<string[]>(),
   av: text("av"),
   mobility: text("mobility").notNull().default("fixed"),

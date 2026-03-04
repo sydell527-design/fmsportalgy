@@ -111,6 +111,7 @@ const EMPTY_FORM = {
   fa: "", sa: "Junior General Manager", email: "", phone: "",
   status: "active", fpc: true,
   joined: new Date().toISOString().split("T")[0],
+  dob: "",
   geo: ["HEAD OFFICE"] as string[], av: "",
   mobility: "fixed",
   payConfig: { ...DEFAULT_PAY_CONFIG } as PayConfig,
@@ -586,7 +587,7 @@ const FREQ_HRS: Record<string, number> = { bimonthly: 80, weekly: 40, biweekly: 
 // Human-readable period label
 const FREQ_LABEL: Record<string, string> = { bimonthly: "bi-mo", weekly: "wk", biweekly: "bi-wk", monthly: "mo" };
 
-function gyCalc(hourlyRate: number, salary: number, cat: string, pc: PayConfig | null | undefined) {
+function gyCalc(hourlyRate: number, salary: number, cat: string, pc: PayConfig | null | undefined, dob?: string | null) {
   const safePC = pc ?? ({} as PayConfig);
   const freq  = safePC.frequency ?? "bimonthly";
   const ppm   = FREQ_PPM[freq]   ?? 1;       // periods per month
@@ -606,11 +607,23 @@ function gyCalc(hourlyRate: number, salary: number, cat: string, pc: PayConfig |
   const gross = periodBasic + allowances;
 
   // NIS — ceiling prorated from monthly (use override if set, else statutory GYD 280,000/mo)
+  // Auto-exempt: employees aged 60+ on today's date do not pay NIS
+  const previewAgeExempt = dob
+    ? (() => {
+        const birth = new Date(dob + "T00:00");
+        const today = new Date();
+        let age = today.getFullYear() - birth.getFullYear();
+        const m2 = today.getMonth() - birth.getMonth();
+        if (m2 < 0 || (m2 === 0 && today.getDate() < birth.getDate())) age--;
+        return age >= 60;
+      })()
+    : false;
+  const effectiveNisExemptPreview = safePC.nisExempt || previewAgeExempt;
   const effectiveNisCeiling = safePC.nisCeilingOverride ?? GY_NIS_MAX_INSURABLE;
   const nisBase = Math.min(gross, effectiveNisCeiling / ppm);
-  const nisEmployeeCalc = safePC.nisExempt ? 0 : Math.round(nisBase * GY_NIS_EMPLOYEE_RATE);
+  const nisEmployeeCalc = effectiveNisExemptPreview ? 0 : Math.round(nisBase * GY_NIS_EMPLOYEE_RATE);
   const nisEmployee = (safePC.nisEmployeeOverride != null) ? safePC.nisEmployeeOverride : nisEmployeeCalc;
-  const nisEmployerCalc = safePC.nisExempt ? 0 : Math.round(nisBase * GY_NIS_EMPLOYER_RATE);
+  const nisEmployerCalc = effectiveNisExemptPreview ? 0 : Math.round(nisBase * GY_NIS_EMPLOYER_RATE);
   const nisEmployer = (safePC.nisEmployerOverride != null) ? safePC.nisEmployerOverride : nisEmployerCalc;
 
   // Health surcharge — flat monthly amounts prorated to this period
@@ -710,8 +723,8 @@ export function EmployeeFormDialog({
   }
 
   const calc = useMemo(() =>
-    gyCalc(formData.hourlyRate, formData.salary, formData.cat, pc),
-    [formData.cat, formData.hourlyRate, formData.salary, pc]
+    gyCalc(formData.hourlyRate, formData.salary, formData.cat, pc, formData.dob),
+    [formData.cat, formData.hourlyRate, formData.salary, pc, formData.dob]
   );
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -820,10 +833,26 @@ export function EmployeeFormDialog({
                   </div>
                 </div>
 
-                <div className="grid grid-cols-3 gap-4">
+                <div className="grid grid-cols-4 gap-4">
                   <div className="space-y-1.5">
                     <Label>Email</Label>
                     <Input type="email" value={formData.email} onChange={(e) => setFormData((prev) => ({ ...prev, email: e.target.value }))} placeholder="name@fms.gy" data-testid="input-employee-email" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Date of Birth</Label>
+                    <Input type="date" value={formData.dob ?? ""} onChange={(e) => setFormData((prev) => ({ ...prev, dob: e.target.value }))} data-testid="input-employee-dob" />
+                    {formData.dob && (() => {
+                      const birth = new Date(formData.dob + "T00:00");
+                      const today = new Date();
+                      let age = today.getFullYear() - birth.getFullYear();
+                      const m = today.getMonth() - birth.getMonth();
+                      if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age--;
+                      return (
+                        <p className={`text-[10px] mt-0.5 ${age >= 60 ? "text-amber-600 font-semibold" : "text-muted-foreground"}`}>
+                          {age} years old{age >= 60 ? " — NIS exempt (age 60+)" : ""}
+                        </p>
+                      );
+                    })()}
                   </div>
                   <div className="space-y-1.5">
                     <Label>Join Date</Label>
@@ -1186,6 +1215,21 @@ export function EmployeeFormDialog({
                       <div>
                         <p className="font-medium text-sm">NIS — National Insurance Scheme</p>
                         <p className="text-xs text-muted-foreground">Employee 5.6% · Employer 8.4% · Max {fmt(pc.nisCeilingOverride ?? GY_NIS_MAX_INSURABLE)}/mo</p>
+                        {(() => {
+                          const dob = formData.dob;
+                          if (!dob) return null;
+                          const birth = new Date(dob + "T00:00");
+                          const today = new Date();
+                          let age = today.getFullYear() - birth.getFullYear();
+                          const m = today.getMonth() - birth.getMonth();
+                          if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age--;
+                          if (age < 60) return null;
+                          return (
+                            <p className="text-xs text-amber-600 font-semibold mt-0.5 flex items-center gap-1">
+                              <ShieldCheck className="w-3 h-3" /> Auto-exempt — employee is {age} years old (age 60+ policy)
+                            </p>
+                          );
+                        })()}
                       </div>
                       <label className="flex items-center gap-1.5 text-xs cursor-pointer shrink-0 mt-0.5">
                         <input type="checkbox" checked={pc.nisExempt} onChange={(e) => setPc({ nisExempt: e.target.checked, nisEmployeeOverride: undefined, nisEmployerOverride: undefined })} data-testid="checkbox-nis-exempt" /> Exempt

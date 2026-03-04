@@ -43,6 +43,7 @@ GRA 2026 compliant — all figures prorated to pay period:
 - **Fixed/Executive**: `monthlySalary ÷ ppm` per period + optional OT
 - **NIS employee**: 5.6% of period gross (ceiling = NIS_ANNUAL_CAP ÷ 12 ÷ ppm × 12 ... prorated)
 - **NIS employer**: 8.4%
+- **NIS age exemption**: employees aged 60+ (based on `dob` field vs pay period start date) are automatically exempt; UI shows amber "Auto-exempt — employee is X years old (age 60+ policy)" in deductions tab
 - **Personal Allowance**: GYD 140k/mo or ⅓ gross (whichever greater), prorated
 - **PAYE**: 25% up to GYD 280k/mo chargeable, 35% above — all prorated
 - **Health Surcharge**: GYD 1,200/mo full, GYD 600/mo reduced — prorated
@@ -50,6 +51,7 @@ GRA 2026 compliant — all figures prorated to pay period:
 - QuickBooks CSV export
 - All statutory fields editable with auto-calculated defaults and override hints
 - Null safety: always `pc ?? { ...DEFAULT_PAY_CONFIG }` pattern
+- `dob` column in users table (text, YYYY-MM-DD); `EMPTY_FORM` includes `dob: ""`; age computed in both `gyCalc(dob?)` and `payroll.ts calcPayroll`
 
 ## Seeded Employees
 1. Marcus Webb (1001) — Security Officer, Time, GYD 1800/hr
