@@ -103,7 +103,7 @@ interface TimeDistResult {
   responsibilityDays: number;
 }
 
-function redistributeTimeHours(approvedTs: Timesheet[], carryForwardHours: number): TimeDistResult {
+function redistributeTimeHours(approvedTs: Timesheet[], carryForwardHours: number, employeeArmed?: string | null): TimeDistResult {
   const sorted = [...approvedTs].sort((a, b) => (a.date ?? "").localeCompare(b.date ?? ""));
   let weeklyBefore = carryForwardHours;
   let totalReg = 0, totalOT = 0, totalPH = 0;
@@ -156,15 +156,15 @@ function redistributeTimeHours(approvedTs: Timesheet[], carryForwardHours: numbe
       const parts = (ts.ci as string).split(":");
       const minOfDay = Number(parts[0]) * 60 + Number(parts[1] ?? 0);
       if (
-        (minOfDay >= 360  && minOfDay < 420)  || // 06:00–07:00
-        (minOfDay >= 840  && minOfDay < 900)  || // 14:00–15:00
-        (minOfDay >= 1080 && minOfDay < 1140) || // 18:00–19:00
-        (minOfDay >= 1320 && minOfDay < 1380)    // 22:00–23:00
+        (minOfDay >= 360  && minOfDay <= 420)  || // 06:00–07:00 inclusive
+        (minOfDay >= 840  && minOfDay <= 900)  || // 14:00–15:00 inclusive
+        (minOfDay >= 1080 && minOfDay <= 1140) || // 18:00–19:00 inclusive
+        (minOfDay >= 1320 && minOfDay <= 1380)    // 22:00–23:00 inclusive
       ) mealsCount++;
     }
 
     // ── Armed days (risk pay) ──────────────────────────────────────────────
-    if (ts.armed === "Armed" && rawHours > 0) armedDays++;
+    if ((ts.armed ?? employeeArmed) === "Armed" && rawHours > 0) armedDays++;
 
     // ── Responsibility days (special locations) ────────────────────────────
     const post = (ts.post ?? "").trim();
@@ -302,7 +302,7 @@ export function calcPayroll(
       carryForwardHours = cfApproved.reduce((s, ts) => s + (ts.reg ?? 0) + (ts.ph ?? 0), 0);
     }
 
-    const dist = redistributeTimeHours(approvedTs, carryForwardHours);
+    const dist = redistributeTimeHours(approvedTs, carryForwardHours, employee.armed);
     regularHours      = dist.reg;
     otHours           = dist.ot;
     phHours           = dist.ph;
