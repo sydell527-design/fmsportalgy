@@ -208,6 +208,7 @@ export default function Timesheets() {
         const parseTime = (raw: string): string => {
           if (!raw) return "";
           const cleaned = raw.trim();
+          // Standard HH:MM or H:MM (with optional seconds and AM/PM)
           if (/^\d{1,2}:\d{2}(:\d{2})?(\s*(AM|PM))?$/i.test(cleaned)) {
             const parts = cleaned.match(/^(\d{1,2}):(\d{2}).*?(AM|PM)?$/i);
             if (parts) {
@@ -219,7 +220,16 @@ export default function Timesheets() {
               return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
             }
           }
-          return cleaned.substring(0, 5);
+          // Excel decimal fraction (e.g. 0.958333 = 23:00, 0.291667 = 07:00)
+          const decimal = parseFloat(cleaned);
+          if (!isNaN(decimal) && decimal >= 0 && decimal < 1) {
+            const totalMins = Math.round(decimal * 24 * 60);
+            const h = Math.floor(totalMins / 60) % 24;
+            const m = totalMins % 60;
+            return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+          }
+          // Unrecognized format — return empty so the row gets flagged
+          return "";
         };
         const parseDate = (raw: string): string => {
           if (!raw) return "";
@@ -370,8 +380,8 @@ export default function Timesheets() {
         brk: row.brk ?? 0,
         zone: row.zone ?? null,
         post: row.post ?? null,
-        reg: hours.reg,
-        ot: hours.ot,
+        reg: isNaN(hours.reg) ? 0 : hours.reg,
+        ot: isNaN(hours.ot) ? 0 : hours.ot,
         ph: 0,
         meals: 0,
         dayStatus: row.dayStatus ?? null,
