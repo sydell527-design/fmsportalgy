@@ -98,10 +98,21 @@ export default function Timesheets() {
     post?: string;
     brk: number;
     notes?: string;
+    dayStatus?: string;
     matched: boolean;
     error?: string;
     mergedFrom: number; // 1 = single row, >1 = merged from multiple rows in the file
   }
+
+  // Detect a day-status from the Notes field (case-insensitive) — used when clock-in is absent
+  const detectDayStatusFromNote = (note: string): string | null => {
+    const n = note.toLowerCase().trim();
+    if (n === "sick" || n.includes("report sick") || n.includes("sick leave")) return "Sick";
+    if (n === "absent" || n.includes("report absent")) return "Absent";
+    if (n.includes("annual leave") || n === "al") return "Annual Leave";
+    if (n.includes("off day") || n === "day off") return "Off Day";
+    return null;
+  };
   const [bulkRows, setBulkRows] = useState<BulkRow[]>([]);
   const [bulkFileName, setBulkFileName] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -252,22 +263,27 @@ export default function Timesheets() {
           const notesRaw = findCol(row, "Notes", "Note", "Remarks", "Comment");
           const dateStr = parseDate(dateRaw);
 
+          // Detect day-status from the Notes column (e.g. "Report Sick" → Sick)
+          const autoStatus = notesRaw ? detectDayStatusFromNote(notesRaw) : null;
+          const noClockNeeded = autoStatus === "Sick" || autoStatus === "Absent" || autoStatus === "Annual Leave";
+
           let error: string | undefined;
           if (!empRaw) error = "Missing employee name";
           else if (!dateStr) error = "Missing or invalid date";
-          else if (!ciRaw) error = "Missing clock-in time";
-          else if (!coRaw) error = "Missing clock-out time";
+          else if (!ciRaw && !noClockNeeded) error = "Missing clock-in time";
+          else if (!coRaw && !noClockNeeded) error = "Missing clock-out time";
 
           return {
             rowNum: i + 2,
             empName: empRaw,
             date: dateStr,
-            ci: ciRaw,
-            co: coRaw || undefined,
+            ci: ciRaw || (noClockNeeded ? "00:00" : ""),
+            co: coRaw || (noClockNeeded ? "00:00" : undefined),
             zone: zoneRaw || undefined,
             post: postRaw || undefined,
             brk: parseInt(brkRaw) || 0,
             notes: notesRaw || undefined,
+            dayStatus: autoStatus ?? undefined,
             matched: false,
             error,
             mergedFrom: 1,
@@ -342,19 +358,21 @@ export default function Timesheets() {
         continue;
       }
 
-      const hours = row.ci && row.co ? calcHours(row.ci, row.co, row.brk) : { reg: 0, ot: 0 };
+      const isSickAbsent = row.dayStatus === "Sick" || row.dayStatus === "Absent" || row.dayStatus === "Annual Leave";
+      const hours = (row.ci && row.co && !isSickAbsent) ? calcHours(row.ci, row.co, row.brk) : { reg: isSickAbsent ? 0 : 0, ot: 0 };
       seq++;
       records.push({
         tsId: `TS-${Date.now()}-${Math.random().toString(36).slice(2, 7)}-${seq}`,
         eid: found.userId,
         date: row.date,
-        ci: row.ci,
+        ci: row.ci || "00:00",
         co: row.co ?? null,
         brk: row.brk,
         zone: row.zone ?? null,
         post: row.post ?? null,
         reg: hours.reg,
         ot: hours.ot,
+        dayStatus: row.dayStatus ?? null,
         notes: row.notes ?? null,
         status: "pending_first_approval",
         disputed: false,
@@ -1758,7 +1776,7 @@ export default function Timesheets() {
                   <span><strong>Zone / Location</strong> — optional</span>
                   <span><strong>Post / Post Name</strong> — optional</span>
                   <span><strong>Break / Break Minutes</strong> — optional</span>
-                  <span><strong>Notes / Remarks</strong> — optional</span>
+                  <span><strong>Notes / Remarks</strong> — optional <span className="text-green-700">(write "Report Sick", "Sick", "Absent", or "Annual Leave" to skip clock times)</span></span>
                 </div>
               </div>
             </div>
@@ -1868,7 +1886,7 @@ export default function Timesheets() {
                         <th className="px-3 py-2 text-left font-semibold text-muted-foreground">Status</th>
                         <th className="px-3 py-2 text-left font-semibold text-muted-foreground">Employee</th>
                         <th className="px-3 py-2 text-left font-semibold text-muted-foreground">Date</th>
-                        <th className="px-3 py-2 text-left font-semibold text-muted-foreground">In</th>
+                        <th className="px-3 py-2 text-left font-semibold text-muted-foreground">In / Day Status</th>
                         <th className="px-3 py-2 text-left font-semibold text-muted-foreground">Out</th>
                         <th className="px-3 py-2 text-left font-semibold text-muted-foreground">Zone</th>
                         <th className="px-3 py-2 text-left font-semibold text-muted-foreground">Post</th>
@@ -1918,8 +1936,10 @@ export default function Timesheets() {
                             </td>
                             <td className="px-3 py-1.5 font-medium">{row.empName}</td>
                             <td className="px-3 py-1.5">{row.date}</td>
-                            <td className="px-3 py-1.5">{row.ci}</td>
-                            <td className="px-3 py-1.5">{row.co ?? "—"}</td>
+                            <td className="px-3 py-1.5">
+                              {row.dayStatus ? <span className="text-orange-600 font-medium">{row.dayStatus}</span> : row.ci}
+                            </td>
+                            <td className="px-3 py-1.5">{row.dayStatus ? "—" : (row.co ?? "—")}</td>
                             <td className="px-3 py-1.5">{row.zone ?? "—"}</td>
                             <td className="px-3 py-1.5">{row.post ?? "—"}</td>
                             <td className="px-3 py-1.5">{row.brk}m</td>
