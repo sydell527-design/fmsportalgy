@@ -178,3 +178,41 @@ server/
 - Health surcharge now has Full/Reduced/Custom radio options
 - Override fields added to PayConfig schema: `nisEmployeeOverride`, `nisEmployerOverride`, `taxOverride`, `healthSurchargeOverride`, `healthSurchargeRate: "custom"`
 - Added null safety guards throughout (`pc ?? DEFAULT_PAY_CONFIG` fallback)
+
+---
+
+### 2026-03-04 — Statutory & Banking tab for employees
+- 4th tab added to Add/Edit Employee dialog: **Statutory & Banking**
+- Fields: TIN, NIS Number, GRA Filing Reference, Tax Code, Bank Name, Bank Branch, Bank Account Number
+- All 7 columns live in the `users` DB table (text, nullable)
+- TIN and NIS Number surfaced on payslips (employee portal + admin modal + PDF download)
+
+### 2026-03-04 — DOB field + age-based NIS exemption
+- `dob` column added to `users` table (text, YYYY-MM-DD); included in `EMPTY_FORM`
+- Personal tab in Add/Edit Employee shows date-of-birth field
+- If employee is aged 60+ (calculated from `dob` vs pay period start date), NIS is automatically waived — no manual toggle needed
+- Employee editor: amber alert badge shows "X years old — NIS exempt (age 60+)" in Personal tab; Deductions tab shows ShieldCheck auto-exempt badge
+- Payroll engine: `periodStart` reference date used for age calculation; `effectiveNisExempt = pc.nisExempt || ageExemptFromNIS`
+
+### 2026-03-04 — Company settings & personal allowance override
+- `company_settings` table (key-value store) with `GET /api/settings` and `PUT /api/settings`
+- **Company personal allowance** configurable by admin (default GYD 130,000/mo) — replaces the hard-coded GYD 140,000
+- Settings page: new Company Settings card for admin with live-editable annual personal allowance; displayed as monthly and per-period equivalents
+- `COMPANY_NAME = "FEDERAL MANAGEMENT SYSTEMS INC."` used across payslip header, PDF, and company info card
+
+### 2026-03-04 — YTD figures (employee payslip portal)
+- `computeYTD(payslipDataList, currentPeriodEnd)` helper in `payslip-pdf.ts` — filters same-year payslips ≤ `periodEnd`, sums all income/deduction/net figures
+- Employee payslip view (`Payslips.tsx`): landscape payslip table shows 3 extra YTD columns (blue = income, green = free-pay, red = deductions) alongside current-period amounts
+- Net Pay banner includes YTD total
+- PDF download carries YTD data
+
+### 2026-03-04 — Shared PayslipLandscape + YTD in admin payroll modal
+- `PayslipLandscape` extracted from `Payslips.tsx` to shared `client/src/components/PayslipLandscape.tsx`
+- Admin payroll modal (`Payroll.tsx`) replaced its custom hand-rolled table with the shared component
+- Admin view fetches all previously-sent payslips from `/api/payslips` (no eid filter), combines them with the current (unsent) period result, and computes live YTD figures
+- Both admin preview and employee portal now display identical landscape payslips with accurate YTD columns
+- PDF and CSV download buttons remain in the admin modal; PDF passes YTD data through
+
+### 2026-03-04 — Payroll format confirmation (Fixed / Executive)
+- Fixed and Executive employees confirmed to use the same payroll calculation and payslip format as the current implementation
+- Time employee payslip format to be defined separately in a future session
