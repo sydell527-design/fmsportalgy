@@ -375,6 +375,7 @@ export default function Timesheets() {
         try {
           const dedupIsHoliday = row.dayStatus === "Holiday";
           const hours = row.ci && row.co ? calcHours(row.ci, row.co, row.brk) : { reg: existing.reg ?? 0, ot: existing.ot ?? 0 };
+          const dedupTotalHours = Math.round((hours.reg + hours.ot) * 100) / 100;
           await updateTimesheet({
             id: existing.id,
             brk: row.brk,
@@ -384,8 +385,8 @@ export default function Timesheets() {
             dayStatus: row.dayStatus ?? existing.dayStatus ?? undefined,
             holidayType: row.holidayType ?? existing.holidayType ?? undefined,
             reg: dedupIsHoliday ? 0 : hours.reg,
-            ot: hours.ot,
-            ph: dedupIsHoliday ? hours.reg : (existing.ph ?? 0),
+            ot: dedupIsHoliday ? 0 : hours.ot,
+            ph: dedupIsHoliday ? dedupTotalHours : (existing.ph ?? 0),
             edited: true,
           });
           updatedDups++;
@@ -396,6 +397,7 @@ export default function Timesheets() {
       const isNoHours = row.dayStatus === "Sick" || row.dayStatus === "Absent" || row.dayStatus === "Annual Leave" || row.dayStatus === "Off Day";
       const isHoliday = row.dayStatus === "Holiday";
       const hours = (row.ci && row.co && !isNoHours) ? calcHours(row.ci, row.co, row.brk) : { reg: 0, ot: 0 };
+      const totalWorkedHours = Math.round((hours.reg + hours.ot) * 100) / 100;
       seq++;
       records.push({
         tsId: `TS-${Date.now()}-${Math.random().toString(36).slice(2, 7)}-${seq}`,
@@ -407,8 +409,8 @@ export default function Timesheets() {
         zone: row.zone ?? null,
         post: row.post ?? null,
         reg: isHoliday ? 0 : (isNaN(hours.reg) ? 0 : hours.reg),
-        ot: isNaN(hours.ot) ? 0 : hours.ot,
-        ph: isHoliday ? (isNaN(hours.reg) ? 0 : hours.reg) : 0,
+        ot: isHoliday ? 0 : (isNaN(hours.ot) ? 0 : hours.ot),
+        ph: isHoliday ? (isNaN(totalWorkedHours) ? 0 : totalWorkedHours) : 0,
         meals: 0,
         dayStatus: row.dayStatus ?? null,
         holidayType: row.holidayType ?? null,
@@ -590,6 +592,8 @@ export default function Timesheets() {
     if (!adminEditModal) return;
     const hours = adminHours ?? { reg: adminEditModal.reg, ot: adminEditModal.ot };
     const auditNote = `Admin override by ${user.name} at ${format(new Date(), "yyyy-MM-dd HH:mm")}${adminForm.reason ? `: ${adminForm.reason}` : ""}`;
+    const isHolidayEdit = adminForm.dayStatus === "Holiday";
+    const totalHolidayHours = Math.round((hours.reg + hours.ot) * 100) / 100;
     try {
       await updateTimesheet({
         id: adminEditModal.id,
@@ -597,9 +601,11 @@ export default function Timesheets() {
         co: adminForm.co,
         brk: Number(adminForm.brk) || 0,
         notes: adminForm.notes ? `${adminForm.notes}\n[${auditNote}]` : `[${auditNote}]`,
-        reg: hours.reg,
-        ot: hours.ot,
-        ph: Number(adminForm.ph) || 0,
+        reg: isHolidayEdit ? 0 : hours.reg,
+        ot: isHolidayEdit ? 0 : hours.ot,
+        ph: isHolidayEdit
+          ? (Number(adminForm.ph) > 0 ? Number(adminForm.ph) : totalHolidayHours)
+          : (Number(adminForm.ph) || 0),
         meals: Number(adminForm.meals) || 0,
         dayStatus: adminForm.dayStatus || null,
         holidayType: adminForm.holidayType || null,
@@ -1355,7 +1361,11 @@ export default function Timesheets() {
                 <div className="space-y-1.5">
                   <Label>Day Status</Label>
                   <select className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm"
-                    value={adminForm.dayStatus} onChange={(e) => setAdminForm({ ...adminForm, dayStatus: e.target.value, holidayType: "" })}>
+                    value={adminForm.dayStatus} onChange={(e) => {
+                      const newStatus = e.target.value;
+                      const totalHrs = adminHours ? Math.round((adminHours.reg + adminHours.ot) * 100) / 100 : 0;
+                      setAdminForm({ ...adminForm, dayStatus: newStatus, holidayType: "", ph: newStatus === "Holiday" ? String(totalHrs) : adminForm.ph });
+                    }}>
                     <option value="">— None —</option>
                     {DAY_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
                   </select>

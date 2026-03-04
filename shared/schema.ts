@@ -37,7 +37,7 @@ export const users = pgTable("users", {
 });
 
 export interface PayConfig {
-  frequency: "weekly" | "bimonthly";
+  frequency: "weekly" | "biweekly" | "monthly" | "bimonthly";
   otMultiplier: number;
   phMultiplier: number;
   housingAllowance: number;
@@ -70,11 +70,36 @@ export interface PayConfig {
 export const DAY_STATUSES = ["On Day", "Off Day", "Sick", "Absent", "Holiday", "Annual Leave"] as const;
 export type DayStatus = typeof DAY_STATUSES[number];
 
-export const HOLIDAY_TYPES = ["Holiday Double", "Phagwah", "Good Friday", "Easter Monday", "Labour Day", "Christmas", "Eid ul Azha"] as const;
+export const HOLIDAY_TYPES = [
+  "Holiday Double",
+  "New Year's Day",
+  "Republic Day",
+  "Phagwah",
+  "Good Friday",
+  "Easter Monday",
+  "Labour Day",
+  "Arrival Day",
+  "Independence Day",
+  "Eid al-Adha",
+  "Eid ul Azha",
+  "CARICOM Day",
+  "Emancipation Day",
+  "Youman Nabi",
+  "Deepavali",
+  "Christmas Day",
+  "Christmas",
+  "Boxing Day",
+] as const;
 export type HolidayType = typeof HOLIDAY_TYPES[number];
 
-// Holidays whose hours go to the public-holiday (ph) bucket rather than OT
-export const PH_HOLIDAYS: HolidayType[] = ["Phagwah", "Good Friday", "Easter Monday", "Labour Day", "Christmas", "Eid ul Azha"];
+// Holidays whose hours go to the public-holiday (ph) bucket rather than OT.
+// "Holiday Double" is excluded — it is a non-statutory day paid as OT (1.5×).
+export const PH_HOLIDAYS: HolidayType[] = [
+  "New Year's Day", "Republic Day", "Phagwah", "Good Friday", "Easter Monday",
+  "Labour Day", "Arrival Day", "Independence Day", "Eid al-Adha", "Eid ul Azha",
+  "CARICOM Day", "Emancipation Day", "Youman Nabi", "Deepavali",
+  "Christmas Day", "Christmas", "Boxing Day",
+];
 
 export const ARMED_STATUSES = ["Unarmed", "Armed"] as const;
 export type ArmedStatus = typeof ARMED_STATUSES[number];

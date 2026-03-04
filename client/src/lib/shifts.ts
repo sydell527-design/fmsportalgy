@@ -99,9 +99,13 @@ export function calcMealEntitlement(
   return 0;
 }
 
-// FMS public holidays whose worked hours go to the PH bucket
+// FMS public holidays whose worked hours go to the PH bucket (2×).
+// "Holiday Double" is intentionally excluded — it is non-statutory and paid as OT (1.5×).
 export const FMS_PH_HOLIDAYS = [
-  "Phagwah", "Good Friday", "Easter Monday", "Labour Day", "Christmas", "Eid ul Azha",
+  "New Year's Day", "Republic Day", "Phagwah", "Good Friday", "Easter Monday",
+  "Labour Day", "Arrival Day", "Independence Day", "Eid al-Adha", "Eid ul Azha",
+  "CARICOM Day", "Emancipation Day", "Youman Nabi", "Deepavali",
+  "Christmas Day", "Christmas", "Boxing Day",
 ] as const;
 
 export function isPHHoliday(holidayType: string | null | undefined): boolean {
