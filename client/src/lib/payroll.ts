@@ -334,7 +334,8 @@ interface TimeDistResult {
   ph: number;
   hd: number; // Holiday Double (2×) — employer-designated double-pay days
   mealsCount: number;
-  armedDays: number;
+  armedDays: number;       // Actual days physically worked while Armed (for display)
+  armedMissedDays: number; // Sick/Absent/Annual-Leave days for Armed employees (for risk-pay table)
   responsibilityDays: number;
 }
 
@@ -350,11 +351,12 @@ function redistributeTimeHours(approvedTs: Timesheet[], carryForwardHours: numbe
 
   let weeklyBefore = carryForwardHours;
   let totalReg = 0, totalOT = 0, totalPH = 0, totalHD = 0;
-  let mealsCount = 0, armedDays = 0, responsibilityDays = 0;
+  let mealsCount = 0, armedDays = 0, armedMissedDays = 0, responsibilityDays = 0;
   // Per-date dedup sets — meals/armed/responsibility are counted once per calendar day
-  const mealDates   = new Set<string>();
-  const armedDates  = new Set<string>();
-  const respDates   = new Set<string>();
+  const mealDates        = new Set<string>();
+  const armedDates       = new Set<string>();
+  const missedArmedDates = new Set<string>(); // Sick/Absent/AL dates for Armed employees
+  const respDates        = new Set<string>();
 
   for (const ts of sorted) {
     if (!ts.date) continue;
@@ -419,11 +421,18 @@ function redistributeTimeHours(approvedTs: Timesheet[], carryForwardHours: numbe
     }
 
     // ── Armed days — once per calendar date, only for days physically worked ─
-    // Sick, Absent, and Annual Leave do not count toward risk pay.
+    // Sick, Absent, and Annual Leave do not count toward armed day display.
     const isPhysicallyWorked = dayStatus !== "Sick" && dayStatus !== "Absent" && dayStatus !== "Annual Leave";
-    if ((ts.armed ?? employeeArmed) === "Armed" && rawHours > 0 && isPhysicallyWorked && !armedDates.has(ts.date)) {
+    const isArmed = (ts.armed ?? employeeArmed) === "Armed";
+    if (isArmed && rawHours > 0 && isPhysicallyWorked && !armedDates.has(ts.date)) {
       armedDays++;
       armedDates.add(ts.date);
+    }
+    // Track Sick/Absent/AL days separately for risk-pay table input.
+    // Off Days are NOT missed days — they are scheduled rest.
+    if (isArmed && !isPhysicallyWorked && !missedArmedDates.has(ts.date)) {
+      armedMissedDays++;
+      missedArmedDates.add(ts.date);
     }
 
     // ── Responsibility days — once per calendar date ───────────────────────
@@ -444,7 +453,7 @@ function redistributeTimeHours(approvedTs: Timesheet[], carryForwardHours: numbe
     totalOT  += excess;
   }
 
-  return { reg: totalReg, ot: totalOT, ph: totalPH, hd: totalHD, mealsCount, armedDays, responsibilityDays };
+  return { reg: totalReg, ot: totalOT, ph: totalPH, hd: totalHD, mealsCount, armedDays, armedMissedDays, responsibilityDays };
 }
 
 // ── PayrollResult ─────────────────────────────────────────────────────────────
@@ -553,6 +562,7 @@ export function calcPayroll(
   // ── Hours — Time employees get weekly-cap redistribution; others sum stored values ──
   let regularHours: number, otHours: number, phHours: number, hdHours: number;
   let mealsCount = 0, armedDays = 0, responsibilityDays = 0;
+  let riskTableInput = 0; // Input to lookupRiskPay: 14 - missedDays (not raw armedDays)
   let carryForwardHours = 0;
 
   if (isTimeEmployee) {
@@ -583,6 +593,11 @@ export function calcPayroll(
     mealsCount        = dist.mealsCount;
     armedDays         = dist.armedDays;
     responsibilityDays = dist.responsibilityDays;
+    // Risk-pay table input: 14 - missed days. 0 missed → 14 → GYD 5,000 (full period).
+    // Off Days are NOT missed — only Sick/Absent/Annual Leave reduce the count.
+    // Guard: only give risk pay when the employee actually has Armed shifts in this period.
+    const hasArmedActivity = armedDays > 0 || dist.armedMissedDays > 0;
+    riskTableInput    = hasArmedActivity ? Math.max(0, 14 - dist.armedMissedDays) : 0;
   } else {
     // For non-Time employees we read stored field values, but must separate
     // Holiday Double (stored in ts.ot by ClockInOut) from regular overtime.
@@ -626,7 +641,7 @@ export function calcPayroll(
   // Time-specific computed earnings
   const mealsPay           = isTimeEmployee ? Math.round(mealsCount        * TIME_CONSTANTS.MEAL_RATE)        : 0;
   const responsibilitiesPay = isTimeEmployee ? Math.round(responsibilityDays * TIME_CONSTANTS.RESPONSIBILITY_RATE) : 0;
-  const riskPay             = isTimeEmployee ? lookupRiskPay(armedDays) : 0;
+  const riskPay             = isTimeEmployee ? lookupRiskPay(riskTableInput) : 0;
 
   const grossPay = basicPay + otPay + phPay + hdPay + allowances + mealsPay + responsibilitiesPay + riskPay;
 
