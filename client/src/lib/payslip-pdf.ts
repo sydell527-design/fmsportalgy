@@ -20,6 +20,7 @@ export interface YTDFigures {
   basicPay: number;
   otPay: number;
   phPay: number;
+  hdPay: number;
   housingAllowance: number;
   transportAllowance: number;
   mealAllowance: number;
@@ -55,7 +56,7 @@ export function computeYTD(payslipDataList: PayrollResult[], currentPeriodEnd: s
   });
 
   const ytd: YTDFigures = {
-    basicPay: 0, otPay: 0, phPay: 0,
+    basicPay: 0, otPay: 0, phPay: 0, hdPay: 0,
     housingAllowance: 0, transportAllowance: 0, mealAllowance: 0,
     uniformAllowance: 0, riskAllowance: 0, shiftAllowance: 0,
     otherAllowances: {},
@@ -76,6 +77,7 @@ export function computeYTD(payslipDataList: PayrollResult[], currentPeriodEnd: s
     ytd.basicPay              += r.basicPay ?? 0;
     ytd.otPay                 += r.otPay ?? 0;
     ytd.phPay                 += r.phPay ?? 0;
+    ytd.hdPay                 += r.hdPay ?? 0;
     ytd.housingAllowance      += (pc?.housingAllowance   ?? 0) / ppm;
     ytd.transportAllowance    += (pc?.transportAllowance ?? 0) / ppm;
     ytd.mealAllowance         += (pc?.mealAllowance      ?? 0) / ppm;
@@ -156,6 +158,7 @@ export function generatePayslipPDF(r: PayrollResult, ytd?: YTDFigures) {
     "Basic Salary":              gyd(ytd.basicPay),
     "Overtime Pay":              gyd(ytd.otPay),
     "Public Holiday Pay":        gyd(ytd.phPay),
+    "Holiday Double Pay":        gyd(ytd.hdPay),
     "Housing Allowance":         gyd(ytd.housingAllowance),
     "Transport Allowance":       gyd(ytd.transportAllowance),
     "Meal Allowance":            gyd(ytd.mealAllowance),
@@ -189,10 +192,12 @@ export function generatePayslipPDF(r: PayrollResult, ytd?: YTDFigures) {
   // Third element is the stable YTD map key (label can change with hours, key stays fixed)
   const incomeRows: Array<[string, string, string?]> = [];
   const otMult = pc?.otMultiplier ?? 1.5;
-  const phMult = pc?.phMultiplier ?? 2;
+  const phMult = pc?.phMultiplier ?? 1.5;
+  const hdMult = (pc as any)?.hdMultiplier ?? 2.0;
   incomeRows.push(["Basic Salary", gyd(r.basicPay), "Basic Salary"]);
   if (r.otPay > 0) incomeRows.push([`Overtime Pay (${r.otHours.toFixed(2)} hrs × ${otMult}×)`, gyd(r.otPay), "Overtime Pay"]);
   if (r.phPay > 0) incomeRows.push([`Public Holiday Pay (${r.phHours.toFixed(2)} hrs × ${phMult}×)`, gyd(r.phPay), "Public Holiday Pay"]);
+  if (r.hdPay > 0) incomeRows.push([`Holiday Double Pay (${r.hdHours.toFixed(2)} hrs × ${hdMult}×)`, gyd(r.hdPay), "Holiday Double Pay"]);
   // Time employee computed extras
   if ((r.mealsPay ?? 0) > 0)            incomeRows.push([`Meals Pay (${r.mealsCount ?? 0} meals)`,            gyd(r.mealsPay ?? 0)]);
   if ((r.responsibilitiesPay ?? 0) > 0) incomeRows.push([`Responsibilities Pay (${r.responsibilityDays ?? 0} days)`, gyd(r.responsibilitiesPay ?? 0)]);

@@ -15,7 +15,10 @@ export const PAYROLL_CONSTANTS = {
   HEALTH_SURCHARGE_HALF: 600,
   WORKING_HOURS_PER_MONTH: 160,
   OT_MULTIPLIER_DEFAULT: 1.5,
-  PH_MULTIPLIER_DEFAULT: 2.0,
+  // Statutory public holidays (New Year's, Republic Day, Labour Day, etc.) = time-and-a-half
+  PH_MULTIPLIER_DEFAULT: 1.5,
+  // "Holiday Double" — employer-designated double-pay days = 2×
+  HD_MULTIPLIER_DEFAULT: 2.0,
 };
 
 // ── Time Employee Constants ───────────────────────────────────────────────────
@@ -329,6 +332,7 @@ interface TimeDistResult {
   reg: number;
   ot: number;
   ph: number;
+  hd: number; // Holiday Double (2×) — employer-designated double-pay days
   mealsCount: number;
   armedDays: number;
   responsibilityDays: number;
@@ -337,7 +341,7 @@ interface TimeDistResult {
 function redistributeTimeHours(approvedTs: Timesheet[], carryForwardHours: number, employeeArmed?: string | null, periodStdHours = 0): TimeDistResult {
   const sorted = [...approvedTs].sort((a, b) => (a.date ?? "").localeCompare(b.date ?? ""));
   let weeklyBefore = carryForwardHours;
-  let totalReg = 0, totalOT = 0, totalPH = 0;
+  let totalReg = 0, totalOT = 0, totalPH = 0, totalHD = 0;
   let mealsCount = 0, armedDays = 0, responsibilityDays = 0;
 
   for (const ts of sorted) {
@@ -350,7 +354,7 @@ function redistributeTimeHours(approvedTs: Timesheet[], carryForwardHours: numbe
     const dayStatus = ts.dayStatus ?? "On Day";
     const holType   = ts.holidayType ?? "";
 
-    let dayReg = 0, dayOT = 0, dayPH = 0, weekContrib = 0;
+    let dayReg = 0, dayOT = 0, dayPH = 0, dayHD = 0, weekContrib = 0;
 
     if (dayStatus === "Annual Leave") {
       dayReg = 8; weekContrib = 8;
@@ -359,10 +363,15 @@ function redistributeTimeHours(approvedTs: Timesheet[], carryForwardHours: numbe
     } else if (dayStatus === "Sick" || dayStatus === "Absent") {
       // no hours, no pay
     } else if (dayStatus === "Holiday") {
-      if (TIME_CONSTANTS.RECOGNIZED_HOLIDAY_TYPES.includes(holType)) {
-        dayPH = rawHours; weekContrib = rawHours; // holiday hours count toward weekly cap
+      if (holType === "Holiday Double") {
+        // Employer-designated double-pay day (2×); does NOT count toward weekly cap
+        dayHD = rawHours;
+      } else if (TIME_CONSTANTS.RECOGNIZED_HOLIDAY_TYPES.includes(holType)) {
+        // Statutory public holiday (1.5×); counts toward weekly cap
+        dayPH = rawHours; weekContrib = rawHours;
       } else {
-        dayOT = rawHours; // "Holiday Double" → all OT, does not count toward cap
+        // Unknown holiday type — treat as Holiday Double (safer than silently paying 1.5×)
+        dayHD = rawHours;
       }
     } else {
       // On Day: daily 8-hr cap + weekly 40-hr cap (Guyana Labour Law)
@@ -379,6 +388,7 @@ function redistributeTimeHours(approvedTs: Timesheet[], carryForwardHours: numbe
     totalReg += dayReg;
     totalOT  += dayOT;
     totalPH  += dayPH;
+    totalHD  += dayHD;
 
     // ── Meals eligibility ──────────────────────────────────────────────────
     const client = (ts.client ?? "").trim();
@@ -415,7 +425,7 @@ function redistributeTimeHours(approvedTs: Timesheet[], carryForwardHours: numbe
     totalOT  += excess;
   }
 
-  return { reg: totalReg, ot: totalOT, ph: totalPH, mealsCount, armedDays, responsibilityDays };
+  return { reg: totalReg, ot: totalOT, ph: totalPH, hd: totalHD, mealsCount, armedDays, responsibilityDays };
 }
 
 // ── PayrollResult ─────────────────────────────────────────────────────────────
@@ -428,12 +438,14 @@ export interface PayrollResult {
   // Hours
   regularHours: number;
   otHours: number;
-  phHours: number;
+  phHours: number;  // Statutory public holiday hours (1.5×)
+  hdHours: number;  // Holiday Double hours (2×)
 
   // Earnings
   basicPay: number;
   otPay: number;
-  phPay: number;
+  phPay: number;    // Statutory PH pay (1.5×)
+  hdPay: number;    // Holiday Double pay (2×)
   allowances: number;
   grossPay: number;
 
@@ -520,7 +532,7 @@ export function calcPayroll(
   }
 
   // ── Hours — Time employees get weekly-cap redistribution; others sum stored values ──
-  let regularHours: number, otHours: number, phHours: number;
+  let regularHours: number, otHours: number, phHours: number, hdHours: number;
   let mealsCount = 0, armedDays = 0, responsibilityDays = 0;
   let carryForwardHours = 0;
 
@@ -548,22 +560,37 @@ export function calcPayroll(
     regularHours      = dist.reg;
     otHours           = dist.ot;
     phHours           = dist.ph;
+    hdHours           = dist.hd;
     mealsCount        = dist.mealsCount;
     armedDays         = dist.armedDays;
     responsibilityDays = dist.responsibilityDays;
   } else {
+    // For non-Time employees we read stored field values, but must separate
+    // Holiday Double (stored in ts.ot by ClockInOut) from regular overtime.
     regularHours = approvedTs.reduce((s, ts) => s + (ts.reg ?? 0), 0);
-    otHours      = approvedTs.reduce((s, ts) => s + (ts.ot ?? 0), 0);
-    phHours      = approvedTs.reduce((s, ts) => s + (ts.ph ?? 0), 0);
+    hdHours = approvedTs.reduce((s, ts) =>
+      ts.dayStatus === "Holiday" && ts.holidayType === "Holiday Double"
+        ? s + (ts.ot ?? 0) + (ts.ph ?? 0)
+        : s, 0);
+    otHours = approvedTs.reduce((s, ts) =>
+      ts.dayStatus === "Holiday" && ts.holidayType === "Holiday Double"
+        ? s
+        : s + (ts.ot ?? 0), 0);
+    phHours = approvedTs.reduce((s, ts) =>
+      ts.dayStatus === "Holiday" && ts.holidayType === "Holiday Double"
+        ? s
+        : s + (ts.ph ?? 0), 0);
   }
 
   // ── Earnings ──────────────────────────────────────────────────────────────
   const otMultiplier = pc.otMultiplier ?? C.OT_MULTIPLIER_DEFAULT;
   const phMultiplier = pc.phMultiplier ?? C.PH_MULTIPLIER_DEFAULT;
+  const hdMultiplier = (pc as any).hdMultiplier ?? C.HD_MULTIPLIER_DEFAULT;
 
   const basicPay = regularHours * effectiveRate;
   const otPay    = otHours      * effectiveRate * otMultiplier;
   const phPay    = phHours      * effectiveRate * phMultiplier;
+  const hdPay    = hdHours      * effectiveRate * hdMultiplier;
 
   // For Time employees: riskAllowance and mealAllowance are computed dynamically;
   // exclude them from the PayConfig-based allowances sum.
@@ -582,7 +609,7 @@ export function calcPayroll(
   const responsibilitiesPay = isTimeEmployee ? Math.round(responsibilityDays * TIME_CONSTANTS.RESPONSIBILITY_RATE) : 0;
   const riskPay             = isTimeEmployee ? lookupRiskPay(armedDays) : 0;
 
-  const grossPay = basicPay + otPay + phPay + allowances + mealsPay + responsibilitiesPay + riskPay;
+  const grossPay = basicPay + otPay + phPay + hdPay + allowances + mealsPay + responsibilitiesPay + riskPay;
 
   // ── NIS ───────────────────────────────────────────────────────────────────
   const dob = (employee as any).dob as string | null | undefined;
@@ -662,9 +689,11 @@ export function calcPayroll(
     regularHours,
     otHours,
     phHours,
+    hdHours,
     basicPay:     Math.round(basicPay),
     otPay:        Math.round(otPay),
     phPay:        Math.round(phPay),
+    hdPay:        Math.round(hdPay),
     allowances:   Math.round(allowances),
     grossPay:     Math.round(grossPay),
     isTimeEmployee,
@@ -709,9 +738,9 @@ export function generateQuickBooksCSV(results: PayrollResult[]): string {
   const headers = [
     "Employee Name", "Employee ID", "Department", "Position", "Pay Category",
     "Period Start", "Period End",
-    "Regular Hours", "OT Hours", "PH Hours",
+    "Regular Hours", "OT Hours", "PH Hours", "HD Hours",
     "Hourly Rate (GYD)",
-    "Basic Pay (GYD)", "OT Pay (GYD)", "PH Pay (GYD)",
+    "Basic Pay (GYD)", "OT Pay (GYD)", "PH Pay (GYD)", "HD Pay (GYD)",
     "Meals Pay (GYD)", "Responsibilities Pay (GYD)", "Risk Pay (GYD)",
     "Meals Count", "Responsibility Days", "Armed Days", "Carry Forward Hrs",
     "Allowances (GYD)", "Gross Pay (GYD)",
@@ -734,10 +763,12 @@ export function generateQuickBooksCSV(results: PayrollResult[]): string {
     r.regularHours.toFixed(2),
     r.otHours.toFixed(2),
     r.phHours.toFixed(2),
+    r.hdHours.toFixed(2),
     r.effectiveRate.toFixed(2),
     r.basicPay.toFixed(2),
     r.otPay.toFixed(2),
     r.phPay.toFixed(2),
+    r.hdPay.toFixed(2),
     (r.mealsPay ?? 0).toFixed(2),
     (r.responsibilitiesPay ?? 0).toFixed(2),
     (r.riskPay ?? 0).toFixed(2),

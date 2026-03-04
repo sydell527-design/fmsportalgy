@@ -33,7 +33,8 @@ export function PayslipLandscape({
 
   const incomeItems: Array<{label: string; amount: number; sub?: string; ytd?: number}> = [];
   const otMult = pc?.otMultiplier ?? 1.5;
-  const phMult = pc?.phMultiplier ?? 2;
+  const phMult = pc?.phMultiplier ?? 1.5;
+  const hdMult = (pc as any)?.hdMultiplier ?? 2.0;
   incomeItems.push({ label: "Basic Salary", amount: r.basicPay, sub: `${r.regularHours.toFixed(2)} hrs × ${fmt(r.effectiveRate)}/hr`, ytd: ytd?.basicPay });
   if (r.otPay > 0) incomeItems.push({
     label: "Overtime Pay",
@@ -46,6 +47,12 @@ export function PayslipLandscape({
     amount: r.phPay,
     sub: `${r.phHours.toFixed(2)} hrs × ${fmt(r.effectiveRate)}/hr × ${phMult}`,
     ytd: ytd?.phPay,
+  });
+  if (r.hdPay > 0) incomeItems.push({
+    label: "Holiday Double Pay",
+    amount: r.hdPay,
+    sub: `${r.hdHours.toFixed(2)} hrs × ${fmt(r.effectiveRate)}/hr × ${hdMult}`,
+    ytd: ytd?.hdPay,
   });
   // Time employee computed income (replaces flat allowances for meals & risk)
   if (isTime && (r.mealsPay ?? 0) > 0)
