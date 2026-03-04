@@ -375,10 +375,7 @@ function redistributeTimeHours(approvedTs: Timesheet[], carryForwardHours: numbe
     if (dayStatus === "Annual Leave") {
       dayReg = 8; weekContrib = 8;
     } else if (dayStatus === "Sick") {
-      // No pay for sick leave. But the day still consumes the 8-hr slot in the
-      // weekly 40-hr cap — the employee was SCHEDULED to work that day, so any
-      // later days in the same week that push past 40 hrs correctly flow to OT.
-      dayReg = 0; weekContrib = 8;
+      // Person did not work — no pay, no contribution to the weekly 40-hr cap.
     } else if (dayStatus === "Off Day") {
       dayOT = rawHours; // all OT; Off Day does NOT count toward weekly cap
     } else if (dayStatus === "Absent") {
@@ -587,9 +584,10 @@ export function calcPayroll(
           ts.date < periodStart,
       );
       // Use stored reg + ph from those timesheets as the carry-forward.
-      // Sick and Annual Leave count as 8 reg hours toward the cap (same as the engine awards).
+      // Annual Leave counts as 8 reg hours (it is paid and occupies that week slot).
+      // Sick days are not worked — they contribute 0 to the cap.
       carryForwardHours = cfApproved.reduce((s, ts) => {
-        if (ts.dayStatus === "Sick" || ts.dayStatus === "Annual Leave") return s + 8;
+        if (ts.dayStatus === "Annual Leave") return s + 8;
         return s + (ts.reg ?? 0) + (ts.ph ?? 0);
       }, 0);
     }
