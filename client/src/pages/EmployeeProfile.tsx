@@ -437,7 +437,7 @@ export default function EmployeeProfile() {
                     {[
                       ["Pay Category", emp.cat],
                       ["OT Multiplier", `${pc.otMultiplier ?? 1.5}×`],
-                      ["Public Holiday", `${pc.phMultiplier ?? 2.0}×`],
+                      ["Public Holiday", `${pc.phMultiplier ?? 1.5}×`],
                       emp.cat === "Time"
                         ? ["Hourly Rate", `GYD ${emp.hourlyRate}/hr`]
                         : ["Monthly Salary", fmt(emp.salary)],
@@ -478,7 +478,7 @@ export default function EmployeeProfile() {
                       : ["Monthly Salary", fmt(emp.salary)],
                     ["Est. Monthly Basic", fmt(pay.basic)],
                     ["OT Rate", `${pc.otMultiplier ?? 1.5}× hourly`],
-                    ["Public Holiday", `${pc.phMultiplier ?? 2.0}× hourly`],
+                    ["Public Holiday", `${pc.phMultiplier ?? 1.5}× hourly`],
                   ].map(([l, v]) => (
                     <div key={l} className="flex justify-between py-1 border-b border-border last:border-0 text-sm">
                       <span className="text-muted-foreground">{l}</span>

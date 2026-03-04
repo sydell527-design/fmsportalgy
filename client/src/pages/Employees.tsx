@@ -86,7 +86,7 @@ function getInitials(name: string) {
 const DEFAULT_PAY_CONFIG: PayConfig = {
   frequency: "bimonthly",
   otMultiplier: 1.5,
-  phMultiplier: 2.0,
+  phMultiplier: 1.5,
   housingAllowance: 0,
   transportAllowance: 0,
   mealAllowance: 0,
