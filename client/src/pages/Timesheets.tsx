@@ -36,7 +36,8 @@ function haversineMetres(lat1: number, lng1: number, lat2: number, lng2: number)
 function calcHours(ci: string, co: string, brkMins: number) {
   const [ih, im] = ci.split(":").map(Number);
   const [oh, om] = co.split(":").map(Number);
-  const totalMins = oh * 60 + om - (ih * 60 + im);
+  const rawMins = oh * 60 + om - (ih * 60 + im);
+  const totalMins = rawMins < 0 ? rawMins + 24 * 60 : rawMins;
   const workMins = Math.max(0, totalMins - brkMins);
   const reg = Math.round(Math.min(8, workMins / 60) * 100) / 100;
   const ot = Math.round(Math.max(0, workMins / 60 - 8) * 100) / 100;
