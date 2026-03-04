@@ -6,7 +6,7 @@ import { useTimesheets } from "@/hooks/use-timesheets";
 import { useAllChildren } from "@/hooks/use-children";
 import { useAuth } from "@/hooks/use-auth";
 import { useCompanySettings, useUpdateCompanySettings } from "@/hooks/use-settings";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { Redirect } from "wouter";
 import { Card } from "@/components/ui/card";
@@ -25,9 +25,11 @@ import {
   calcPayroll, formatGYD, generateQuickBooksCSV, downloadCSV,
   PAYROLL_CONSTANTS, periodDates,
 } from "@/lib/payroll";
-import { downloadPayslipPDF } from "@/lib/payslip-pdf";
+import { downloadPayslipPDF, computeYTD } from "@/lib/payslip-pdf";
+import { PayslipLandscape } from "@/components/PayslipLandscape";
 import { format } from "date-fns";
 import type { PayrollResult } from "@/lib/payroll";
+import type { Payslip } from "@shared/schema";
 import * as XLSX from "xlsx";
 
 const C = PAYROLL_CONSTANTS;
@@ -81,6 +83,8 @@ export default function Payroll() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [sendOpen, setSendOpen] = useState(false);
   const [sendTarget, setSendTarget] = useState<"all" | string>("all");
+
+  const { data: allPayslips = [] } = useQuery<Payslip[]>({ queryKey: ["/api/payslips"] });
 
   const { mutateAsync: sendPayslips, isPending: sending } = useMutation({
     mutationFn: (payload: { sentBy: string; payslips: Array<{ eid: string; period: string; periodStart: string; periodEnd: string; data: unknown }> }) =>
@@ -642,145 +646,25 @@ export default function Payroll() {
       <Dialog open={!!selectedResult} onOpenChange={() => setSelectedResult(null)}>
         <DialogContent className="max-w-5xl w-[95vw] max-h-[90vh] overflow-y-auto" data-testid="payslip-modal">
           {selectedResult && (() => {
-            const r   = selectedResult;
-            const pc  = r.employee.payConfig;
-            const freq = pc?.frequency ?? "bimonthly";
-            const ppm  = freq === "weekly" ? 52/12 : freq === "biweekly" ? 26/12 : freq === "monthly" ? 1 : 2;
-            const freqLabel = freq === "weekly" ? "Weekly" : freq === "biweekly" ? "Bi-Weekly" : freq === "monthly" ? "Monthly" : "Bi-Monthly";
-
-            // Income items
-            const incomeItems: Array<{label: string; amount: number; sub?: string}> = [];
-            incomeItems.push({ label: "Basic Salary", amount: r.basicPay, sub: `${r.regularHours.toFixed(2)} h × ${formatGYD(r.effectiveRate)}/hr` });
-            if (r.otPay  > 0) incomeItems.push({ label: `Overtime (${pc?.otMultiplier ?? 1.5}×)`,    amount: r.otPay });
-            if (r.phPay  > 0) incomeItems.push({ label: `Public Holiday (${pc?.phMultiplier ?? 2}×)`,amount: r.phPay });
-            if ((pc?.housingAllowance   ?? 0) > 0) incomeItems.push({ label: "Housing Allowance",   amount: (pc!.housingAllowance)   / ppm });
-            if ((pc?.transportAllowance ?? 0) > 0) incomeItems.push({ label: "Transport Allowance", amount: (pc!.transportAllowance) / ppm });
-            if ((pc?.mealAllowance      ?? 0) > 0) incomeItems.push({ label: "Meal Allowance",      amount: (pc!.mealAllowance)      / ppm });
-            if ((pc?.uniformAllowance   ?? 0) > 0) incomeItems.push({ label: "Uniform Allowance",   amount: (pc!.uniformAllowance)   / ppm });
-            if ((pc?.riskAllowance      ?? 0) > 0) incomeItems.push({ label: "Risk Allowance",      amount: (pc!.riskAllowance)      / ppm });
-            if ((pc?.shiftAllowance     ?? 0) > 0) incomeItems.push({ label: "Shift Allowance",     amount: (pc!.shiftAllowance)     / ppm });
-            (pc?.otherAllowances ?? []).forEach((a) => incomeItems.push({ label: a.name, amount: a.amount / ppm }));
-
-            // FreePay items
-            const freeItems: Array<{label: string; amount: number}> = [];
-            freeItems.push({ label: "Statutory Free Pay", amount: r.personalAllowance });
-            if (r.qualifyingChildren > 0) freeItems.push({ label: `Child Tax Credit (${r.qualifyingChildren})`, amount: r.childAllowance });
-            if (!pc?.nisExempt)              freeItems.push({ label: `Emp. NIS (${(C.NIS_EMP_RATE*100).toFixed(1)}%)`, amount: r.employeeNIS });
-            if (!pc?.healthSurchargeExempt)  freeItems.push({ label: "Health Surcharge", amount: r.healthSurcharge });
-
-            // Deduction items
-            const dedItems: Array<{label: string; amount: number}> = [];
-            if (!pc?.taxExempt)        dedItems.push({ label: `PAYE${r.chargeableIncome > C.TAX_LOWER_LIMIT/ppm ? " (25%/35%)" : " (25%)"}`, amount: r.paye });
-            if (r.creditUnion      > 0) dedItems.push({ label: "Credit Union",       amount: r.creditUnion });
-            if (r.loanRepayment    > 0) dedItems.push({ label: "Loan Repayment",     amount: r.loanRepayment });
-            if (r.advancesRecovery > 0) dedItems.push({ label: "Advances Recovery",  amount: r.advancesRecovery });
-            if (r.unionDues        > 0) dedItems.push({ label: "Union Dues",         amount: r.unionDues });
-            (pc?.otherDeductions ?? []).forEach((d) => dedItems.push({ label: d.name, amount: d.amount }));
-
-            const totalFreePay = r.personalAllowance + r.childAllowance + r.employeeNIS + r.healthSurcharge;
-            const totalDeduct  = r.paye + r.totalVoluntary;
-            const maxRows = Math.max(incomeItems.length, freeItems.length, dedItems.length);
+            const r = selectedResult;
+            // YTD: combine previously sent payslips for this employee + current result,
+            // then filter by same year and ≤ periodEnd
+            const historicalData = allPayslips
+              .filter((ps) => ps.eid === r.employee.userId)
+              .map((ps) => ps.data as unknown as PayrollResult);
+            const ytdData = [...historicalData, r];
+            const ytd = r.periodEnd ? computeYTD(ytdData, r.periodEnd) : undefined;
 
             return (
-              <div className="text-xs" data-testid="payslip-modal">
-                {/* Company header */}
-                <div className="text-center py-3 border-b border-border">
-                  <p className="font-bold text-sm text-foreground tracking-wide">FEDERAL MANAGEMENT SYSTEMS INC.</p>
-                  <p className="text-muted-foreground text-xs">{r.employee.dept} — {r.employee.pos}</p>
-                </div>
-
-                {/* Employee info row */}
-                <div className="flex justify-between items-center px-2 py-2 border-b border-border bg-muted/20 text-xs">
-                  <div className="space-y-0.5">
-                    <p><span className="font-semibold">Payslip#</span> {r.employee.userId}&emsp;{r.employee.name}</p>
-                    <p className="text-muted-foreground">D.O.E: {r.employee.joined ?? "N/A"} · {r.approvedTimesheets} approved sheet{r.approvedTimesheets !== 1 ? "s" : ""} · {formatGYD(r.effectiveRate)}/hr</p>
-                    {((r.employee as any).tin || (r.employee as any).nisNumber) && (
-                      <p className="text-muted-foreground">
-                        {(r.employee as any).tin && <span className="mr-3"><span className="font-semibold text-foreground">TIN:</span> {(r.employee as any).tin}</span>}
-                        {(r.employee as any).nisNumber && <span><span className="font-semibold text-foreground">NIS#:</span> {(r.employee as any).nisNumber}</span>}
-                      </p>
-                    )}
-                  </div>
-                  <div className="text-right space-y-0.5">
-                    <p><span className="font-semibold">{freqLabel} Work Period:</span> {r.periodStart} to {r.periodEnd}</p>
-                    <p className="text-muted-foreground">Pay Period: {r.periodStart} – {r.periodEnd}</p>
-                  </div>
-                </div>
-
-                {/* Three-column table */}
-                <table className="w-full border-collapse mt-1" style={{ fontSize: "11px" }}>
-                  <thead>
-                    <tr>
-                      <th colSpan={2} className="bg-blue-700 text-white text-center py-1 px-2 border border-border">Income</th>
-                      <th colSpan={2} className="bg-emerald-700 text-white text-center py-1 px-2 border border-border">FreePay</th>
-                      <th colSpan={2} className="bg-red-700 text-white text-center py-1 px-2 border border-border">Deductions</th>
-                    </tr>
-                    <tr className="bg-muted/50 text-muted-foreground text-[10px]">
-                      <th className="text-left py-0.5 px-2 border border-border font-medium">Description</th>
-                      <th className="text-right py-0.5 px-2 border border-border font-medium">Curr</th>
-                      <th className="text-left py-0.5 px-2 border border-border font-medium">Description</th>
-                      <th className="text-right py-0.5 px-2 border border-border font-medium">Curr</th>
-                      <th className="text-left py-0.5 px-2 border border-border font-medium">Description</th>
-                      <th className="text-right py-0.5 px-2 border border-border font-medium">Curr</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {Array.from({ length: maxRows }, (_, i) => {
-                      const inc = incomeItems[i];
-                      const fp  = freeItems[i];
-                      const ded = dedItems[i];
-                      return (
-                        <tr key={i} className={i % 2 === 0 ? "bg-background" : "bg-muted/20"}>
-                          <td className="py-0.5 px-2 border border-border">{inc?.label ?? ""}{inc?.sub && <span className="text-muted-foreground ml-1">({inc.sub})</span>}</td>
-                          <td className="py-0.5 px-2 border border-border text-right font-mono">{inc ? formatGYD(inc.amount) : ""}</td>
-                          <td className="py-0.5 px-2 border border-border">{fp?.label ?? ""}</td>
-                          <td className="py-0.5 px-2 border border-border text-right font-mono">{fp ? formatGYD(fp.amount) : ""}</td>
-                          <td className="py-0.5 px-2 border border-border">{ded?.label ?? ""}</td>
-                          <td className="py-0.5 px-2 border border-border text-right font-mono text-red-600">{ded ? formatGYD(ded.amount) : ""}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                  <tfoot>
-                    <tr className="bg-yellow-50 dark:bg-yellow-900/20 font-semibold">
-                      <td className="py-1 px-2 border border-border">Gross</td>
-                      <td className="py-1 px-2 border border-border text-right font-mono">{formatGYD(r.grossPay)}</td>
-                      <td className="py-1 px-2 border border-border">Total FreePay</td>
-                      <td className="py-1 px-2 border border-border text-right font-mono">{formatGYD(totalFreePay)}</td>
-                      <td className="py-1 px-2 border border-border">Total Deduction</td>
-                      <td className="py-1 px-2 border border-border text-right font-mono text-red-600">{formatGYD(totalDeduct)}</td>
-                    </tr>
-                  </tfoot>
-                </table>
-
-                {/* Net Pay */}
-                <div className="flex justify-between items-center bg-green-600 text-white rounded-sm px-4 py-2 mt-1">
-                  <span className="font-bold text-sm">Net Pay</span>
-                  <span className="font-bold text-xl font-mono">{formatGYD(r.netPay)}</span>
-                </div>
-
-                {/* PAYE computation & employer NIS */}
-                <div className="mt-1 grid grid-cols-2 gap-2">
-                  <div className="bg-muted/20 rounded p-2 space-y-0.5 text-[10px]">
-                    <p className="font-semibold text-muted-foreground uppercase tracking-wide mb-1">PAYE Computation</p>
-                    <div className="flex justify-between"><span>Gross Pay</span><span className="font-mono">{formatGYD(r.grossPay)}</span></div>
-                    <div className="flex justify-between text-red-600"><span>Less: Employee NIS</span><span className="font-mono">− {formatGYD(r.employeeNIS)}</span></div>
-                    <div className="flex justify-between text-red-600"><span>Less: Insurance</span><span className="font-mono">− {formatGYD(r.healthSurcharge)}</span></div>
-                    <div className="flex justify-between text-red-600"><span>Less: Personal Allowance</span><span className="font-mono">− {formatGYD(r.personalAllowance)}</span></div>
-                    {r.qualifyingChildren > 0 && <div className="flex justify-between text-red-600"><span>Less: Child Allowance</span><span className="font-mono">− {formatGYD(r.childAllowance)}</span></div>}
-                    <div className="flex justify-between font-semibold border-t border-border pt-0.5"><span>Chargeable Income</span><span className="font-mono">{formatGYD(r.chargeableIncome)}</span></div>
-                    <div className="flex justify-between font-semibold text-red-600"><span>PAYE</span><span className="font-mono">− {formatGYD(r.paye)}</span></div>
-                  </div>
-                  <div className="bg-muted/20 rounded p-2 text-[10px] space-y-1">
-                    <p className="font-semibold text-muted-foreground uppercase tracking-wide mb-1">Employer NIS (Not deducted from employee)</p>
-                    <div className="flex justify-between"><span>Employer NIS ({(C.NIS_ER_RATE*100).toFixed(1)}%)</span><span className="font-mono">{formatGYD(r.employerNIS)}</span></div>
-                    <p className="text-muted-foreground mt-1 italic">National Insurance values shown under FreePay will be remitted to the National Insurance Scheme.</p>
-                  </div>
-                </div>
-
-                {/* Actions */}
+              <div data-testid="payslip-modal">
+                <PayslipLandscape
+                  r={r}
+                  tin={(r.employee as any).tin}
+                  nisNumber={(r.employee as any).nisNumber}
+                  ytd={ytd}
+                />
                 <div className="flex gap-2 justify-end pt-2">
-                  <Button variant="outline" size="sm" onClick={() => downloadPayslipPDF(r)} data-testid="button-download-pdf">
+                  <Button variant="outline" size="sm" onClick={() => downloadPayslipPDF(r, ytd)} data-testid="button-download-pdf">
                     <Download className="w-4 h-4 mr-1.5" /> Download PDF
                   </Button>
                   <Button variant="outline" size="sm"
