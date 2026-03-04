@@ -340,6 +340,14 @@ interface TimeDistResult {
 
 function redistributeTimeHours(approvedTs: Timesheet[], carryForwardHours: number, employeeArmed?: string | null, periodStdHours = 0): TimeDistResult {
   const sorted = [...approvedTs].sort((a, b) => (a.date ?? "").localeCompare(b.date ?? ""));
+
+  // Pre-build a holiday map covering all years in this batch so we can auto-detect
+  // the holiday type for any row where holidayType was not explicitly stored.
+  const years = new Set(sorted.map((ts) => ts.date ? new Date(ts.date + "T00:00").getFullYear() : 0));
+  years.delete(0);
+  const calendarMap: Record<string, string> = {};
+  for (const y of years) Object.assign(calendarMap, getGuyanaHolidaysForYear(y));
+
   let weeklyBefore = carryForwardHours;
   let totalReg = 0, totalOT = 0, totalPH = 0, totalHD = 0;
   let mealsCount = 0, armedDays = 0, responsibilityDays = 0;
@@ -352,7 +360,9 @@ function redistributeTimeHours(approvedTs: Timesheet[], carryForwardHours: numbe
 
     const rawHours  = (ts.reg ?? 0) + (ts.ot ?? 0) + (ts.ph ?? 0);
     const dayStatus = ts.dayStatus ?? "On Day";
-    const holType   = ts.holidayType ?? "";
+    // If holidayType is missing, fall back to calendar lookup before defaulting
+    const storedType = ts.holidayType ?? "";
+    const holType = storedType || (dayStatus === "Holiday" ? (calendarMap[ts.date] ?? "") : "");
 
     let dayReg = 0, dayOT = 0, dayPH = 0, dayHD = 0, weekContrib = 0;
 
@@ -370,7 +380,7 @@ function redistributeTimeHours(approvedTs: Timesheet[], carryForwardHours: numbe
         // Statutory public holiday (1.5×); counts toward weekly cap
         dayPH = rawHours; weekContrib = rawHours;
       } else {
-        // Unknown holiday type — treat as Holiday Double (safer than silently paying 1.5×)
+        // Genuinely unknown — treat as Holiday Double (cannot silently underpay)
         dayHD = rawHours;
       }
     } else {
