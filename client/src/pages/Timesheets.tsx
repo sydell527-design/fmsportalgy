@@ -110,7 +110,7 @@ export default function Timesheets() {
     if (n === "sick" || n.includes("report sick") || n.includes("sick leave")) return "Sick";
     if (n === "absent" || n.includes("report absent")) return "Absent";
     if (n.includes("annual leave") || n === "al") return "Annual Leave";
-    if (n.includes("off day") || n === "day off") return "Off Day";
+    if (n.includes("off duty") || n.includes("off day") || n === "day off" || n.includes("rest day") || n === "rest") return "Off Day";
     return null;
   };
   const [bulkRows, setBulkRows] = useState<BulkRow[]>([]);
@@ -265,16 +265,21 @@ export default function Timesheets() {
         const parsed: BulkRow[] = rows.map((row, i) => {
           const empRaw = findCol(row, "Full Name", "Name", "Employee Name", "Employee", "EID", "Employee ID", "Staff");
           const dateRaw = findCol(row, "Date", "Work Date", "Shift Date", "Day");
-          const ciRaw = parseTime(findCol(row, "Clock In", "In", "Start", "Time In", "ClockIn", "Start Time"));
-          const coRaw = parseTime(findCol(row, "Clock Out", "Out", "End", "Time Out", "ClockOut", "End Time"));
+          const ciRawStr = findCol(row, "Clock In", "In", "Start", "Time In", "ClockIn", "Start Time");
+          const coRawStr = findCol(row, "Clock Out", "Out", "End", "Time Out", "ClockOut", "End Time");
+          const ciRaw = parseTime(ciRawStr);
+          const coRaw = parseTime(coRawStr);
           const zoneRaw = findCol(row, "Zone", "Location", "Site");
           const postRaw = findCol(row, "Post", "Position", "Post Name");
           const brkRaw = findCol(row, "Break", "Break Minutes", "Breaks", "Brk");
           const notesRaw = findCol(row, "Notes", "Note", "Remarks", "Comment");
           const dateStr = parseDate(dateRaw);
 
-          // Detect day-status from the Notes column (e.g. "Report Sick" → Sick)
-          const autoStatus = notesRaw ? detectDayStatusFromNote(notesRaw) : null;
+          // Detect day-status from Notes column, OR from raw clock-in/out values (e.g. "OFF DUTY", "Rest Day")
+          const autoStatus =
+            (notesRaw ? detectDayStatusFromNote(notesRaw) : null) ||
+            detectDayStatusFromNote(ciRawStr) ||
+            detectDayStatusFromNote(coRawStr);
           const noClockNeeded = autoStatus === "Sick" || autoStatus === "Absent" || autoStatus === "Annual Leave" || autoStatus === "Off Day";
 
           let error: string | undefined;
@@ -1788,7 +1793,7 @@ export default function Timesheets() {
                   <span><strong>Zone / Location</strong> — optional</span>
                   <span><strong>Post / Post Name</strong> — optional</span>
                   <span><strong>Break / Break Minutes</strong> — optional</span>
-                  <span><strong>Notes / Remarks</strong> — optional <span className="text-green-700">(write "Report Sick", "Sick", "Absent", or "Annual Leave" to skip clock times)</span></span>
+                  <span><strong>Notes / Remarks</strong> — optional <span className="text-green-700">(write "Report Sick", "Sick", "Absent", "Annual Leave", "Off Duty", or "Day Off" to skip clock times — these keywords also work in the Clock In/Out columns)</span></span>
                 </div>
               </div>
             </div>
