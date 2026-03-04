@@ -334,7 +334,7 @@ interface TimeDistResult {
   responsibilityDays: number;
 }
 
-function redistributeTimeHours(approvedTs: Timesheet[], carryForwardHours: number, employeeArmed?: string | null): TimeDistResult {
+function redistributeTimeHours(approvedTs: Timesheet[], carryForwardHours: number, employeeArmed?: string | null, periodStdHours = 0): TimeDistResult {
   const sorted = [...approvedTs].sort((a, b) => (a.date ?? "").localeCompare(b.date ?? ""));
   let weeklyBefore = carryForwardHours;
   let totalReg = 0, totalOT = 0, totalPH = 0;
@@ -402,6 +402,17 @@ function redistributeTimeHours(approvedTs: Timesheet[], carryForwardHours: numbe
     if (notExcluded && rawHours > 0 && TIME_CONSTANTS.SPECIAL_RESPONSIBILITY_LOCATIONS.some(
       (loc) => post.toLowerCase().includes(loc.toLowerCase()),
     )) responsibilityDays++;
+  }
+
+  // ── Period-level cap: ensure regular hours never exceed the standard hours ──
+  // e.g. bimonthly = 80 hrs (2 × 40). The rolling weekly cap alone can allow
+  // more than 80 reg when the pay period spans parts of 3 calendar weeks and
+  // no single week hits the 40-hr limit. Any excess above the period standard
+  // is reclassified as overtime.
+  if (periodStdHours > 0 && totalReg > periodStdHours) {
+    const excess = Math.round((totalReg - periodStdHours) * 100) / 100;
+    totalReg -= excess;
+    totalOT  += excess;
   }
 
   return { reg: totalReg, ot: totalOT, ph: totalPH, mealsCount, armedDays, responsibilityDays };
@@ -533,7 +544,7 @@ export function calcPayroll(
       carryForwardHours = cfApproved.reduce((s, ts) => s + (ts.reg ?? 0) + (ts.ph ?? 0), 0);
     }
 
-    const dist = redistributeTimeHours(approvedTs, carryForwardHours, employee.armed);
+    const dist = redistributeTimeHours(approvedTs, carryForwardHours, employee.armed, hrsPerPeriod);
     regularHours      = dist.reg;
     otHours           = dist.ot;
     phHours           = dist.ph;

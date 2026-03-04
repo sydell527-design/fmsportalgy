@@ -186,10 +186,13 @@ export function generatePayslipPDF(r: PayrollResult, ytd?: YTDFigures) {
   if (!pc?.healthSurchargeExempt) freePayRows.push(["Health Surcharge (Ins.)", gyd(r.healthSurcharge)]);
 
   const isTimeEmployee = r.isTimeEmployee ?? false;
-  const incomeRows: Array<[string, string]> = [];
-  incomeRows.push(["Basic Salary", gyd(r.basicPay)]);
-  if (r.otPay > 0) incomeRows.push(["Overtime Pay", gyd(r.otPay)]);
-  if (r.phPay > 0) incomeRows.push(["Public Holiday Pay", gyd(r.phPay)]);
+  // Third element is the stable YTD map key (label can change with hours, key stays fixed)
+  const incomeRows: Array<[string, string, string?]> = [];
+  const otMult = pc?.otMultiplier ?? 1.5;
+  const phMult = pc?.phMultiplier ?? 2;
+  incomeRows.push(["Basic Salary", gyd(r.basicPay), "Basic Salary"]);
+  if (r.otPay > 0) incomeRows.push([`Overtime Pay (${r.otHours.toFixed(2)} hrs × ${otMult}×)`, gyd(r.otPay), "Overtime Pay"]);
+  if (r.phPay > 0) incomeRows.push([`Public Holiday Pay (${r.phHours.toFixed(2)} hrs × ${phMult}×)`, gyd(r.phPay), "Public Holiday Pay"]);
   // Time employee computed extras
   if ((r.mealsPay ?? 0) > 0)            incomeRows.push([`Meals Pay (${r.mealsCount ?? 0} meals)`,            gyd(r.mealsPay ?? 0)]);
   if ((r.responsibilitiesPay ?? 0) > 0) incomeRows.push([`Responsibilities Pay (${r.responsibilityDays ?? 0} days)`, gyd(r.responsibilitiesPay ?? 0)]);
@@ -221,8 +224,9 @@ export function generatePayslipPDF(r: PayrollResult, ytd?: YTDFigures) {
     const inc  = incomeRows[i]    ?? ["", ""];
     const fp   = freePayRows[i]   ?? ["", ""];
     const ded  = deductionRows[i] ?? ["", ""];
+    const incYtdKey = (inc as [string, string, string?])[2] ?? inc[0];
     body.push([
-      inc[0], inc[1], inc[0] && ytd ? (ytdMap[inc[0]] ?? "") : "",
+      inc[0], inc[1], incYtdKey && ytd ? (ytdMap[incYtdKey] ?? "") : "",
       fp[0],  fp[1],  fp[0]  && ytd ? (ytdMap[fp[0]]  ?? "") : "",
       ded[0], ded[1], ded[0] && ytd ? (ytdMap[ded[0]] ?? "") : "",
     ]);
