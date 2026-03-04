@@ -418,8 +418,10 @@ function redistributeTimeHours(approvedTs: Timesheet[], carryForwardHours: numbe
       ) { mealsCount++; mealDates.add(ts.date); }
     }
 
-    // ── Armed days — once per calendar date ───────────────────────────────
-    if ((ts.armed ?? employeeArmed) === "Armed" && rawHours > 0 && !armedDates.has(ts.date)) {
+    // ── Armed days — once per calendar date, only for days physically worked ─
+    // Sick, Absent, and Annual Leave do not count toward risk pay.
+    const isPhysicallyWorked = dayStatus !== "Sick" && dayStatus !== "Absent" && dayStatus !== "Annual Leave";
+    if ((ts.armed ?? employeeArmed) === "Armed" && rawHours > 0 && isPhysicallyWorked && !armedDates.has(ts.date)) {
       armedDays++;
       armedDates.add(ts.date);
     }
