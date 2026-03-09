@@ -339,7 +339,7 @@ interface TimeDistResult {
   responsibilityDays: number;
 }
 
-function redistributeTimeHours(approvedTs: Timesheet[], carryForwardHours: number, employeeArmed?: string | null, periodStdHours = 0): TimeDistResult {
+function redistributeTimeHours(approvedTs: Timesheet[], carryForwardHours: number, employeeArmed?: string | null): TimeDistResult {
   const sorted = [...approvedTs].sort((a, b) => (a.date ?? "").localeCompare(b.date ?? ""));
 
   // Pre-build a holiday map covering all years in this batch so we can auto-detect
@@ -455,16 +455,9 @@ function redistributeTimeHours(approvedTs: Timesheet[], carryForwardHours: numbe
     )) { responsibilityDays++; respDates.add(ts.date); }
   }
 
-  // ── Period-level cap: ensure regular hours never exceed the standard hours ──
-  // e.g. bimonthly = 80 hrs (2 × 40). The rolling weekly cap alone can allow
-  // more than 80 reg when the pay period spans parts of 3 calendar weeks and
-  // no single week hits the 40-hr limit. Any excess above the period standard
-  // is reclassified as overtime.
-  if (periodStdHours > 0 && totalReg > periodStdHours) {
-    const excess = Math.round((totalReg - periodStdHours) * 100) / 100;
-    totalReg -= excess;
-    totalOT  += excess;
-  }
+  // No period-level cap on regular hours — only the 40-hr weekly (Sun–Sat) cap
+  // applies. A period that spans parts of 3 calendar weeks can legitimately
+  // accumulate more than 80 regular hours (e.g. Jan 16–31: 16 partial + 40 + 40 = 96).
 
   return { reg: totalReg, ot: totalOT, ph: totalPH, hd: totalHD, mealsCount, armedDays, armedMissedDays, responsibilityDays };
 }
@@ -609,7 +602,7 @@ export function calcPayroll(
       }, 0);
     }
 
-    const dist = redistributeTimeHours(approvedTs, carryForwardHours, employee.armed, hrsPerPeriod);
+    const dist = redistributeTimeHours(approvedTs, carryForwardHours, employee.armed);
     regularHours      = dist.reg;
     otHours           = dist.ot;
     phHours           = dist.ph;

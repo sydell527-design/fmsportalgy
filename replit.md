@@ -259,6 +259,13 @@ Implemented full Time-category payroll calculation per FMS Labour Law rules:
 - `YTDFigures` and `computeYTD` accumulate `mealsPay`, `responsibilitiesPay`, `riskPay`
 - Fixed/Executive allowances (flat `riskAllowance`, `mealAllowance`) continue unchanged
 
+### 2026-03-09 — Remove period-level regular-hour cap (security officer fix)
+- Removed the period-level cap that was converting regular hours to OT when they exceeded 80 (bimonthly standard)
+- **Correct rule**: only the 40-hr weekly (Sun–Sat) cap applies — no period ceiling
+- A period spanning parts of 3 calendar weeks (e.g. Jan 16–31) can legitimately produce more than 80 regular hours: 16 (partial week) + 40 (week 2) + 40 (week 3) = 96 regular hours
+- Each Saturday that trips the weekly cap correctly produces 8 OT hours: 2 Saturdays → 16 OT
+- Removed `periodStdHours` parameter from `redistributeTimeHours()` and removed the `hrsPerPeriod` argument from its call site in `calcPayroll()`
+
 ### 2026-03-09 — Period-specific one-time deductions
 - New `period_deductions` DB table: `id`, `eid`, `period` (e.g. "2026-01-1"), `advances_recovery`, `other_deductions` (jsonb), `updated_at`
 - **Standing deductions** (credit union, union dues, loan repayment) remain in `pay_config` — apply every period
