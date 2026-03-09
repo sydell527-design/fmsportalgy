@@ -375,6 +375,30 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     } catch { res.status(500).json({ message: "Server error" }); }
   });
 
+  // ── PERIOD DEDUCTIONS ─────────────────────────────────────────────────────
+  app.get("/api/period-deductions", async (req, res) => {
+    try {
+      const period = String(req.query.period ?? "");
+      if (!period) return res.status(400).json({ message: "period query param required" });
+      res.json(await storage.getPeriodDeductionsByPeriod(period));
+    } catch { res.status(500).json({ message: "Server error" }); }
+  });
+
+  app.put("/api/period-deductions", async (req, res) => {
+    try {
+      const { eid, period, advancesRecovery, otherDeductions } = req.body;
+      if (!eid || !period) return res.status(400).json({ message: "eid and period required" });
+      const row = await storage.upsertPeriodDeduction({
+        eid,
+        period,
+        advancesRecovery: Number(advancesRecovery) || 0,
+        otherDeductions: otherDeductions ?? [],
+        updatedAt: new Date().toISOString(),
+      });
+      res.json(row);
+    } catch { res.status(500).json({ message: "Server error" }); }
+  });
+
   await seedDatabase();
   return httpServer;
 }

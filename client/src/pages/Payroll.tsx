@@ -28,8 +28,9 @@ import {
 import { downloadPayslipPDF, computeYTD } from "@/lib/payslip-pdf";
 import { PayslipLandscape } from "@/components/PayslipLandscape";
 import { format } from "date-fns";
-import type { PayrollResult } from "@/lib/payroll";
-import type { Payslip } from "@shared/schema";
+import type { PayrollResult, PeriodDeductionOverride } from "@/lib/payroll";
+import type { Payslip, PeriodDeduction } from "@shared/schema";
+import { queryClient } from "@/lib/queryClient";
 import * as XLSX from "xlsx";
 
 const C = PAYROLL_CONSTANTS;
@@ -86,6 +87,24 @@ export default function Payroll() {
 
   const { data: allPayslips = [] } = useQuery<Payslip[]>({ queryKey: ["/api/payslips"] });
 
+  // ── Period key & one-time deductions ──────────────────────────────────
+  // Period key format: "YYYY-MM-H" e.g. "2026-01-1" or "2026-01-2"
+  const periodKey = `${yearMonth}-${half}`;
+
+  const { data: rawPeriodDeductions = [] } = useQuery<PeriodDeduction[]>({
+    queryKey: ["/api/period-deductions", periodKey],
+    queryFn: () => fetch(`/api/period-deductions?period=${periodKey}`).then((r) => r.json()),
+  });
+
+  // Build a map of eid → PeriodDeductionOverride for use in calcPayroll
+  const periodDeductionMap: Record<string, PeriodDeductionOverride> = {};
+  for (const pd_ of rawPeriodDeductions) {
+    periodDeductionMap[pd_.eid] = {
+      advancesRecovery: pd_.advancesRecovery ?? 0,
+      otherDeductions: pd_.otherDeductions ?? [],
+    };
+  }
+
   const { mutateAsync: sendPayslips, isPending: sending } = useMutation({
     mutationFn: (payload: { sentBy: string; payslips: Array<{ eid: string; period: string; periodStart: string; periodEnd: string; data: unknown }> }) =>
       apiRequest("POST", "/api/payslips/send", payload),
@@ -123,7 +142,7 @@ export default function Payroll() {
   const activeEmployees = (users ?? []).filter((u) => u.status === "active" && u.role !== "admin");
 
   const allResults = activeEmployees.map((emp) =>
-    calcPayroll(emp, timesheets, pd.start, pd.end, allChildren, pd.label, companyPA, cfTimesheets)
+    calcPayroll(emp, timesheets, pd.start, pd.end, allChildren, pd.label, companyPA, cfTimesheets, periodDeductionMap[emp.userId])
   );
 
   // Show employees who have at least one approved timesheet in this period
@@ -159,21 +178,29 @@ export default function Payroll() {
 
   // ── Deductions upload ─────────────────────────────────────────────────
   const downloadTemplate = () => {
-    const headers = ["Employee ID", "Full Name", "Credit Union", "Salary Advance", "Other Deduction Name", "Other Deduction Amount"];
+    const headers = [
+      "Employee ID", "Full Name",
+      "Credit Union (standing — every period)",
+      "Salary Advance (one-time — this period only)",
+      "Other Deduction Name (one-time)", "Other Deduction Amount (one-time)",
+    ];
     const rows = (users ?? [])
       .filter((u) => u.status === "active" && u.role !== "admin")
-      .map((u) => [
-        u.userId, u.name,
-        u.payConfig?.creditUnion ?? 0,
-        u.payConfig?.advancesRecovery ?? 0,
-        (u.payConfig?.otherDeductions ?? [])[0]?.name ?? "",
-        (u.payConfig?.otherDeductions ?? [])[0]?.amount ?? 0,
-      ]);
+      .map((u) => {
+        const periodOvr = periodDeductionMap[u.userId];
+        return [
+          u.userId, u.name,
+          u.payConfig?.creditUnion ?? 0,
+          periodOvr?.advancesRecovery ?? 0,
+          periodOvr?.otherDeductions?.[0]?.name ?? "",
+          periodOvr?.otherDeductions?.[0]?.amount ?? 0,
+        ];
+      });
     const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
-    ws["!cols"] = [{ wch: 14 }, { wch: 24 }, { wch: 14 }, { wch: 16 }, { wch: 24 }, { wch: 22 }];
+    ws["!cols"] = [{ wch: 14 }, { wch: 24 }, { wch: 30 }, { wch: 32 }, { wch: 28 }, { wch: 30 }];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Deductions");
-    XLSX.writeFile(wb, `FMS_Deductions_Template_${yearMonth}.xlsx`);
+    XLSX.writeFile(wb, `FMS_Deductions_${periodKey}.xlsx`);
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -193,25 +220,58 @@ export default function Payroll() {
         if (!eid) continue;
         const emp = (users ?? []).find((u) => u.userId === eid);
         if (!emp) { out.push({ eid, name: empName || eid, status: "error", message: "Employee ID not found" }); continue; }
-        const creditUnion   = Number(row["Credit Union"]          ?? row["credit_union"]          ?? 0) || 0;
-        const salaryAdvance = Number(row["Salary Advance"]         ?? row["salary_advance"]        ?? 0) || 0;
-        const otherName     = String(row["Other Deduction Name"]   ?? row["other_deduction_name"]  ?? "").trim();
-        const otherAmount   = Number(row["Other Deduction Amount"] ?? row["other_deduction_amount"] ?? 0) || 0;
-        const existingOthers = (emp.payConfig?.otherDeductions ?? []).filter((d) => d.name !== otherName);
+
+        // Credit union — standing, stored in pay_config (applies every period)
+        const creditUnion = Number(
+          row["Credit Union (standing — every period)"] ?? row["Credit Union"] ?? row["credit_union"] ?? 0
+        ) || 0;
+
+        // One-time deductions — stored in period_deductions for this period only
+        const salaryAdvance = Number(
+          row["Salary Advance (one-time — this period only)"] ?? row["Salary Advance"] ?? row["salary_advance"] ?? 0
+        ) || 0;
+        const otherName = String(
+          row["Other Deduction Name (one-time)"] ?? row["Other Deduction Name"] ?? row["other_deduction_name"] ?? ""
+        ).trim();
+        const otherAmount = Number(
+          row["Other Deduction Amount (one-time)"] ?? row["Other Deduction Amount"] ?? row["other_deduction_amount"] ?? 0
+        ) || 0;
         const newOthers = otherName && otherAmount > 0
-          ? [...existingOthers, { name: otherName, amount: otherAmount }]
-          : existingOthers;
+          ? [{ name: otherName, amount: otherAmount }]
+          : [];
+
         try {
+          // 1. Save credit union to pay_config (standing)
           await updateUser({
             id: emp.id,
             ...emp,
-            payConfig: { ...emp.payConfig, creditUnion, advancesRecovery: salaryAdvance, otherDeductions: newOthers } as any,
+            payConfig: { ...emp.payConfig, creditUnion } as any,
           });
-          out.push({ eid, name: emp.name, status: "ok", message: `CU: ${creditUnion}, Advance: ${salaryAdvance}${otherName ? `, ${otherName}: ${otherAmount}` : ""}` });
+
+          // 2. Save one-time deductions to period_deductions for this period
+          await fetch("/api/period-deductions", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              eid,
+              period: periodKey,
+              advancesRecovery: salaryAdvance,
+              otherDeductions: newOthers,
+            }),
+          });
+
+          out.push({
+            eid,
+            name: emp.name,
+            status: "ok",
+            message: `CU (standing): ${creditUnion} | Advance (${periodKey}): ${salaryAdvance}${otherName ? ` | ${otherName}: ${otherAmount}` : ""}`,
+          });
         } catch {
           out.push({ eid, name: emp.name, status: "error", message: "Failed to save" });
         }
       }
+      // Refresh period deductions cache
+      await queryClient.invalidateQueries({ queryKey: ["/api/period-deductions", periodKey] });
       setUploadResults(out);
     } catch {
       setUploadResults([{ eid: "", name: "", status: "error", message: "Could not parse file — ensure it is .xlsx or .csv" }]);
@@ -298,14 +358,19 @@ export default function Payroll() {
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
-            <p className="text-sm text-muted-foreground">Upload an Excel (.xlsx) or CSV file with per-period deductions.</p>
-            <div className="bg-muted/40 rounded-md p-3 text-xs font-mono text-muted-foreground space-y-0.5">
+            <div className="flex items-center gap-2 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-md px-3 py-2">
+              <AlertCircle className="w-4 h-4 text-blue-600 shrink-0" />
+              <p className="text-sm text-blue-700 dark:text-blue-300">
+                Uploading deductions for <span className="font-semibold">{pd.label}</span>
+              </p>
+            </div>
+            <div className="bg-muted/40 rounded-md p-3 text-xs space-y-1 text-muted-foreground">
+              <p className="font-semibold text-foreground text-[11px] uppercase tracking-wide mb-1">Column guide</p>
               <p>• <span className="font-semibold text-foreground">Employee ID</span> — must match system ID</p>
               <p>• <span className="font-semibold text-foreground">Full Name</span> — reference only</p>
-              <p>• <span className="font-semibold text-foreground">Credit Union</span> — amount per period</p>
-              <p>• <span className="font-semibold text-foreground">Salary Advance</span> — recovery per period</p>
-              <p>• <span className="font-semibold text-foreground">Other Deduction Name</span></p>
-              <p>• <span className="font-semibold text-foreground">Other Deduction Amount</span> — per period</p>
+              <p>• <span className="font-semibold text-green-700 dark:text-green-400">Credit Union (standing)</span> — saves to employee profile, applies every period</p>
+              <p>• <span className="font-semibold text-amber-700 dark:text-amber-400">Salary Advance (one-time)</span> — applies to <strong>{pd.label}</strong> only</p>
+              <p>• <span className="font-semibold text-amber-700 dark:text-amber-400">Other Deduction Name / Amount (one-time)</span> — applies to <strong>{pd.label}</strong> only</p>
             </div>
             <div className="flex gap-2">
               <Button variant="outline" className="flex-1" onClick={downloadTemplate} data-testid="button-download-template">

@@ -531,6 +531,11 @@ export interface PayrollResult {
   effectiveRate: number;
 }
 
+export interface PeriodDeductionOverride {
+  advancesRecovery: number;
+  otherDeductions: Array<{ name: string; amount: number }>;
+}
+
 export function calcPayroll(
   employee: User,
   timesheets: Timesheet[],
@@ -540,6 +545,7 @@ export function calcPayroll(
   periodLabel?: string,
   companyPersonalAllowance?: number,
   carryForwardTimesheets?: Timesheet[],   // previous-period timesheets for weekly CF calculation
+  periodDeductionOverride?: PeriodDeductionOverride,  // one-time period-specific deductions
 ): PayrollResult {
   const pc: PayConfig = employee.payConfig ?? ({} as PayConfig);
   const isTimeEmployee = employee.cat === "Time";
@@ -722,11 +728,17 @@ export function calcPayroll(
   const paye = pc.taxOverride != null ? (pc.taxExempt ? 0 : pc.taxOverride) : payeCalc;
 
   // ── Voluntary deductions ──────────────────────────────────────────────────
-  const creditUnion      = pc.creditUnion      ?? 0;
-  const loanRepayment    = pc.loanRepayment    ?? 0;
-  const advancesRecovery = pc.advancesRecovery ?? 0;
-  const unionDues        = pc.unionDues        ?? 0;
-  const otherDeductions  = (pc.otherDeductions ?? []).reduce((s, x) => s + x.amount, 0);
+  // Standing deductions (from pay_config — apply every period)
+  const creditUnion      = pc.creditUnion   ?? 0;
+  const loanRepayment    = pc.loanRepayment ?? 0;
+  const unionDues        = pc.unionDues     ?? 0;
+  // One-time deductions: use period-specific override if supplied, otherwise fall back to pay_config
+  const advancesRecovery = periodDeductionOverride != null
+    ? periodDeductionOverride.advancesRecovery
+    : (pc.advancesRecovery ?? 0);
+  const otherDeductions  = periodDeductionOverride != null
+    ? periodDeductionOverride.otherDeductions.reduce((s, x) => s + x.amount, 0)
+    : (pc.otherDeductions ?? []).reduce((s, x) => s + x.amount, 0);
   const totalVoluntary   = creditUnion + loanRepayment + advancesRecovery + unionDues + otherDeductions;
 
   // ── Net pay ───────────────────────────────────────────────────────────────

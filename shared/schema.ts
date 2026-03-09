@@ -232,6 +232,29 @@ export const companySettings = pgTable("company_settings", {
   childAllowance: integer("child_allowance").notNull().default(10_000),
 });
 
+// ── Period-specific one-time deductions ────────────────────────────────────
+// Standing deductions (credit union, union dues, loan repayment) remain in
+// pay_config and apply every period.  One-time deductions (salary advance,
+// other) are uploaded here against a specific period key ("YYYY-MM-H") and
+// only apply to that period — they do NOT carry forward automatically.
+export const periodDeductions = pgTable("period_deductions", {
+  id:               serial("id").primaryKey(),
+  eid:              text("eid").notNull(),
+  period:           text("period").notNull(),            // e.g. "2026-01-1" or "2026-01-2"
+  advancesRecovery: doublePrecision("advances_recovery").notNull().default(0),
+  otherDeductions:  jsonb("other_deductions").$type<Array<{ name: string; amount: number }>>(),
+  updatedAt:        text("updated_at").notNull(),
+});
+
+export type PeriodDeduction = typeof periodDeductions.$inferSelect;
+export interface InsertPeriodDeduction {
+  eid: string;
+  period: string;
+  advancesRecovery: number;
+  otherDeductions: Array<{ name: string; amount: number }>;
+  updatedAt: string;
+}
+
 export const payslips = pgTable("payslips", {
   id: serial("id").primaryKey(),
   eid: text("eid").notNull(),

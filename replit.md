@@ -258,3 +258,12 @@ Implemented full Time-category payroll calculation per FMS Labour Law rules:
 - `PayslipLandscape` and PDF show Meals Pay, Responsibilities Pay, Risk Pay rows (with counts/days in label) for Time employees
 - `YTDFigures` and `computeYTD` accumulate `mealsPay`, `responsibilitiesPay`, `riskPay`
 - Fixed/Executive allowances (flat `riskAllowance`, `mealAllowance`) continue unchanged
+
+### 2026-03-09 — Period-specific one-time deductions
+- New `period_deductions` DB table: `id`, `eid`, `period` (e.g. "2026-01-1"), `advances_recovery`, `other_deductions` (jsonb), `updated_at`
+- **Standing deductions** (credit union, union dues, loan repayment) remain in `pay_config` — apply every period
+- **One-time deductions** (salary advance, other deductions) stored in `period_deductions` — apply to a single period only, never carry forward
+- Upload deductions dialog now shows which period deductions will apply to; template file named with period key; column headers differentiate standing vs one-time
+- `calcPayroll` accepts optional `periodDeductionOverride?: { advancesRecovery, otherDeductions }` (9th param); when provided, replaces `pc.advancesRecovery` and `pc.otherDeductions`
+- Payroll page fetches period deductions via `GET /api/period-deductions?period=YYYY-MM-H`, builds eid→override map, passes to each `calcPayroll` call
+- Upload handler: credit union → `pay_config`; salary advance + other → `PUT /api/period-deductions`; cache invalidated after upload

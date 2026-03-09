@@ -1,6 +1,6 @@
 import { db } from "./db";
 import {
-  users, timesheets, requests, geofences, employeeChildren, employeeLoans, schedules, callSigns, companySettings, payslips,
+  users, timesheets, requests, geofences, employeeChildren, employeeLoans, schedules, callSigns, companySettings, payslips, periodDeductions,
   type User, type InsertUser,
   type Timesheet, type InsertTimesheet,
   type Request, type InsertRequest,
@@ -11,6 +11,7 @@ import {
   type CallSign, type InsertCallSign,
   type CompanySettings,
   type Payslip, type InsertPayslip,
+  type PeriodDeduction, type InsertPeriodDeduction,
 } from "@shared/schema";
 import { eq, and, gte, lte, desc, inArray, sql } from "drizzle-orm";
 
@@ -80,6 +81,9 @@ export interface IStorage {
   getAllPayslips(): Promise<Payslip[]>;
   createPayslip(p: InsertPayslip): Promise<Payslip>;
   markPayslipSeen(id: number): Promise<void>;
+
+  getPeriodDeductionsByPeriod(period: string): Promise<PeriodDeduction[]>;
+  upsertPeriodDeduction(data: InsertPeriodDeduction): Promise<PeriodDeduction>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -322,6 +326,25 @@ export class DatabaseStorage implements IStorage {
 
   async markPayslipSeen(id: number): Promise<void> {
     await db.update(payslips).set({ seen: true }).where(eq(payslips.id, id));
+  }
+
+  async getPeriodDeductionsByPeriod(period: string): Promise<PeriodDeduction[]> {
+    return db.select().from(periodDeductions).where(eq(periodDeductions.period, period));
+  }
+
+  async upsertPeriodDeduction(data: InsertPeriodDeduction): Promise<PeriodDeduction> {
+    const existing = await db.select().from(periodDeductions)
+      .where(and(eq(periodDeductions.eid, data.eid), eq(periodDeductions.period, data.period)));
+    if (existing.length > 0) {
+      const [row] = await db.update(periodDeductions)
+        .set({ advancesRecovery: data.advancesRecovery, otherDeductions: data.otherDeductions, updatedAt: data.updatedAt })
+        .where(and(eq(periodDeductions.eid, data.eid), eq(periodDeductions.period, data.period)))
+        .returning();
+      return row;
+    } else {
+      const [row] = await db.insert(periodDeductions).values(data).returning();
+      return row;
+    }
   }
 }
 
