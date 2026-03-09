@@ -203,8 +203,18 @@ export default function Timesheets() {
 
         const normalize = (h: string) => h.toString().toLowerCase().replace(/[\s_\-\/]/g, "");
         const findCol = (row: Record<string, unknown>, ...aliases: string[]): string => {
+          const normAliases = aliases.map(normalize);
+          // 1. Exact alias match (after normalization)
           for (const key of Object.keys(row)) {
-            if (aliases.map(normalize).includes(normalize(key))) return String(row[key] ?? "").trim();
+            if (normAliases.includes(normalize(key))) return String(row[key] ?? "").trim();
+          }
+          // 2. Partial alias match — key contains any alias or alias contains key
+          for (const key of Object.keys(row)) {
+            const nk = normalize(key);
+            if (normAliases.some((a) => nk.includes(a) || a.includes(nk))) {
+              const val = String(row[key] ?? "").trim();
+              if (val) return val;
+            }
           }
           return "";
         };
@@ -266,7 +276,10 @@ export default function Timesheets() {
         };
 
         const parsed: BulkRow[] = rows.map((row, i) => {
-          const empRaw = findCol(row, "Full Name", "Name", "Employee Name", "Employee", "EID", "Employee ID", "Staff");
+          const empRaw = findCol(row, "Full Name", "Name", "Employee Name", "Employee", "EID", "Employee ID", "Staff",
+            "Officer Name", "Officers Name", "Officer", "Officers", "Guard", "Guard Name", "Personnel",
+            "Worker", "Worker Name", "Member", "Security", "Security Officer", "Emp", "Emp Name",
+            "Staff Name", "Staff ID", "Person", "Person Name");
           const dateRaw = findCol(row, "Date", "Work Date", "Shift Date", "Day");
           const ciRawStr = findCol(row, "Clock In", "In", "Start", "Time In", "ClockIn", "Start Time");
           const coRawStr = findCol(row, "Clock Out", "Out", "End", "Time Out", "ClockOut", "End Time");
