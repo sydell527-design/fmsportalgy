@@ -199,7 +199,11 @@ export default function Timesheets() {
         const data = new Uint8Array(e.target!.result as ArrayBuffer);
         const wb = XLSX.read(data, { type: "array", cellDates: true });
         const ws = wb.Sheets[wb.SheetNames[0]];
-        const rows: Record<string, unknown>[] = XLSX.utils.sheet_to_json(ws, { raw: false, defval: "" });
+        const rawRows: Record<string, unknown>[] = XLSX.utils.sheet_to_json(ws, { raw: false, defval: "" });
+        // Skip completely empty rows (e.g. trailing blank rows Excel adds at the end)
+        const rows = rawRows.filter((row) =>
+          Object.values(row).some((v) => String(v ?? "").trim() !== "")
+        );
 
         const normalize = (h: string) => h.toString().toLowerCase().replace(/[\s_\-\/]/g, "");
         const findCol = (row: Record<string, unknown>, ...aliases: string[]): string => {
