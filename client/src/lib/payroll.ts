@@ -25,6 +25,9 @@ export const PAYROLL_CONSTANTS = {
 export const TIME_CONSTANTS = {
   MEAL_RATE: 300,
   RESPONSIBILITY_RATE: 260,
+  SPECIAL_RESPONSIBILITY_LOCATIONS: [
+    "Hebrews", "Romans", "Romans-2", "Globe", "Globe-12", "Neptune P1",
+  ] as string[],
   RECOGNIZED_HOLIDAY_TYPES: [
     "New Year's Day", "Republic Day", "Phagwah", "Good Friday", "Easter Monday",
     "Labour Day", "Arrival Day", "Independence Day", "Eid al-Adha", "Eid ul Adha",
@@ -407,11 +410,7 @@ function redistributeTimeHours(approvedTs: Timesheet[], carryForwardHours: numbe
 
     // ── Meals eligibility (once per calendar date) ────────────────────────
     const client = (ts.client ?? "").trim();
-    const zone   = (ts.zone   ?? "").trim();
-    const EXCLUDED = ["canteen", "head office"];
-    const notExcluded = !EXCLUDED.some(
-      (ex) => client.toLowerCase().includes(ex) || zone.toLowerCase().includes(ex),
-    );
+    const notExcluded = !["Canteen", "Head Office"].includes(client);
     if (notExcluded && rawHours > 0 && ts.ci && !mealDates.has(ts.date)) {
       const parts = (ts.ci as string).split(":");
       const minOfDay = Number(parts[0]) * 60 + Number(parts[1] ?? 0);
@@ -450,11 +449,10 @@ function redistributeTimeHours(approvedTs: Timesheet[], carryForwardHours: numbe
     }
 
     // ── Responsibility days — once per calendar date ───────────────────────
-    // Any day physically worked outside Head Office / Canteen earns GYD 260.
-    if (notExcluded && rawHours > 0 && !respDates.has(ts.date)) {
-      responsibilityDays++;
-      respDates.add(ts.date);
-    }
+    const post = (ts.post ?? "").trim();
+    if (notExcluded && rawHours > 0 && !respDates.has(ts.date) && TIME_CONSTANTS.SPECIAL_RESPONSIBILITY_LOCATIONS.some(
+      (loc) => post.toLowerCase().includes(loc.toLowerCase()),
+    )) { responsibilityDays++; respDates.add(ts.date); }
   }
 
   // ── Period-level cap: ensure regular hours never exceed the standard hours ──
