@@ -9,72 +9,73 @@
     --font-sans: 'DM Sans', sans-serif;
     --font-display: 'Outfit', sans-serif;
 
-    /* Corporate Professional Palette - High Contrast, Clean */
-    --background: 210 20% 98%; /* Light gray background */
-    --foreground: 222 47% 11%;
-    
+    /* FMS Brand Palette — Navy + Forest Green */
+    --background: 210 20% 97%;
+    --foreground: 211 47% 12%;
+
     --card: 0 0% 100%;
-    --card-foreground: 222 47% 11%;
+    --card-foreground: 211 47% 12%;
     --card-border: 214 32% 91%;
-    
+
     --popover: 0 0% 100%;
-    --popover-foreground: 222 47% 11%;
-    
-    --primary: 221 83% 53%; /* Strong Royal Blue */
-    --primary-foreground: 210 40% 98%;
-    
-    --secondary: 210 40% 96%;
-    --secondary-foreground: 222 47% 11%;
-    
-    --muted: 210 40% 96%;
+    --popover-foreground: 211 47% 12%;
+
+    /* Primary: FMS Forest Green */
+    --primary: 127 42% 32%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 210 30% 94%;
+    --secondary-foreground: 211 47% 12%;
+
+    --muted: 210 30% 94%;
     --muted-foreground: 215 16% 47%;
-    
-    --accent: 210 40% 96%;
-    --accent-foreground: 222 47% 11%;
-    
+
+    --accent: 210 30% 92%;
+    --accent-foreground: 211 47% 12%;
+
     --destructive: 0 84% 60%;
-    --destructive-foreground: 210 40% 98%;
-    
-    --success: 142 71% 45%;
-    --success-foreground: 210 40% 98%;
-    
+    --destructive-foreground: 0 0% 100%;
+
+    --success: 127 42% 32%;
+    --success-foreground: 0 0% 100%;
+
     --warning: 38 92% 50%;
     --warning-foreground: 48 96% 89%;
 
     --border: 214 32% 91%;
     --input: 214 32% 91%;
-    --ring: 221 83% 53%;
-    
+    --ring: 127 42% 32%;
+
     --radius: 0.75rem;
 
-    /* Sidebar - Dark Corporate Slate */
-    --sidebar: 222 47% 11%;
-    --sidebar-foreground: 210 40% 98%;
-    --sidebar-border: 217 33% 17%;
-    --sidebar-accent: 217 33% 17%;
-    --sidebar-accent-foreground: 210 40% 98%;
+    /* Sidebar: FMS Dark Navy (matches logo left block) */
+    --sidebar: 211 73% 17%;
+    --sidebar-foreground: 210 40% 95%;
+    --sidebar-border: 211 55% 23%;
+    --sidebar-accent: 211 55% 24%;
+    --sidebar-accent-foreground: 210 40% 95%;
   }
 
   .dark {
-    --background: 222 47% 11%;
+    --background: 211 47% 10%;
     --foreground: 210 40% 98%;
-    --card: 222 47% 11%;
+    --card: 211 47% 13%;
     --card-foreground: 210 40% 98%;
-    --popover: 222 47% 11%;
+    --popover: 211 47% 13%;
     --popover-foreground: 210 40% 98%;
-    --primary: 217.2 91.2% 59.8%;
-    --primary-foreground: 222.2 47.4% 11.2%;
-    --secondary: 217.2 32.6% 17.5%;
+    --primary: 127 42% 40%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 211 33% 18%;
     --secondary-foreground: 210 40% 98%;
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
-    --accent: 217.2 32.6% 17.5%;
+    --muted: 211 33% 18%;
+    --muted-foreground: 215 20% 65%;
+    --accent: 211 33% 18%;
     --accent-foreground: 210 40% 98%;
-    --destructive: 0 62.8% 30.6%;
+    --destructive: 0 62% 30%;
     --destructive-foreground: 210 40% 98%;
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 212.7 26.8% 83.9%;
+    --border: 211 33% 18%;
+    --input: 211 33% 18%;
+    --ring: 127 42% 40%;
   }
 }
 

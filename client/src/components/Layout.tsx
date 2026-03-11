@@ -4,9 +4,10 @@ import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import {
   LayoutDashboard, Clock, CalendarClock, Users, Settings,
-  LogOut, Building2, DollarSign, BarChart2, ScrollText, Menu, X, FileText, CalendarDays,
+  LogOut, DollarSign, BarChart2, ScrollText, Menu, X, FileText, CalendarDays,
 } from "lucide-react";
 import { ForcePasswordChange } from "./ForcePasswordChange";
+import fmsLogo from "@assets/fms_logo_acronym_(2)_1773261874549.png";
 
 interface LayoutProps {
   children: ReactNode;
@@ -45,14 +46,9 @@ export function Layout({ children }: LayoutProps) {
       {/* ── Desktop Sidebar ──────────────────────────────────────────────── */}
       <aside className="hidden md:flex flex-col w-60 bg-sidebar text-sidebar-foreground border-r border-sidebar-border shrink-0">
         {/* Logo */}
-        <div className="px-5 py-5 flex items-center gap-3 border-b border-sidebar-border/50">
-          <div className="bg-primary p-1.5 rounded-md">
-            <Building2 className="w-5 h-5 text-primary-foreground" />
-          </div>
-          <div>
-            <h1 className="font-bold text-base leading-none">FMS</h1>
-            <p className="text-[10px] text-sidebar-foreground/50 uppercase tracking-widest font-medium mt-0.5">Timetrack</p>
-          </div>
+        <div className="px-5 py-4 flex flex-col items-start gap-1 border-b border-sidebar-border/50">
+          <img src={fmsLogo} alt="FMS Logo" className="h-11 w-auto object-contain" />
+          <p className="text-[10px] text-sidebar-foreground/50 uppercase tracking-widest font-medium pl-0.5">Timetrack</p>
         </div>
 
         {/* Nav */}
@@ -108,10 +104,7 @@ export function Layout({ children }: LayoutProps) {
           {/* Mobile: logo + page title */}
           <div className="flex items-center gap-2.5 md:gap-0">
             <div className="flex items-center gap-2 md:hidden">
-              <div className="bg-primary p-1 rounded">
-                <Building2 className="w-4 h-4 text-primary-foreground" />
-              </div>
-              <span className="font-bold text-sm leading-none">FMS</span>
+              <img src={fmsLogo} alt="FMS" className="h-7 w-auto object-contain" />
               <span className="text-muted-foreground text-sm">·</span>
             </div>
             <h2 className="font-semibold text-foreground text-sm md:text-base">{currentPage}</h2>
