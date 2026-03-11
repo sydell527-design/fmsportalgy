@@ -475,21 +475,29 @@ export function ClockInOut() {
                 <Navigation className={`w-4 h-4 ${gpsStatus === "locating" ? "animate-pulse" : ""}`} />
                 {gpsStatus === "idle"     && "Enable Location"}
                 {gpsStatus === "locating" && "Getting GPS coordinates..."}
-                {gpsStatus === "ok"       && `Location captured · ±${gpsAccuracy ?? "?"}m accuracy`}
+                {gpsStatus === "ok"       && `${gpsCoords?.lat.toFixed(6)}, ${gpsCoords?.lng.toFixed(6)} · ±${gpsAccuracy ?? "?"}m accuracy`}
                 {gpsStatus === "error"    && "Location denied — tap to retry"}
               </button>
 
+              {/* Warn when GPS accuracy is too poor to be trusted */}
+              {locationEnabled && gpsAccuracy !== null && gpsAccuracy > 500 && (
+                <div className="flex items-start gap-2 px-3 py-2 rounded-md border border-red-300 bg-red-50 text-red-700 text-sm font-medium" data-testid="gps-accuracy-warning">
+                  <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                  <span>GPS accuracy is very poor (±{gpsAccuracy}m). Your device is using network/IP location instead of real GPS. Enable device GPS or move outdoors and tap the button again for a better fix.</span>
+                </div>
+              )}
+
               {locationEnabled && selectedZone && (
                 <div className={`flex items-center gap-2 px-3 py-2 rounded-md border text-sm font-medium ${
-                  fenceStrict   ? "border-green-300 bg-green-50 text-green-700" :
+                  fenceStrict     ? "border-green-300 bg-green-50 text-green-700" :
                   fenceByAccuracy ? "border-amber-300 bg-amber-50 text-amber-700" :
                   "border-red-300 bg-red-50 text-red-700"
                 }`} data-testid="geofence-status">
                   {fenceStrict
-                    ? <><CheckCircle2 className="w-4 h-4 shrink-0" /> Within {selectedZone} zone ({distanceFromZone}m · limit {selectedFence?.radius}m)</>
+                    ? <><CheckCircle2 className="w-4 h-4 shrink-0" /> Within {selectedZone} zone ({distanceFromZone}m from centre · limit {selectedFence?.radius}m)</>
                     : fenceByAccuracy
                     ? <><AlertTriangle className="w-4 h-4 shrink-0" /> Near {selectedZone} ({distanceFromZone}m) — GPS accuracy ±{gpsAccuracy}m, clock-in allowed</>
-                    : <><AlertTriangle className="w-4 h-4 shrink-0" /> Outside zone — {distanceFromZone}m away (limit {selectedFence?.radius}m)</>
+                    : <><AlertTriangle className="w-4 h-4 shrink-0" /> Outside zone — {distanceFromZone}m from centre (limit {selectedFence?.radius}m)</>
                   }
                 </div>
               )}
@@ -540,7 +548,7 @@ export function ClockInOut() {
                 <Navigation className={`w-4 h-4 ${gpsStatus === "locating" ? "animate-pulse" : ""}`} />
                 {gpsStatus === "idle"     && "Enable Location to Clock Out"}
                 {gpsStatus === "locating" && "Getting GPS coordinates..."}
-                {gpsStatus === "ok"       && `Location captured · ±${gpsAccuracy ?? "?"}m accuracy`}
+                {gpsStatus === "ok"       && `${gpsCoords?.lat.toFixed(6)}, ${gpsCoords?.lng.toFixed(6)} · ±${gpsAccuracy ?? "?"}m accuracy`}
                 {gpsStatus === "error"    && "Location denied — tap to retry"}
               </button>
 
