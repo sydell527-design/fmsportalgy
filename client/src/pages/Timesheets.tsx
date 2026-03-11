@@ -494,8 +494,8 @@ export default function Timesheets() {
         fetch(`/api/timesheets?startDate=${pd.start}&endDate=${pd.end}`).then((r) => r.json()),
         fetch(`/api/timesheets?startDate=${cfStart}&endDate=${cfEnd}`).then((r) => r.json()),
         fetch(`/api/users`).then((r) => r.json()),
-        fetch(`/api/children/all`).then((r) => r.json()),
-        fetch(`/api/settings/company`).then((r) => r.json()),
+        fetch(`/api/children`).then((r) => r.json()),
+        fetch(`/api/settings`).then((r) => r.json()),
         fetch(`/api/period-deductions?period=${periodKey}`).then((r) => r.json()),
       ]);
 
