@@ -105,6 +105,7 @@ export function ClockInOut() {
   const [selectedZone, setSelectedZone] = useState("");
   const [selectedPost, setSelectedPost] = useState("");
   const [gpsCoords, setGpsCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [gpsAccuracy, setGpsAccuracy] = useState<number | null>(null); // metres, from browser Geolocation API
   const [gpsStatus, setGpsStatus] = useState<"idle" | "locating" | "ok" | "error">("idle");
   const [distanceFromZone, setDistanceFromZone] = useState<number | null>(null);
   const [locationEnabled, setLocationEnabled] = useState(false);
@@ -155,7 +156,7 @@ export function ClockInOut() {
 
   const isWithinClockInZone =
     gpsCoords && clockInFence
-      ? haversineMetres(gpsCoords.lat, gpsCoords.lng, clockInFence.lat, clockInFence.lng) <= clockInFence.radius
+      ? haversineMetres(gpsCoords.lat, gpsCoords.lng, clockInFence.lat, clockInFence.lng) <= clockInFence.radius + Math.min(gpsAccuracy ?? 0, 100)
       : false;
 
   const enableLocation = () => {
@@ -167,13 +168,15 @@ export function ClockInOut() {
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         const coords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        const acc = Math.round(pos.coords.accuracy ?? 0);
         setGpsCoords(coords);
+        setGpsAccuracy(acc);
         setGpsStatus("ok");
         setLocationEnabled(true);
         if (selectedFence) {
           setDistanceFromZone(Math.round(haversineMetres(coords.lat, coords.lng, selectedFence.lat, selectedFence.lng)));
         }
-        toast({ title: "Location enabled", description: "GPS coordinates captured." });
+        toast({ title: "Location captured", description: `GPS accuracy: ±${acc}m` });
       },
       (err) => {
         setGpsStatus("error");
@@ -194,7 +197,18 @@ export function ClockInOut() {
     }
   };
 
+  // GPS accuracy buffer: capped at 100m to prevent very poor network fixes
+  // from granting access far from the fence.
+  const accuracyBuffer = Math.min(gpsAccuracy ?? 0, 100);
+
   const isWithinFence = () => {
+    if (!selectedFence || !gpsCoords) return false;
+    const dist = haversineMetres(gpsCoords.lat, gpsCoords.lng, selectedFence.lat, selectedFence.lng);
+    return dist <= selectedFence.radius + accuracyBuffer;
+  };
+
+  // True only when the user is within the hard radius (no accuracy padding needed)
+  const isStrictlyWithinFence = () => {
     if (!selectedFence || !gpsCoords) return false;
     return haversineMetres(gpsCoords.lat, gpsCoords.lng, selectedFence.lat, selectedFence.lng) <= selectedFence.radius;
   };
@@ -322,8 +336,11 @@ export function ClockInOut() {
   const [, setLocation] = useLocation();
   if (!user) return null;
 
-  const fenceOk   = locationEnabled && selectedZone && isWithinFence();
-  const fenceFail = locationEnabled && selectedZone && !isWithinFence();
+  const fenceOk      = locationEnabled && selectedZone && isWithinFence();
+  const fenceStrict  = locationEnabled && selectedZone && isStrictlyWithinFence();
+  const fenceFail    = locationEnabled && selectedZone && !isWithinFence();
+  // True when inside only because of the accuracy buffer (not hard radius)
+  const fenceByAccuracy = fenceOk && !fenceStrict;
   const clockOutZoneOk   = gpsCoords && clockInFence && isWithinClockInZone;
   const clockOutZoneFail = gpsCoords && clockInFence && !isWithinClockInZone;
 
@@ -458,16 +475,20 @@ export function ClockInOut() {
                 <Navigation className={`w-4 h-4 ${gpsStatus === "locating" ? "animate-pulse" : ""}`} />
                 {gpsStatus === "idle"     && "Enable Location"}
                 {gpsStatus === "locating" && "Getting GPS coordinates..."}
-                {gpsStatus === "ok"       && `Location captured (${gpsCoords?.lat.toFixed(5)}, ${gpsCoords?.lng.toFixed(5)})`}
+                {gpsStatus === "ok"       && `Location captured · ±${gpsAccuracy ?? "?"}m accuracy`}
                 {gpsStatus === "error"    && "Location denied — tap to retry"}
               </button>
 
               {locationEnabled && selectedZone && (
                 <div className={`flex items-center gap-2 px-3 py-2 rounded-md border text-sm font-medium ${
-                  fenceOk ? "border-green-300 bg-green-50 text-green-700" : "border-red-300 bg-red-50 text-red-700"
+                  fenceStrict   ? "border-green-300 bg-green-50 text-green-700" :
+                  fenceByAccuracy ? "border-amber-300 bg-amber-50 text-amber-700" :
+                  "border-red-300 bg-red-50 text-red-700"
                 }`} data-testid="geofence-status">
-                  {fenceOk
+                  {fenceStrict
                     ? <><CheckCircle2 className="w-4 h-4 shrink-0" /> Within {selectedZone} zone ({distanceFromZone}m · limit {selectedFence?.radius}m)</>
+                    : fenceByAccuracy
+                    ? <><AlertTriangle className="w-4 h-4 shrink-0" /> Near {selectedZone} ({distanceFromZone}m) — GPS accuracy ±{gpsAccuracy}m, clock-in allowed</>
                     : <><AlertTriangle className="w-4 h-4 shrink-0" /> Outside zone — {distanceFromZone}m away (limit {selectedFence?.radius}m)</>
                   }
                 </div>
@@ -519,7 +540,7 @@ export function ClockInOut() {
                 <Navigation className={`w-4 h-4 ${gpsStatus === "locating" ? "animate-pulse" : ""}`} />
                 {gpsStatus === "idle"     && "Enable Location to Clock Out"}
                 {gpsStatus === "locating" && "Getting GPS coordinates..."}
-                {gpsStatus === "ok"       && `Location captured (${gpsCoords?.lat.toFixed(5)}, ${gpsCoords?.lng.toFixed(5)})`}
+                {gpsStatus === "ok"       && `Location captured · ±${gpsAccuracy ?? "?"}m accuracy`}
                 {gpsStatus === "error"    && "Location denied — tap to retry"}
               </button>
 
