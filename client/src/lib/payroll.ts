@@ -333,6 +333,7 @@ interface TimeDistResult {
   ot: number;
   ph: number;
   hd: number; // Holiday Double (2×) — employer-designated double-pay days
+  annualLeaveHours: number; // Annual Leave hours (paid at regular rate, tracked separately for QB export)
   mealsCount: number;
   armedDays: number;       // Actual days physically worked while Armed (for display)
   armedMissedDays: number; // Sick/Absent/Annual-Leave days for Armed employees (for risk-pay table)
@@ -350,7 +351,7 @@ function redistributeTimeHours(approvedTs: Timesheet[], carryForwardHours: numbe
   for (const y of years) Object.assign(calendarMap, getGuyanaHolidaysForYear(y));
 
   let weeklyBefore = carryForwardHours;
-  let totalReg = 0, totalOT = 0, totalPH = 0, totalHD = 0;
+  let totalReg = 0, totalOT = 0, totalPH = 0, totalHD = 0, totalAL = 0;
   let mealsCount = 0, armedDays = 0, armedMissedDays = 0, responsibilityDays = 0;
   // Per-date dedup sets — meals/armed/responsibility are counted once per calendar day
   const mealDates        = new Set<string>();
@@ -373,7 +374,7 @@ function redistributeTimeHours(approvedTs: Timesheet[], carryForwardHours: numbe
     let dayReg = 0, dayOT = 0, dayPH = 0, dayHD = 0, weekContrib = 0;
 
     if (dayStatus === "Annual Leave") {
-      dayReg = 8; weekContrib = 8;
+      dayReg = 8; weekContrib = 8; totalAL += 8;
     } else if (dayStatus === "Sick") {
       // Person did not work — no pay, no contribution to the weekly 40-hr cap.
     } else if (dayStatus === "Off Day") {
@@ -459,7 +460,7 @@ function redistributeTimeHours(approvedTs: Timesheet[], carryForwardHours: numbe
   // applies. A period that spans parts of 3 calendar weeks can legitimately
   // accumulate more than 80 regular hours (e.g. Jan 16–31: 16 partial + 40 + 40 = 96).
 
-  return { reg: totalReg, ot: totalOT, ph: totalPH, hd: totalHD, mealsCount, armedDays, armedMissedDays, responsibilityDays };
+  return { reg: totalReg, ot: totalOT, ph: totalPH, hd: totalHD, annualLeaveHours: totalAL, mealsCount, armedDays, armedMissedDays, responsibilityDays };
 }
 
 // ── PayrollResult ─────────────────────────────────────────────────────────────
@@ -492,6 +493,7 @@ export interface PayrollResult {
   responsibilityDays?: number;
   armedDays?: number;
   carryForwardHours?: number;
+  annualLeaveHours?: number; // Vacation/Annual Leave hours for QB People Pay export
 
   // Statutory deductions
   employeeNIS: number;
@@ -573,6 +575,7 @@ export function calcPayroll(
 
   // ── Hours — Time employees get weekly-cap redistribution; others sum stored values ──
   let regularHours: number, otHours: number, phHours: number, hdHours: number;
+  let annualLeaveHours = 0;
   let mealsCount = 0, armedDays = 0, responsibilityDays = 0;
   let riskTableInput = 0; // Input to lookupRiskPay: 14 - missedDays (not raw armedDays)
   let carryForwardHours = 0;
@@ -603,12 +606,13 @@ export function calcPayroll(
     }
 
     const dist = redistributeTimeHours(approvedTs, carryForwardHours, employee.armed);
-    regularHours      = dist.reg;
-    otHours           = dist.ot;
-    phHours           = dist.ph;
-    hdHours           = dist.hd;
-    mealsCount        = dist.mealsCount;
-    armedDays         = dist.armedDays;
+    regularHours       = dist.reg;
+    otHours            = dist.ot;
+    phHours            = dist.ph;
+    hdHours            = dist.hd;
+    annualLeaveHours   = dist.annualLeaveHours;
+    mealsCount         = dist.mealsCount;
+    armedDays          = dist.armedDays;
     responsibilityDays = dist.responsibilityDays;
     // Risk-pay table input: 14 - missed days. 0 missed → 14 → GYD 5,000 (full period).
     // Off Days are NOT missed — only Sick/Absent/Annual Leave reduce the count.
@@ -761,6 +765,7 @@ export function calcPayroll(
     responsibilityDays:  isTimeEmployee ? responsibilityDays              : undefined,
     armedDays:           isTimeEmployee ? armedDays                       : undefined,
     carryForwardHours:   isTimeEmployee ? carryForwardHours               : undefined,
+    annualLeaveHours:    isTimeEmployee ? annualLeaveHours                : undefined,
     employeeNIS,
     employerNIS,
     healthSurcharge,
@@ -855,6 +860,52 @@ export function generateQuickBooksCSV(results: PayrollResult[]): string {
   return [headers, ...rows]
     .map((row) => row.map((v) => `"${v}"`).join(","))
     .join("\n");
+}
+
+// ── People Pay CSV (QuickBooks Upload Codes format) ──────────────────────────
+// Format: PAYROLL_ID, EMPLOYEENAME, INCOME_CODE, HOURS, DOLLARS
+// One row per code per employee:
+//   ANNLEAVE – Annual Leave vacation hours + pay
+//   NR       – Basic/Regular worked hours + pay (excl. Annual Leave)
+//   OT1      – Public Holiday hours + pay (1.5×)
+//   80125    – Responsibility days count + pay
+//   INCENTIVE – Not used / zeros
+//   MA       – Meals count + pay
+//   OT       – Overtime + Holiday Double hours combined + pay
+//   RA       – Risk Pay amount
+export function generatePeoplePayCSV(results: PayrollResult[]): string {
+  const lines: string[] = ["PAYROLL_ID,EMPLOYEENAME,INCOME_CODE,HOURS,DOLLARS"];
+
+  for (const r of results) {
+    const id   = r.employee.userId;
+    const name = r.employee.name;
+    const al   = r.annualLeaveHours ?? 0;
+    const rate = r.effectiveRate;
+
+    // Annual Leave pay is carved out of basicPay (same rate, tracked separately)
+    const alPay      = Math.round(al * rate);
+    const nrHours    = Math.max(0, r.regularHours - al);
+    const nrPay      = Math.round(nrHours * rate);
+    const otCombHrs  = r.otHours + r.hdHours;           // OT + Holiday Double together
+    const otCombPay  = Math.round(r.otPay + r.hdPay);
+
+    const rows: [string, number, number][] = [
+      ["ANNLEAVE", al,                            alPay],
+      ["NR",       nrHours,                       nrPay],
+      ["OT1",      r.phHours,                     Math.round(r.phPay)],
+      ["80125",    r.responsibilityDays ?? 0,     Math.round(r.responsibilitiesPay ?? 0)],
+      ["INCENTIVE",0,                             0],
+      ["MA",       r.mealsCount ?? 0,             Math.round(r.mealsPay ?? 0)],
+      ["OT",       +otCombHrs.toFixed(2),         otCombPay],
+      ["RA",       0,                             Math.round(r.riskPay ?? 0)],
+    ];
+
+    for (const [code, hrs, dollars] of rows) {
+      lines.push(`${id},"${name}",${code},${hrs},${dollars}`);
+    }
+  }
+
+  return lines.join("\n");
 }
 
 export function downloadCSV(content: string, filename: string) {

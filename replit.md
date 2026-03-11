@@ -266,6 +266,27 @@ Implemented full Time-category payroll calculation per FMS Labour Law rules:
 - Each Saturday that trips the weekly cap correctly produces 8 OT hours: 2 Saturdays → 16 OT
 - Removed `periodStdHours` parameter from `redistributeTimeHours()` and removed the `hrsPerPeriod` argument from its call site in `calcPayroll()`
 
+### 2026-03-11 — People Pay CSV (QuickBooks Upload Codes) + PWA
+- Added "People Pay" button in admin General Timesheets toolbar (next to Bulk Upload)
+- Clicking opens a period-selection dialog (year / month / half) with a "Download CSV" button
+- Downloads `FMS_PeoplePay_YYYY-MM-DD_YYYY-MM-DD.csv` using QB Upload Codes format:
+  - `ANNLEAVE` – Annual Leave vacation hours + dollar amount
+  - `NR` – Basic/Regular worked hours + pay (excludes Annual Leave)
+  - `OT1` – Public Holiday hours + pay (1.5×)
+  - `80125` – Responsibility days count + pay
+  - `INCENTIVE` – Always 0/0 (not applicable)
+  - `MA` – Meals count + pay
+  - `OT` – Overtime + Holiday Double hours combined + pay
+  - `RA` – Risk Pay dollar amount
+- Added `annualLeaveHours` field to `TimeDistResult`, `PayrollResult`, and `calcPayroll` return so vacation hours are separated from regular worked hours for the QB export
+- Added `generatePeoplePayCSV(results)` export function to `payroll.ts`
+- **PWA (Progressive Web App)**: app is now installable on Android and iOS
+  - `client/public/manifest.json` – Web App Manifest with FMS TimeTrack branding
+  - `client/public/sw.js` – Service worker (network-first for API, cache-first for assets)
+  - `client/public/icon-192.png` and `icon-512.png` – generated PWA icons
+  - `client/index.html` – manifest link, Apple mobile tags, theme-color meta
+  - `client/src/main.tsx` – service worker registration on load
+
 ### 2026-03-09 — Period-specific one-time deductions
 - New `period_deductions` DB table: `id`, `eid`, `period` (e.g. "2026-01-1"), `advances_recovery`, `other_deductions` (jsonb), `updated_at`
 - **Standing deductions** (credit union, union dues, loan repayment) remain in `pay_config` — apply every period

@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Clock, MapPin, PenLine, AlertTriangle, CheckCircle2,
   XCircle, ChevronDown, ChevronUp, Lock, ShieldCheck, Edit2, CalendarDays, ChevronLeft, ChevronRight,
@@ -18,7 +19,7 @@ import {
   Search, Filter,
 } from "lucide-react";
 import { format, startOfMonth, endOfMonth, subMonths, addMonths } from "date-fns";
-import { lookupGuyanaHoliday } from "@/lib/payroll";
+import { lookupGuyanaHoliday, calcPayroll, generatePeoplePayCSV, downloadCSV, periodDates, PAYROLL_CONSTANTS } from "@/lib/payroll";
 import { useToast } from "@/hooks/use-toast";
 import type { Timesheet } from "@shared/schema";
 import { DAY_STATUSES, HOLIDAY_TYPES, ARMED_STATUSES, CLIENT_AGENCIES } from "@shared/schema";
@@ -89,6 +90,14 @@ export default function Timesheets() {
 
   // Bulk upload dialog state
   const [bulkOpen, setBulkOpen] = useState(false);
+
+  // People Pay download dialog
+  const nowDate = new Date();
+  const [ppOpen,    setPpOpen]    = useState(false);
+  const [ppYear,    setPpYear]    = useState(nowDate.getFullYear());
+  const [ppMonth,   setPpMonth]   = useState(nowDate.getMonth() + 1);
+  const [ppHalf,    setPpHalf]    = useState<"1" | "2">("1");
+  const [ppLoading, setPpLoading] = useState(false);
   interface BulkRow {
     rowNum: number;
     eid?: string;
@@ -465,6 +474,62 @@ export default function Timesheets() {
     }
   };
 
+  // ── People Pay Download (QuickBooks Upload Codes format) ──────────────────
+  const handlePeoplePayDownload = async () => {
+    setPpLoading(true);
+    try {
+      const ym = `${ppYear}-${String(ppMonth).padStart(2, "0")}`;
+      const pd = periodDates(ym, ppHalf);
+
+      // Carry-forward window (up to 7 days before period start)
+      const pdStartObj = new Date(pd.start + "T00:00:00");
+      const cfEndObj   = new Date(pdStartObj); cfEndObj.setDate(cfEndObj.getDate() - 1);
+      const cfStartObj = new Date(pdStartObj); cfStartObj.setDate(cfStartObj.getDate() - 7);
+      const cfEnd   = cfEndObj.toISOString().slice(0, 10);
+      const cfStart = cfStartObj.toISOString().slice(0, 10);
+
+      const periodKey = `${ym}-${ppHalf}`;
+
+      const [tsPeriod, tsCF, empResp, childrenResp, settingsResp, pdResp] = await Promise.all([
+        fetch(`/api/timesheets?startDate=${pd.start}&endDate=${pd.end}`).then((r) => r.json()),
+        fetch(`/api/timesheets?startDate=${cfStart}&endDate=${cfEnd}`).then((r) => r.json()),
+        fetch(`/api/users`).then((r) => r.json()),
+        fetch(`/api/children/all`).then((r) => r.json()),
+        fetch(`/api/settings/company`).then((r) => r.json()),
+        fetch(`/api/period-deductions?period=${periodKey}`).then((r) => r.json()),
+      ]);
+
+      const companyPA = settingsResp?.personalAllowance ?? PAYROLL_CONSTANTS.PERSONAL_ALLOWANCE;
+      const periodDeductionMap: Record<string, { advancesRecovery: number; otherDeductions: Array<{ name: string; amount: number }> }> = {};
+      for (const pdd of (pdResp ?? [])) {
+        periodDeductionMap[(pdd as any).eid] = {
+          advancesRecovery: (pdd as any).advancesRecovery ?? 0,
+          otherDeductions: (pdd as any).otherDeductions ?? [],
+        };
+      }
+
+      const activeEmps = (empResp ?? []).filter((u: any) => u.status === "active" && u.role !== "admin");
+      const results = activeEmps
+        .map((emp: any) =>
+          calcPayroll(emp, tsPeriod, pd.start, pd.end, childrenResp ?? [], pd.label, companyPA, tsCF, periodDeductionMap[emp.userId])
+        )
+        .filter((r: any) => r.approvedTimesheets > 0);
+
+      if (results.length === 0) {
+        toast({ title: "No approved timesheets", description: `No approved records found for ${pd.label}`, variant: "destructive" });
+        return;
+      }
+
+      downloadCSV(generatePeoplePayCSV(results), `FMS_PeoplePay_${pd.start}_${pd.end}.csv`);
+      setPpOpen(false);
+      toast({ title: "People Pay downloaded", description: `${results.length} employee${results.length !== 1 ? "s" : ""} exported for ${pd.label}` });
+    } catch (err) {
+      toast({ title: "Download failed", description: err instanceof Error ? err.message : "Please try again.", variant: "destructive" });
+    } finally {
+      setPpLoading(false);
+    }
+  };
+
   // Auto-clean duplicates on mount for full-access users (server handles batch delete efficiently)
   useEffect(() => {
     const role = user?.role;
@@ -810,6 +875,15 @@ export default function Timesheets() {
                 >
                   <Upload className="w-3.5 h-3.5 mr-1.5" />
                   Bulk Upload
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setPpOpen(true)}
+                  data-testid="button-people-pay-download"
+                >
+                  <FileSpreadsheet className="w-3.5 h-3.5 mr-1.5" />
+                  People Pay
                 </Button>
               </div>
             );
@@ -2040,6 +2114,64 @@ export default function Timesheets() {
                   <span className="flex items-center gap-1.5"><Upload className="w-4 h-4 animate-bounce" /> Uploading…</span>
                 ) : (
                   <span className="flex items-center gap-1.5"><Upload className="w-4 h-4" /> Upload Timesheets</span>
+                )}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── People Pay Download Dialog ───────────────────────────────────────── */}
+      <Dialog open={ppOpen} onOpenChange={setPpOpen}>
+        <DialogContent className="max-w-sm" aria-describedby="pp-desc">
+          <DialogHeader>
+            <DialogTitle>People Pay Download</DialogTitle>
+          </DialogHeader>
+          <p id="pp-desc" className="text-sm text-muted-foreground">
+            Downloads a QuickBooks-compatible CSV with income codes (ANNLEAVE, NR, OT1, MA, OT, RA, 80125) for each employee's approved timesheets in the selected period.
+          </p>
+          <div className="space-y-3 pt-1">
+            <div className="flex gap-2">
+              <div className="flex-1">
+                <Label className="text-xs mb-1 block">Year</Label>
+                <Select value={String(ppYear)} onValueChange={(v) => setPpYear(Number(v))}>
+                  <SelectTrigger data-testid="select-pp-year"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {[nowDate.getFullYear() - 1, nowDate.getFullYear(), nowDate.getFullYear() + 1].map((y) => (
+                      <SelectItem key={y} value={String(y)}>{y}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex-1">
+                <Label className="text-xs mb-1 block">Month</Label>
+                <Select value={String(ppMonth)} onValueChange={(v) => setPpMonth(Number(v))}>
+                  <SelectTrigger data-testid="select-pp-month"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"].map((m, i) => (
+                      <SelectItem key={i+1} value={String(i+1)}>{m}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex-1">
+                <Label className="text-xs mb-1 block">Period</Label>
+                <Select value={ppHalf} onValueChange={(v) => setPpHalf(v as "1" | "2")}>
+                  <SelectTrigger data-testid="select-pp-half"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="1">1–15</SelectItem>
+                    <SelectItem value="2">16–end</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end pt-1">
+              <Button variant="outline" onClick={() => setPpOpen(false)} disabled={ppLoading}>Cancel</Button>
+              <Button onClick={handlePeoplePayDownload} disabled={ppLoading} data-testid="button-confirm-people-pay">
+                {ppLoading ? (
+                  <span className="flex items-center gap-1.5"><Loader2 className="w-4 h-4 animate-spin" /> Generating…</span>
+                ) : (
+                  <span className="flex items-center gap-1.5"><FileSpreadsheet className="w-4 h-4" /> Download CSV</span>
                 )}
               </Button>
             </div>
