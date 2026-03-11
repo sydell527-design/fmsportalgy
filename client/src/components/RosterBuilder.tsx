@@ -62,22 +62,11 @@ interface AgencyRoster {
   savedCount?: number;     // shifts saved in last save action (for tab badge)
 }
 
-interface ExistingSchedule {
-  eid: string;
-  date: string;
-  shiftStart: string;
-  shiftEnd: string;
-  client?: string | null;
-  location?: string | null;
-  company?: string | null;
-}
-
 interface Props {
   open: boolean;
   onClose: () => void;
   employees: { userId: string; name: string; pos: string }[];
   onSaved: () => void;
-  existingSchedules?: ExistingSchedule[];
 }
 
 // ── Employee search combobox ───────────────────────────────────────────────────
@@ -491,7 +480,7 @@ function SectionGrid({
 }
 
 // ── Main RosterBuilder ────────────────────────────────────────────────────────
-export function RosterBuilder({ open, onClose, employees, onSaved, existingSchedules = [] }: Props) {
+export function RosterBuilder({ open, onClose, employees, onSaved }: Props) {
   const { user }  = useAuth();
   const { toast } = useToast();
   const qc        = useQueryClient();
@@ -809,43 +798,8 @@ export function RosterBuilder({ open, onClose, employees, onSaved, existingSched
   // Agency management
   function openAgency(agency: string) {
     setAgencyRosters((prev) => {
-      if (prev.some((ar) => ar.agency === agency)) {
-        // Already open — just switch to it (may have been pre-populated already)
-        return prev;
-      }
-      // Pre-populate rows from previously saved schedules for this agency + period
-      const agencySchedules = existingSchedules.filter(
-        (s) => (s.client ?? "") === agency && s.date >= dateFrom && s.date <= dateTo,
-      );
-      const company = agencySchedules[0]?.company ?? "";
-
-      const byEid: Record<string, ExistingSchedule[]> = {};
-      for (const s of agencySchedules) {
-        if (!byEid[s.eid]) byEid[s.eid] = [];
-        byEid[s.eid].push(s);
-      }
-
-      const rows: EmpRow[] = Object.entries(byEid).map(([eid, shifts]) => {
-        const emp = employees.find((e) => e.userId === eid);
-        const cells: Record<string, string> = {};
-        const customTimes: Record<string, { start: string; end: string }> = {};
-        for (const s of shifts) {
-          const code = timesToCode(s.shiftStart, s.shiftEnd);
-          cells[s.date] = code;
-          if (code === "custom") customTimes[s.date] = { start: s.shiftStart, end: s.shiftEnd };
-        }
-        return {
-          eid,
-          name: emp?.name ?? eid,
-          pos: emp?.pos ?? "",
-          callSign: eid,
-          location: shifts[0]?.location ?? "",
-          cells,
-          customTimes,
-        };
-      });
-
-      return [...prev, { agency, company, rows, reliefRows: [], reserveRows: [] }];
+      if (prev.some((ar) => ar.agency === agency)) return prev;
+      return [...prev, { agency, company: "", rows: [], reliefRows: [], reserveRows: [] }];
     });
     setActiveAgency(agency);
     setReliefOpen(false);
@@ -1013,20 +967,11 @@ export function RosterBuilder({ open, onClose, employees, onSaved, existingSched
   }
 
   // Convert shift code → start/end times
-  // "Off" → sentinel { "00:00", "00:00" } so off-duty days are persisted
   function codeToTimes(code: string, custom?: { start: string; end: string }): { start: string; end: string } | null {
-    if (!code) return null;
-    if (code === "Off") return { start: "00:00", end: "00:00" };
+    if (code === "Off" || !code) return null;
     if (code === "custom" && custom) return custom;
     const p = presetByCode(code);
     return p ? { start: p.start, end: p.end } : null;
-  }
-
-  // Reverse: times → shift code (for loading saved schedules back into the grid)
-  function timesToCode(start: string, end: string): string {
-    if (start === "00:00" && end === "00:00") return "Off";
-    const preset = SHIFT_PRESETS.find((p) => p.start === start && p.end === end);
-    return preset ? preset.code : "custom";
   }
 
   async function handleSave() {
@@ -1062,7 +1007,7 @@ export function RosterBuilder({ open, onClose, employees, onSaved, existingSched
     }
 
     if (toCreate.length === 0) {
-      toast({ title: "No shifts to save", description: "Mark at least one shift before saving.", variant: "destructive" });
+      toast({ title: "No shifts to save", description: "Mark at least one shift (not Off Duty) to continue.", variant: "destructive" });
       return;
     }
 

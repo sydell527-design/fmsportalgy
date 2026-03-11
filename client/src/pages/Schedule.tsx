@@ -831,10 +831,7 @@ export default function SchedulePage() {
     [schedules, empPeriodBounds]
   );
 
-  const empWorkShifts = empPeriodShifts.filter((s) => !(s.shiftStart === "00:00" && s.shiftEnd === "00:00"));
-  const empOffShifts  = empPeriodShifts.filter((s) => s.shiftStart === "00:00" && s.shiftEnd === "00:00");
-
-  const empTotalHours = empWorkShifts.reduce((acc, s) => {
+  const empTotalHours = empPeriodShifts.reduce((acc, s) => {
     const [sh, sm] = s.shiftStart.split(":").map(Number);
     const [eh, em] = s.shiftEnd.split(":").map(Number);
     let mins = (eh * 60 + em) - (sh * 60 + sm);
@@ -1468,8 +1465,7 @@ export default function SchedulePage() {
                   const isToday   = ds === todayStr;
                   const dow       = d.getDay();
                   const isWkend   = dow === 0 || dow === 6;
-                  // Only show shift chips for days inside the selected period
-                  const dayShifts = inPeriod ? (empShiftByDate[ds] ?? []) : [];
+                  const dayShifts = empShiftByDate[ds] ?? [];
 
                   return (
                     <div
@@ -1495,34 +1491,23 @@ export default function SchedulePage() {
                           </span>
                         ) : format(d, "d")}
                       </div>
-                      {/* Shift chips — Off Duty shown as grey "OFF" badge */}
-                      {dayShifts.map((s) => {
-                        const isOff = s.shiftStart === "00:00" && s.shiftEnd === "00:00";
-                        return isOff ? (
-                          <div
-                            key={s.id}
-                            className="w-full rounded text-center text-[7px] font-bold py-0.5 mb-0.5 leading-tight bg-muted text-muted-foreground border border-border/40"
-                            data-testid={`emp-shift-${s.id}`}
-                          >
-                            OFF
-                          </div>
-                        ) : (
-                          <div
-                            key={s.id}
-                            className={`w-full rounded text-center text-white text-[7px] font-medium py-0.5 mb-0.5 leading-tight tabular-nums px-0.5 ${
-                              s.armed === "Armed" ? "bg-red-500" : "bg-blue-500"
-                            }`}
-                            data-testid={`emp-shift-${s.id}`}
-                          >
-                            <div className="font-semibold">{fmt12(s.shiftStart)}</div>
-                            <div className="opacity-60 text-[5px] tracking-widest">────</div>
-                            <div className="font-semibold">{fmt12(s.shiftEnd)}</div>
-                            {s.company && (
-                              <div className="mt-0.5 text-[5px] opacity-80 truncate font-semibold tracking-wide">{s.company}</div>
-                            )}
-                          </div>
-                        );
-                      })}
+                      {/* Shift chips */}
+                      {dayShifts.map((s) => (
+                        <div
+                          key={s.id}
+                          className={`w-full rounded text-center text-white text-[7px] font-medium py-0.5 mb-0.5 leading-tight tabular-nums px-0.5 ${
+                            s.armed === "Armed" ? "bg-red-500" : "bg-blue-500"
+                          }`}
+                          data-testid={`emp-shift-${s.id}`}
+                        >
+                          <div className="font-semibold">{fmt12(s.shiftStart)}</div>
+                          <div className="opacity-60 text-[5px] tracking-widest">────</div>
+                          <div className="font-semibold">{fmt12(s.shiftEnd)}</div>
+                          {s.company && (
+                            <div className="mt-0.5 text-[5px] opacity-80 truncate font-semibold tracking-wide">{s.company}</div>
+                          )}
+                        </div>
+                      ))}
                     </div>
                   );
                 })}
@@ -1533,9 +1518,8 @@ export default function SchedulePage() {
                 <div>
                   <p className="text-[11px] font-bold text-foreground">{empPeriodBounds.label}</p>
                   <p className="text-[10px] text-muted-foreground mt-0.5">
-                    {empWorkShifts.length} shift{empWorkShifts.length !== 1 ? "s" : ""}
+                    {empPeriodShifts.length} shift{empPeriodShifts.length !== 1 ? "s" : ""}
                     {empTotalHours > 0 ? `  ·  ${empTotalHours % 1 === 0 ? empTotalHours : empTotalHours.toFixed(1)} hrs` : ""}
-                    {empOffShifts.length > 0 ? `  ·  ${empOffShifts.length} off` : ""}
                   </p>
                 </div>
                 {/* Armed / Unarmed legend */}
@@ -1588,7 +1572,6 @@ export default function SchedulePage() {
         onClose={() => setRosterOpen(false)}
         employees={activeEmployees}
         onSaved={refreshSchedules}
-        existingSchedules={teamSchedules}
       />
 
       {/* ── Dialogs ───────────────────────────────────────────────────────────── */}
