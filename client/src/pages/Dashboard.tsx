@@ -17,6 +17,7 @@ import {
   TrendingUp, Calendar, PenLine, XCircle, Building2,
   Trash2, Shield, ShieldOff, Radio, Search, ChevronDown,
   ChevronRight, LayoutDashboard, RefreshCw, Filter,
+  Maximize2, Minimize2, MapPin, Briefcase,
 } from "lucide-react";
 import { format, differenceInMinutes, parse, startOfMonth, endOfMonth } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
@@ -208,9 +209,26 @@ export default function Dashboard() {
     return { active, zones };
   }, [timesheets, today]);
   const [locFilter, setLocFilter] = useState("ALL");
-  const liveDisplayed = locFilter === "ALL"
-    ? livePersonnel.active
-    : livePersonnel.active.filter((t) => (t.zone ?? "Unknown") === locFilter);
+  const [liveExpanded, setLiveExpanded] = useState(false);
+  const [liveSearch, setLiveSearch] = useState("");
+  const liveDisplayed = useMemo(() => {
+    let rows = locFilter === "ALL"
+      ? livePersonnel.active
+      : livePersonnel.active.filter((t) => (t.zone ?? "Unknown") === locFilter);
+    if (liveSearch.trim()) {
+      const q = liveSearch.toLowerCase();
+      rows = rows.filter((t) => {
+        const info = userMap[t.eid];
+        return (
+          (info?.name ?? t.eid).toLowerCase().includes(q) ||
+          (t.zone ?? "").toLowerCase().includes(q) ||
+          (t.client ?? "").toLowerCase().includes(q) ||
+          (t.post ?? "").toLowerCase().includes(q)
+        );
+      });
+    }
+    return rows;
+  }, [livePersonnel.active, locFilter, liveSearch, userMap]);
 
   // ── Approval actions ─────────────────────────────────────────────────────────
   const submitApproval = async () => {
@@ -557,8 +575,18 @@ export default function Dashboard() {
                 </span>
                 <span className="font-semibold text-sm">Live Personnel</span>
                 <Badge variant="secondary" className="text-xs">{livePersonnel.active.length} on duty</Badge>
-                <div className="ml-auto flex items-center gap-1 text-[10px] text-muted-foreground">
-                  <Radio className="w-3 h-3" /> Updates every 60s
+                <div className="ml-auto flex items-center gap-2">
+                  <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                    <Radio className="w-3 h-3" /> Every 60s
+                  </span>
+                  <button
+                    onClick={() => setLiveExpanded(true)}
+                    className="p-1 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+                    title="Expand fullscreen"
+                    data-testid="button-live-expand"
+                  >
+                    <Maximize2 className="w-3.5 h-3.5" />
+                  </button>
                 </div>
               </div>
 
@@ -598,11 +626,25 @@ export default function Dashboard() {
                           </div>
                           <div className="flex-1 min-w-0">
                             <p className="font-semibold text-xs truncate">{info?.name ?? ts.eid}</p>
-                            <p className="text-[10px] text-muted-foreground truncate">{ts.zone ?? "Unknown"}</p>
+                            <div className="flex items-center gap-1 flex-wrap">
+                              {ts.client && (
+                                <span className="text-[10px] text-muted-foreground flex items-center gap-0.5">
+                                  <Briefcase className="w-2.5 h-2.5" />{ts.client}
+                                </span>
+                              )}
+                              {ts.post && (
+                                <span className="text-[10px] text-primary/80 flex items-center gap-0.5">
+                                  <MapPin className="w-2.5 h-2.5" />{ts.post}
+                                </span>
+                              )}
+                              {!ts.client && !ts.post && (
+                                <span className="text-[10px] text-muted-foreground">{ts.zone ?? "Unknown"}</span>
+                              )}
+                            </div>
                           </div>
                           <div className="text-right shrink-0">
                             <p className="text-xs font-mono font-semibold text-green-600">{ts.ci}</p>
-                            <p className="text-[10px] text-muted-foreground">{elapsed(ts.ci)}</p>
+                            <p className="text-[10px] text-muted-foreground">{elapsed(ts.ci ?? "00:00")}</p>
                           </div>
                         </div>
                       );
@@ -611,6 +653,133 @@ export default function Dashboard() {
                 )}
               </div>
             </div>
+
+            {/* ── Fullscreen Live Personnel Dialog ──────────────────────────── */}
+            <Dialog open={liveExpanded} onOpenChange={setLiveExpanded}>
+              <DialogContent className="max-w-none w-screen h-screen m-0 rounded-none p-0 flex flex-col" data-testid="dialog-live-fullscreen">
+                {/* Header */}
+                <div className="flex items-center gap-3 px-6 py-4 border-b bg-muted/20 shrink-0">
+                  <span className="relative flex h-2.5 w-2.5">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-500 opacity-75" />
+                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-green-500" />
+                  </span>
+                  <DialogTitle className="text-base font-semibold">Live Personnel</DialogTitle>
+                  <Badge variant="secondary">{livePersonnel.active.length} on duty</Badge>
+                  <div className="ml-auto flex items-center gap-3">
+                    <span className="text-xs text-muted-foreground flex items-center gap-1">
+                      <Radio className="w-3 h-3" /> Updates every 60s
+                    </span>
+                    <button
+                      onClick={() => setLiveExpanded(false)}
+                      className="p-1.5 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+                      data-testid="button-live-collapse"
+                    >
+                      <Minimize2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Controls */}
+                <div className="px-6 py-3 border-b shrink-0 flex flex-col sm:flex-row gap-3">
+                  {/* Search */}
+                  <div className="relative flex-1 max-w-sm">
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+                    <Input
+                      className="pl-8 h-8 text-sm"
+                      placeholder="Search name, agency, post…"
+                      value={liveSearch}
+                      onChange={(e) => setLiveSearch(e.target.value)}
+                      data-testid="input-live-search"
+                    />
+                  </div>
+                  {/* Zone pills */}
+                  <div className="flex gap-1.5 overflow-x-auto items-center">
+                    {["ALL", ...livePersonnel.zones].map((z) => (
+                      <button
+                        key={z}
+                        onClick={() => setLocFilter(z)}
+                        className={`px-3 py-1 rounded-md text-xs font-medium whitespace-nowrap border transition-colors ${
+                          locFilter === z
+                            ? "bg-primary text-primary-foreground border-primary"
+                            : "bg-background text-muted-foreground border-border hover:border-primary/40"
+                        }`}
+                      >
+                        {z === "ALL" ? "All Zones" : z}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Grid */}
+                <div className="flex-1 overflow-y-auto p-6">
+                  {liveDisplayed.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center h-40 text-muted-foreground gap-3">
+                      <ShieldOff className="w-10 h-10 opacity-20" />
+                      <p className="text-sm">No personnel currently on duty</p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+                      {liveDisplayed.map((ts) => {
+                        const info = userMap[ts.eid];
+                        return (
+                          <div key={ts.id} className="border rounded-xl bg-card p-4 flex flex-col gap-3 shadow-sm" data-testid={`live-card-full-${ts.id}`}>
+                            {/* Avatar + name */}
+                            <div className="flex items-center gap-3">
+                              <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center text-green-700 font-bold text-sm shrink-0">
+                                {info?.av ?? ts.eid.slice(0, 2).toUpperCase()}
+                              </div>
+                              <div className="min-w-0">
+                                <p className="font-semibold text-sm truncate leading-tight">{info?.name ?? ts.eid}</p>
+                                <p className="text-[11px] text-muted-foreground truncate">{info?.pos ?? "—"}</p>
+                              </div>
+                            </div>
+                            {/* Location details */}
+                            <div className="space-y-1 border-t pt-2">
+                              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                                <Building2 className="w-3 h-3 shrink-0 text-primary/60" />
+                                <span className="truncate font-medium">{ts.client ?? ts.zone ?? "—"}</span>
+                              </div>
+                              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                                <MapPin className="w-3 h-3 shrink-0 text-primary/60" />
+                                <span className="truncate">{ts.post ?? "—"}</span>
+                              </div>
+                              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                                <Shield className="w-3 h-3 shrink-0 text-primary/60" />
+                                <span>{ts.armed ?? info?.armed ?? "—"}</span>
+                              </div>
+                            </div>
+                            {/* Time */}
+                            <div className="border-t pt-2 flex items-center justify-between">
+                              <div>
+                                <p className="text-[10px] text-muted-foreground">Clocked in</p>
+                                <p className="text-sm font-mono font-bold text-green-600">{ts.ci}</p>
+                              </div>
+                              <div className="text-right">
+                                <p className="text-[10px] text-muted-foreground">Elapsed</p>
+                                <p className="text-sm font-semibold">{elapsed(ts.ci ?? "00:00")}</p>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                {/* Footer summary */}
+                <div className="shrink-0 border-t px-6 py-3 bg-muted/10 flex flex-wrap gap-4 text-xs text-muted-foreground">
+                  {livePersonnel.zones.map((z) => {
+                    const count = livePersonnel.active.filter((t) => (t.zone ?? "Unknown") === z).length;
+                    return (
+                      <span key={z} className="flex items-center gap-1">
+                        <span className="w-2 h-2 rounded-full bg-green-500 inline-block" />
+                        {z}: <strong className="text-foreground">{count}</strong>
+                      </span>
+                    );
+                  })}
+                </div>
+              </DialogContent>
+            </Dialog>
 
             {/* ── Pending Approvals ─────────────────────────────────────────── */}
             <div className="flex-1 flex flex-col border-t overflow-hidden">
