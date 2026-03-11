@@ -12,13 +12,12 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   Shield, Building2, UserCircle, KeyRound, MapPin, DollarSign,
-  Plus, Pencil, Trash2, ToggleLeft, ToggleRight, Map, Smartphone,
+  Plus, Pencil, Trash2, ToggleLeft, ToggleRight, Map,
 } from "lucide-react";
 import GeofenceMapModal from "@/components/GeofenceMapModal";
 import { useToast } from "@/hooks/use-toast";
 import { PAYROLL_CONSTANTS } from "@/lib/payroll";
 import type { Geofence } from "@shared/schema";
-import { QRCodeSVG } from "qrcode.react";
 
 const EMPTY_FENCE = { name: "", lat: "", lng: "", radius: "150", posts: "10", postNames: "", description: "", active: true };
 
@@ -32,7 +31,7 @@ export default function Settings() {
   const { toast } = useToast();
 
   const [pw, setPw] = useState({ current: "", next: "", confirm: "" });
-  const [activeTab, setActiveTab] = useState<"profile" | "password" | "payroll" | "geofence" | "install">("profile");
+  const [activeTab, setActiveTab] = useState<"profile" | "password" | "payroll" | "geofence">("profile");
 
   // Geofence map preview
   const [mapZone, setMapZone] = useState<Geofence | null>(null);
@@ -115,7 +114,6 @@ export default function Settings() {
       { key: "payroll" as const, label: "Payroll Rules", icon: DollarSign },
       { key: "geofence" as const, label: "Geofences", icon: MapPin },
     ] : []),
-    { key: "install" as const, label: "Install App", icon: Smartphone },
   ];
 
   return (
@@ -467,69 +465,6 @@ export default function Settings() {
           )}
         </DialogContent>
       </Dialog>
-
-      {/* ── INSTALL APP ─────────────────────────────────────────────────────── */}
-      {activeTab === "install" && (
-        <div className="max-w-xl mx-auto space-y-6">
-          <Card className="p-6">
-            <div className="flex items-center gap-3 mb-4 pb-4 border-b border-border">
-              <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
-                <Smartphone className="w-5 h-5" />
-              </div>
-              <div>
-                <h2 className="font-semibold text-base">Install on Your Phone</h2>
-                <p className="text-xs text-muted-foreground">Scan to open, then install as an app</p>
-              </div>
-            </div>
-
-            <div className="flex flex-col items-center gap-5">
-              <div className="p-4 bg-white rounded-xl border border-border shadow-sm" data-testid="qr-code-container">
-                <QRCodeSVG
-                  value={window.location.origin}
-                  size={220}
-                  bgColor="#ffffff"
-                  fgColor="#000000"
-                  level="M"
-                  includeMargin={false}
-                />
-              </div>
-
-              <p className="text-xs text-center text-muted-foreground font-mono break-all px-2">
-                {window.location.origin}
-              </p>
-
-              <div className="w-full grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
-                <div className="rounded-lg border border-border p-4 bg-muted/30">
-                  <p className="font-semibold text-sm mb-2 flex items-center gap-1.5">
-                    <span className="text-base">🤖</span> Android
-                  </p>
-                  <ol className="text-xs text-muted-foreground space-y-1 list-decimal list-inside">
-                    <li>Open in <strong>Chrome</strong></li>
-                    <li>Tap the <strong>⋮ menu</strong> (top-right)</li>
-                    <li>Tap <strong>"Add to Home screen"</strong></li>
-                    <li>Tap <strong>Install</strong></li>
-                  </ol>
-                </div>
-                <div className="rounded-lg border border-border p-4 bg-muted/30">
-                  <p className="font-semibold text-sm mb-2 flex items-center gap-1.5">
-                    <span className="text-base">🍎</span> iPhone / iPad
-                  </p>
-                  <ol className="text-xs text-muted-foreground space-y-1 list-decimal list-inside">
-                    <li>Open in <strong>Safari</strong></li>
-                    <li>Tap the <strong>Share</strong> button</li>
-                    <li>Tap <strong>"Add to Home Screen"</strong></li>
-                    <li>Tap <strong>Add</strong></li>
-                  </ol>
-                </div>
-              </div>
-
-              <p className="text-xs text-muted-foreground text-center pt-1">
-                Once installed, the app opens full-screen without the browser bar — just like a native app.
-              </p>
-            </div>
-          </Card>
-        </div>
-      )}
 
       {/* ── Geofence Map Preview ─────────────────────────────────────────────── */}
       {mapZone && (
