@@ -4,6 +4,7 @@ import { useTimesheets, useUpdateTimesheet, useDeleteTimesheet, useBulkCreateTim
 import { useUsers } from "@/hooks/use-users";
 import { useAuth } from "@/hooks/use-auth";
 import { useGeofences } from "@/hooks/use-geofences";
+import { useTeamSchedules } from "@/hooks/use-schedules";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -16,7 +17,7 @@ import {
   Clock, MapPin, PenLine, AlertTriangle, CheckCircle2,
   XCircle, ChevronDown, ChevronUp, Lock, ShieldCheck, Edit2, CalendarDays, ChevronLeft, ChevronRight,
   Trash2, Upload, FileSpreadsheet, CheckCircle, XCircle as XCircleIcon, Info, PenSquare, Loader2,
-  Search, Filter,
+  Search, Filter, UserCheck, UserX, Users, LogOut, Timer,
 } from "lucide-react";
 import { format, startOfMonth, endOfMonth, subMonths, addMonths } from "date-fns";
 import { lookupGuyanaHoliday, calcPayroll, generatePeoplePayCSV, downloadCSV, periodDates, PAYROLL_CONSTANTS } from "@/lib/payroll";
@@ -87,6 +88,61 @@ export default function Timesheets() {
   const { mutateAsync: updateTimesheet } = useUpdateTimesheet();
   const { mutateAsync: deleteTimesheet, isPending: isDeleting } = useDeleteTimesheet();
   const { mutateAsync: bulkCreate, isPending: isBulkUploading } = useBulkCreateTimesheets();
+
+  // ── Attendance panel — today's schedule vs timesheet (supervisor only) ────
+  const todayStr = format(new Date(), "yyyy-MM-dd");
+  const allUserIds = (users ?? []).map((u) => u.userId);
+  const { data: todaySchedules = [] } = useTeamSchedules(allUserIds);
+  const todayScheduled = todaySchedules.filter((s) => s.date === todayStr);
+  const todayTs = (timesheets ?? []).filter((t) => t.date === todayStr);
+
+  // ── End-shift state (supervisor force clock-out) ───────────────────────────
+  const [endShiftTarget, setEndShiftTarget] = useState<Timesheet | null>(null);
+  const [endShiftCo,    setEndShiftCo]      = useState("");
+  const [endShiftBrk,   setEndShiftBrk]     = useState("30");
+  const [endShiftNote,  setEndShiftNote]     = useState("");
+  const [endShiftBusy,  setEndShiftBusy]     = useState(false);
+
+  function openEndShift(ts: Timesheet) {
+    setEndShiftCo(format(new Date(), "HH:mm"));
+    setEndShiftBrk("30");
+    setEndShiftNote(`Shift ended by ${user.name}`);
+    setEndShiftTarget(ts);
+  }
+
+  async function handleEndShift() {
+    if (!endShiftTarget) return;
+    setEndShiftBusy(true);
+    try {
+      const ci = endShiftTarget.ci ?? "00:00";
+      const co = endShiftCo;
+      const brk = parseInt(endShiftBrk, 10) || 0;
+      const [ch, cm] = ci.split(":").map(Number);
+      const [oh, om] = co.split(":").map(Number);
+      let totalMins = oh * 60 + om - (ch * 60 + cm);
+      if (totalMins < 0) totalMins += 24 * 60;
+      const workMins = Math.max(0, totalMins - brk);
+      const totalH = Math.round((workMins / 60) * 100) / 100;
+      const reg = Math.min(8, totalH);
+      const ot  = Math.max(0, totalH - 8);
+      await updateTimesheet({
+        id:    endShiftTarget.id,
+        co,
+        reg:   Math.round(reg * 100) / 100,
+        ot:    Math.round(ot  * 100) / 100,
+        brk,
+        meals: totalH >= 8 ? 1 : 0,
+        status: "pending_employee",
+        notes: endShiftNote || `Shift ended by ${user.name}`,
+      });
+      toast({ title: "Shift ended", description: `${empName(endShiftTarget.eid)} clocked out at ${co}` });
+      setEndShiftTarget(null);
+    } catch (err: any) {
+      toast({ title: "Failed to end shift", description: err.message, variant: "destructive" });
+    } finally {
+      setEndShiftBusy(false);
+    }
+  }
 
   // Bulk upload dialog state
   const [bulkOpen, setBulkOpen] = useState(false);
@@ -550,12 +606,13 @@ export default function Timesheets() {
   const allTs = timesheets ?? [];
 
   const isFullAccess = user.role === "admin" || user.role === "manager";
-  // Stage 2: employee whose position appears as fa or sa on at least one other employee (dynamic, no hardcoded titles)
+  // Supervisor: position contains "supervisor" OR is listed as fa/sa on another employee's record
   const isSupervisor =
-    user.role === "employee" &&
-    (users ?? []).some(
-      (u) => u.userId !== user.userId && (u.fa === user.pos || u.sa === user.pos)
-    );
+    !isFullAccess &&
+    ((user.pos ?? "").toLowerCase().includes("supervisor") ||
+      (users ?? []).some(
+        (u) => u.userId !== user.userId && (u.fa === user.pos || u.sa === user.pos)
+      ));
 
   const visible = allTs.filter((ts) => {
     if (isFullAccess) return true; // admin & manager see all timesheets
@@ -823,6 +880,80 @@ export default function Timesheets() {
           </Button>
         </div>
       </div>
+
+      {/* ── Supervisor Attendance Panel ───────────────────────────────────── */}
+      {isSupervisor && (() => {
+        const todayDate = new Date();
+        const scheduledEids = [...new Set(todayScheduled.map((s) => s.eid))];
+        const rows = scheduledEids.map((eid) => {
+          const sched    = todayScheduled.find((s) => s.eid === eid)!;
+          const ts       = todayTs.find((t) => t.eid === eid) ?? null;
+          const emp      = users?.find((u) => u.userId === eid);
+          const isAbsent = ts && ["Sick", "Absent"].includes(ts.dayStatus ?? "");
+          const isClockedIn  = ts && ts.ci && !ts.co && !isAbsent;
+          const isClockedOut = ts && ts.ci && ts.co;
+          // Late: clocked in more than 15 min after scheduled start
+          const isLate = (() => {
+            if (!ts?.ci || !sched.shiftStart) return false;
+            const [sh, sm] = sched.shiftStart.split(":").map(Number);
+            const [ch, cm] = ts.ci.split(":").map(Number);
+            return (ch * 60 + cm) - (sh * 60 + sm) > 15;
+          })();
+          let color = "border-yellow-300 bg-yellow-50";
+          let icon  = <Timer className="w-4 h-4 text-yellow-500" />;
+          let label = "Not yet clocked in";
+          if (isAbsent) {
+            color = "border-red-300 bg-red-50"; icon = <UserX className="w-4 h-4 text-red-500" />; label = ts!.dayStatus!;
+          } else if (isClockedOut) {
+            color = "border-green-300 bg-green-50"; icon = <UserCheck className="w-4 h-4 text-green-600" />; label = `Out: ${ts!.co}`;
+          } else if (isClockedIn && isLate) {
+            color = "border-purple-300 bg-purple-50"; icon = <Clock className="w-4 h-4 text-purple-600" />; label = `Late — in: ${ts!.ci}`;
+          } else if (isClockedIn) {
+            color = "border-green-300 bg-green-50"; icon = <UserCheck className="w-4 h-4 text-green-600" />; label = `In: ${ts!.ci}`;
+          }
+          return { eid, emp, sched, ts, color, icon, label, isClockedIn };
+        });
+        if (rows.length === 0) return null;
+        return (
+          <div className="mb-5">
+            <div className="flex items-center gap-2 mb-3">
+              <Users className="w-4 h-4 text-muted-foreground" />
+              <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Today's Attendance — {format(todayDate, "EEEE, MMMM d")}</h2>
+              <div className="flex items-center gap-2 ml-auto text-xs text-muted-foreground">
+                <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-green-400 inline-block" /> Clocked in</span>
+                <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-purple-400 inline-block" /> Late</span>
+                <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-yellow-400 inline-block" /> Not in</span>
+                <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-red-400 inline-block" /> Absent/Sick</span>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+              {rows.map(({ eid, emp, sched, ts, color, icon, label, isClockedIn }) => (
+                <div key={eid} className={`flex items-center gap-3 rounded-lg border px-3 py-2.5 ${color}`}>
+                  <div className="w-8 h-8 rounded-full bg-white/70 border flex items-center justify-center text-xs font-bold text-foreground shrink-0">
+                    {empAv(eid)}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold truncate">{emp?.name ?? eid}</p>
+                    <p className="text-xs text-muted-foreground truncate">{sched.shiftStart}–{sched.shiftEnd} · {sched.client ?? sched.location ?? "—"}</p>
+                    <p className="text-xs font-medium mt-0.5 flex items-center gap-1">{icon} {label}</p>
+                  </div>
+                  {isClockedIn && ts && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="shrink-0 text-xs h-7 px-2 border-orange-300 text-orange-700 hover:bg-orange-50"
+                      onClick={() => openEndShift(ts)}
+                      data-testid={`button-end-shift-panel-${eid}`}
+                    >
+                      <LogOut className="w-3 h-3 mr-1" /> End
+                    </Button>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ── Tab bar (Full Access & Supervisors only) ──────────────────────── */}
       {hasTeamView && (
@@ -1188,6 +1319,19 @@ export default function Timesheets() {
                         data-testid={`button-admin-bypass-${ts.id}`}
                       >
                         <ShieldCheck className="w-3.5 h-3.5 mr-1" /> Force Approve
+                      </Button>
+                    )}
+
+                    {/* Supervisor: end an in-progress shift for a team member */}
+                    {isSupervisor && isShiftInProgress(ts) && ts.eid !== user.userId && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="text-orange-700 border-orange-300 hover:bg-orange-50"
+                        onClick={() => openEndShift(ts)}
+                        data-testid={`button-end-shift-${ts.id}`}
+                      >
+                        <LogOut className="w-3.5 h-3.5 mr-1" /> End Shift
                       </Button>
                     )}
 
@@ -1911,6 +2055,53 @@ export default function Timesheets() {
       </Dialog>
         );
       })()}
+
+      {/* ── End Shift Dialog (Supervisor) ──────────────────────────────────── */}
+      <Dialog open={!!endShiftTarget} onOpenChange={(o) => { if (!o && !endShiftBusy) setEndShiftTarget(null); }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <LogOut className="w-4 h-4 text-orange-500" /> End Shift
+            </DialogTitle>
+          </DialogHeader>
+          {endShiftTarget && (
+            <div className="space-y-4 mt-1">
+              <div className="rounded-md bg-muted/30 border px-4 py-2 text-sm">
+                <p className="font-semibold">{empName(endShiftTarget.eid)}</p>
+                <p className="text-muted-foreground text-xs mt-0.5">
+                  {endShiftTarget.date} · Clocked in: {endShiftTarget.ci} · Zone: {endShiftTarget.zone ?? "—"}
+                </p>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label>Clock Out Time</Label>
+                  <Input type="time" value={endShiftCo} onChange={(e) => setEndShiftCo(e.target.value)} data-testid="input-end-shift-co" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Break (mins)</Label>
+                  <Input type="number" min={0} max={120} value={endShiftBrk} onChange={(e) => setEndShiftBrk(e.target.value)} data-testid="input-end-shift-brk" />
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Note</Label>
+                <Input value={endShiftNote} onChange={(e) => setEndShiftNote(e.target.value)} placeholder="Reason for ending shift..." data-testid="input-end-shift-note" />
+              </div>
+              <div className="flex gap-2 justify-end">
+                <Button variant="outline" onClick={() => setEndShiftTarget(null)} disabled={endShiftBusy}>Cancel</Button>
+                <Button
+                  onClick={handleEndShift}
+                  disabled={!endShiftCo || endShiftBusy}
+                  className="bg-orange-600 hover:bg-orange-700 text-white"
+                  data-testid="button-confirm-end-shift"
+                >
+                  {endShiftBusy ? <Loader2 className="w-4 h-4 animate-spin mr-1.5" /> : <LogOut className="w-4 h-4 mr-1.5" />}
+                  End Shift
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* ── Bulk Upload Dialog ─────────────────────────────────────────────── */}
       <Dialog open={bulkOpen} onOpenChange={(o) => { if (!o) { setBulkOpen(false); } }}>
