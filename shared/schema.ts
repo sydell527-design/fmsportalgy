@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, boolean, jsonb, doublePrecision } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, boolean, jsonb, doublePrecision, index, uniqueIndex } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -146,7 +146,18 @@ export const timesheets = pgTable("timesheets", {
   hist: jsonb("hist").$type<any[]>(),
   disputed: boolean("disputed").default(false),
   disputeNote: text("dispute_note"),
-});
+}, (t) => [
+  // Most common query: timesheets for one employee within a date range (payroll, dashboard)
+  index("ts_eid_date_idx").on(t.eid, t.date),
+  // Admin date-range scans across all employees (supervisor dashboard, bulk payroll)
+  index("ts_date_idx").on(t.date),
+  // Filtering by approval status (pending_employee, pending_f1, etc.)
+  index("ts_status_idx").on(t.status),
+  // Employee + status combined (e.g., "all pending_employee for userId X")
+  index("ts_eid_status_idx").on(t.eid, t.status),
+  // Client-site reports (all shifts at Caricom in a period)
+  index("ts_client_date_idx").on(t.client, t.date),
+]);
 
 export const requests = pgTable("requests", {
   id: serial("id").primaryKey(),
@@ -162,7 +173,14 @@ export const requests = pgTable("requests", {
   status: text("status").notNull().default("pending"),
   at: text("at"),
   comments: jsonb("comments").$type<string[]>(),
-});
+}, (t) => [
+  // Employee's own requests (My Requests page)
+  index("req_eid_idx").on(t.eid),
+  // Approval queue filtered by status (pending, approved, rejected)
+  index("req_status_idx").on(t.status),
+  // Employee + status (all pending requests for employee X)
+  index("req_eid_status_idx").on(t.eid, t.status),
+]);
 
 export const employeeChildren = pgTable("employee_children", {
   id: serial("id").primaryKey(),
@@ -174,7 +192,9 @@ export const employeeChildren = pgTable("employee_children", {
   school: text("school"),
   active: boolean("active").notNull().default(true),
   taxEligible: boolean("tax_eligible").notNull().default(true),
-});
+}, (t) => [
+  index("ec_eid_idx").on(t.eid),
+]);
 
 export const employeeLoans = pgTable("employee_loans", {
   id: serial("id").primaryKey(),
@@ -186,7 +206,12 @@ export const employeeLoans = pgTable("employee_loans", {
   startDate: text("start_date").notNull(),
   status: text("status").notNull().default("active"),
   notes: text("notes"),
-});
+}, (t) => [
+  // All loans for an employee (payroll deduction calc, HR view)
+  index("el_eid_idx").on(t.eid),
+  // Active loans only (payroll deduction processing)
+  index("el_eid_status_idx").on(t.eid, t.status),
+]);
 
 export const geofences = pgTable("geofences", {
   id: serial("id").primaryKey(),
@@ -215,7 +240,16 @@ export const schedules = pgTable("schedules", {
   company: text("company"),                     // Company A – Company F
   notes: text("notes"),
   createdBy: text("created_by").notNull(),      // userId of creator
-});
+}, (t) => [
+  // Employee's schedule for a date (ClockInOut dayStatus detection)
+  index("sched_eid_date_idx").on(t.eid, t.date),
+  // All employees scheduled for a given date (roster view, supervisor attendance)
+  index("sched_date_idx").on(t.date),
+  // All schedules for an employee (employee Schedule page — full period view)
+  index("sched_eid_idx").on(t.eid),
+  // Client-based filtering (site-specific roster exports)
+  index("sched_client_date_idx").on(t.client, t.date),
+]);
 
 // ── Call Sign Registry ─────────────────────────────────────────────────────
 // Imported from admin's Excel sheet: call sign → location mapping
@@ -244,7 +278,10 @@ export const periodDeductions = pgTable("period_deductions", {
   advancesRecovery: doublePrecision("advances_recovery").notNull().default(0),
   otherDeductions:  jsonb("other_deductions").$type<Array<{ name: string; amount: number }>>(),
   updatedAt:        text("updated_at").notNull(),
-});
+}, (t) => [
+  // Payroll engine looks up one-time deductions by employee + period
+  uniqueIndex("pd_eid_period_uidx").on(t.eid, t.period),
+]);
 
 export type PeriodDeduction = typeof periodDeductions.$inferSelect;
 export interface InsertPeriodDeduction {
@@ -265,7 +302,14 @@ export const payslips = pgTable("payslips", {
   sentBy: text("sent_by").notNull(),
   data: jsonb("data").notNull(),
   seen: boolean("seen").notNull().default(false),
-});
+}, (t) => [
+  // Employee's payslip history (Payslips page, payroll archive)
+  index("pay_eid_idx").on(t.eid),
+  // Specific payslip by employee + period (prevent duplicate sends; HR lookup)
+  index("pay_eid_period_idx").on(t.eid, t.period),
+  // Unseen payslips banner (employee notification)
+  index("pay_eid_seen_idx").on(t.eid, t.seen),
+]);
 
 // ── Insert schemas ─────────────────────────────────────────────────────────
 export const insertEmployeeChildSchema = createInsertSchema(employeeChildren).omit({ id: true });
