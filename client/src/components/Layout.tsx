@@ -1,7 +1,6 @@
 import { ReactNode, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
-import { Button } from "@/components/ui/button";
 import {
   LayoutDashboard, Clock, CalendarClock, Users, Settings,
   LogOut, DollarSign, BarChart2, ScrollText, Menu, X, FileText, CalendarDays, TableProperties,
@@ -128,7 +127,7 @@ export function Layout({ children }: LayoutProps) {
 
         {/* Mobile slide-down overflow menu */}
         {mobileMenuOpen && (
-          <div className="md:hidden bg-card border-b border-border shadow-lg z-10 px-4 py-3 space-y-1">
+          <div className="md:hidden bg-card border-b border-border shadow-lg z-10 px-4 py-2 space-y-0.5">
             {allowedNav.map((item) => {
               const isActive = location === item.href;
               return (
@@ -147,19 +146,15 @@ export function Layout({ children }: LayoutProps) {
                 </Link>
               );
             })}
-            <div className="pt-2 border-t border-border mt-2 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className="w-7 h-7 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold text-xs">
-                  {user.av || user.name.charAt(0)}
-                </div>
-                <div>
-                  <p className="text-sm font-semibold leading-tight">{user.name}</p>
-                  <p className="text-xs text-muted-foreground">{user.pos}</p>
-                </div>
-              </div>
-              <Button size="sm" variant="outline" onClick={() => { logout(); setMobileMenuOpen(false); }} className="text-xs h-8">
-                <LogOut className="w-3.5 h-3.5 mr-1" /> Sign Out
-              </Button>
+            <div className="pt-1 pb-1 border-t border-border mt-1">
+              <button
+                onClick={() => { logout(); setMobileMenuOpen(false); }}
+                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium text-destructive hover:bg-destructive/10 transition-colors"
+                data-testid="button-mobile-logout"
+              >
+                <LogOut className="w-4 h-4 shrink-0" />
+                Sign Out
+              </button>
             </div>
           </div>
         )}
