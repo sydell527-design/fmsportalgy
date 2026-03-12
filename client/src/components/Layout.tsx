@@ -4,7 +4,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import {
   LayoutDashboard, Clock, CalendarClock, Users, Settings,
-  LogOut, DollarSign, BarChart2, ScrollText, Menu, X, FileText, CalendarDays,
+  LogOut, DollarSign, BarChart2, ScrollText, Menu, X, FileText, CalendarDays, TableProperties,
 } from "lucide-react";
 import { ForcePasswordChange } from "./ForcePasswordChange";
 import fmsLogo from "@assets/fms_logo_acronym_(2)_1773261874549.png";
@@ -25,6 +25,7 @@ export function Layout({ children }: LayoutProps) {
     { href: "/timesheets",                        label: "Timesheets", icon: Clock,            roles: ["employee", "manager", "admin"] },
     { href: "/requests",                          label: "Requests",   icon: CalendarClock,    roles: ["employee", "manager", "admin"] },
     { href: "/schedule",                          label: "Schedule",   icon: CalendarDays,     roles: ["employee", "manager", "admin"] },
+    { href: "/roster",                            label: "Roster",     icon: TableProperties,  roles: ["manager", "admin"] },
     { href: "/payslips",                          label: "Payslips",   icon: FileText,         roles: ["employee"] },
     { href: "/payroll",                           label: "Payroll",    icon: DollarSign,       roles: ["manager", "admin"] },
     { href: "/reports",                           label: "Reports",    icon: BarChart2,        roles: ["manager", "admin"] },

@@ -415,8 +415,8 @@ function SectionGrid({
       </thead>
       <tbody>
         {rows.map((row) => (
-          <tr key={row.eid} className="border-t border-border/40 hover:bg-muted/10 group">
-            <td className="py-1 px-1 align-middle sticky left-0 bg-background group-hover:bg-muted/10 z-10 border-r w-20">
+          <tr key={row.eid} className="border-t border-border/40 hover:bg-muted/30 group">
+            <td className="py-1 px-1 align-middle sticky left-0 bg-background group-hover:bg-muted/30 z-10 border-r w-20">
               <CallSignCombo
                 value={row.callSign}
                 registry={callSignRegistry}
@@ -424,7 +424,7 @@ function SectionGrid({
                 onLocationFill={(loc) => onUpdateField(row.eid, "location", loc)}
               />
             </td>
-            <td className="py-1 px-1 align-middle sticky left-20 bg-background group-hover:bg-muted/10 z-10 border-r w-32">
+            <td className="py-1 px-1 align-middle sticky left-20 bg-background group-hover:bg-muted/30 z-10 border-r w-32">
               <select
                 value={row.location}
                 onChange={(e) => onUpdateField(row.eid, "location", e.target.value)}
@@ -435,14 +435,14 @@ function SectionGrid({
                 {FMS_LOCATIONS.map((l) => <option key={l} value={l}>{l}</option>)}
               </select>
             </td>
-            <td className="py-1.5 px-3 align-middle sticky left-52 bg-background group-hover:bg-muted/10 z-10 border-r w-40">
+            <td className="py-1.5 px-3 align-middle sticky left-52 bg-background group-hover:bg-muted/30 z-10 border-r w-40">
               <div className="font-medium text-sm truncate max-w-[140px]">{row.name}</div>
               <div className="text-[10px] text-muted-foreground truncate max-w-[140px]">{row.pos}</div>
             </td>
-            <td className="py-1 px-1 align-middle sticky left-[368px] bg-background group-hover:bg-muted/10 z-10 border-r">
-              <div className="flex flex-col gap-0.5">
+            <td className="py-1 px-1 align-middle sticky left-[368px] bg-background group-hover:bg-muted/30 z-10 border-r w-24 min-w-[96px] max-w-[96px]">
+              <div className="flex flex-col gap-1 w-full">
                 <select
-                  className="text-[10px] border rounded px-1 py-0.5 bg-background h-6"
+                  className="w-full text-[10px] border rounded px-1 py-0.5 bg-background h-6 truncate"
                   onChange={(e) => { if (e.target.value) { onFillRow(row.eid, e.target.value); e.target.value = ""; }}}
                   data-testid={`select-fill-row-${row.eid}`}
                 >
@@ -450,8 +450,12 @@ function SectionGrid({
                   <optgroup label="All Days">{SHIFT_PRESETS.map((p) => <option key={p.code} value={p.code}>{p.label}</option>)}</optgroup>
                   <optgroup label="Weekdays Only (W)">{SHIFT_PRESETS.filter((p) => p.code !== "Off").map((p) => <option key={`${p.code}|W`} value={`${p.code}|W`}>{p.label} W</option>)}</optgroup>
                 </select>
-                <button onClick={() => onClearRow(row.eid)} className="text-[10px] text-muted-foreground hover:text-destructive flex items-center gap-0.5 justify-center" title="Clear row">
-                  <Trash2 className="w-2.5 h-2.5" /> Clear
+                <button
+                  onClick={() => onClearRow(row.eid)}
+                  className="w-full text-[10px] text-muted-foreground hover:text-destructive flex items-center justify-center gap-0.5 border border-transparent hover:border-destructive/30 rounded py-0.5 transition-colors"
+                  title="Clear all shifts in this row"
+                >
+                  <Trash2 className="w-2.5 h-2.5 shrink-0" /> Clear
                 </button>
               </div>
             </td>
@@ -1136,13 +1140,22 @@ export function RosterBuilder({ open, onClose, employees, onSaved }: Props) {
     sum + Object.values(row.cells).filter((c) => c && c !== "Off").length, 0
   );
 
+  // Lock body scroll when open
+  useEffect(() => {
+    if (open) {
+      const prev = document.body.style.overflow;
+      document.body.style.overflow = "hidden";
+      return () => { document.body.style.overflow = prev; };
+    }
+  }, [open]);
+
   if (!open) return null;
 
   const DAY_ABBR = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
   const todayFmt = format(new Date(), "yyyy-MM-dd");
 
   return (
-    <div className="fixed inset-0 z-50 bg-background flex flex-col" data-testid="roster-builder">
+    <div className="fixed inset-0 z-[9999] bg-background flex flex-col" data-testid="roster-builder">
       {/* ── Top bar ────────────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between px-4 py-3 border-b bg-background shrink-0 gap-4">
         <div className="flex items-center gap-3 flex-wrap">
