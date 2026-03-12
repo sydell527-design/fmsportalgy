@@ -628,14 +628,26 @@ export default function Dashboard() {
     unscheduled: todayAdherence.filter((r) => r.status === "unscheduled").length,
   }), [todayAdherence]);
 
-  // Supervisor sees only their direct reports; admin sees all
+  // Supervisor sees only their direct reports (excluding themselves); admin sees all
   const myAdherence = useMemo(() => {
     if (isAdmin) return todayAdherence;
     return todayAdherence.filter((row) => {
+      if (row.sched.eid === user.userId) return false; // never show yourself in your own panel
       const emp = (users ?? []).find((u) => u.userId === row.sched.eid);
       return emp?.fa === user.pos || emp?.sa === user.pos;
     });
-  }, [isAdmin, todayAdherence, users, user.pos]);
+  }, [isAdmin, todayAdherence, users, user.pos, user.userId]);
+
+  // Summary counts for the supervisor card — based on myAdherence (their direct reports only)
+  const myAdherenceSummary = useMemo(() => ({
+    total: myAdherence.length,
+    onTime: myAdherence.filter((r) => r.status === "on-time").length,
+    late: myAdherence.filter((r) => r.status === "late").length,
+    notIn: myAdherence.filter((r) => r.status === "not-in").length,
+    absent: myAdherence.filter((r) => r.status === "absent").length,
+    done: myAdherence.filter((r) => r.status === "done").length,
+    unscheduled: myAdherence.filter((r) => r.status === "unscheduled").length,
+  }), [myAdherence]);
 
   const [adherenceFilter, setAdherenceFilter] = useState<"all" | "not-in" | "late" | "absent" | "on-time" | "done" | "unscheduled">("all");
   const filteredAdherence = useMemo(() =>
@@ -757,12 +769,12 @@ export default function Dashboard() {
                 <ClipboardList className="w-4 h-4 text-primary" />
                 <h3 className="font-semibold text-sm">Today's Schedule Adherence</h3>
                 <Badge variant="secondary" className="text-xs">{myAdherence.length} scheduled</Badge>
-                {adherenceSummary.notIn > 0 && <Badge variant="destructive" className="text-xs">{adherenceSummary.notIn} not in</Badge>}
-                {adherenceSummary.late > 0 && <Badge className="text-xs bg-purple-100 text-purple-700 border border-purple-200 hover:bg-purple-100">{adherenceSummary.late} late</Badge>}
+                {myAdherenceSummary.notIn > 0 && <Badge variant="destructive" className="text-xs">{myAdherenceSummary.notIn} not in</Badge>}
+                {myAdherenceSummary.late > 0 && <Badge className="text-xs bg-purple-100 text-purple-700 border border-purple-200 hover:bg-purple-100">{myAdherenceSummary.late} late</Badge>}
               </div>
               <AdherencePanel
                 rows={filteredAdherence}
-                summary={{ ...adherenceSummary, total: myAdherence.length }}
+                summary={myAdherenceSummary}
                 adherenceFilter={adherenceFilter}
                 setAdherenceFilter={setAdherenceFilter}
                 openEndShift={openEndShift}
