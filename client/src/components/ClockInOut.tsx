@@ -693,6 +693,7 @@ export function ClockInOut() {
           <div className="space-y-2 pt-1">
             {[
               { sub: "Sick",               icon: <HeartPulse className="w-4 h-4" />, label: "Report Sick",           desc: "I am unwell and cannot attend my shift." },
+              { sub: "Sick Leave",         icon: <HeartPulse className="w-4 h-4" />, label: "Sick Leave",            desc: "I am using approved sick leave for today." },
               { sub: "Emergency",          icon: <Siren      className="w-4 h-4" />, label: "Personal Emergency",    desc: "An urgent personal situation prevents attendance." },
               { sub: "Absent",             icon: <UserX      className="w-4 h-4" />, label: "Report Absence",        desc: "I will be absent from my shift today." },
             ].map(({ sub, icon, label, desc }) => (
@@ -705,7 +706,7 @@ export function ClockInOut() {
                   try {
                     const todayStr = format(new Date(), "yyyy-MM-dd");
                     const reason   = actionNote.trim() || desc;
-                    const tsStatus = sub === "Sick" ? "Sick" : "Absent";
+                    const tsStatus = (sub === "Sick" || sub === "Sick Leave") ? "Sick" : "Absent";
 
                     await createRequest({
                       reqId:  `ACT-${user.userId}-${Date.now()}`,
