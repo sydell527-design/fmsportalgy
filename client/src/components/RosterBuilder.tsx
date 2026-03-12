@@ -1154,6 +1154,7 @@ export function RosterBuilder({ open, onClose, employees, onSaved }: Props) {
     try {
       await apiRequest("POST", "/api/schedules/bulk", toCreate);
       qc.invalidateQueries({ queryKey: ["/api/schedules"] });
+      qc.invalidateQueries({ queryKey: ["/api/schedules/team"] });
       // Mark this agency tab as saved
       setAgencyRosters((prev) =>
         prev.map((ar) => ar.agency === activeAgency ? { ...ar, savedCount: toCreate.length } : ar)

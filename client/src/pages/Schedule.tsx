@@ -747,6 +747,7 @@ export default function SchedulePage() {
 
   function refreshSchedules() {
     qc.invalidateQueries({ queryKey: ["/api/schedules"] });
+    qc.invalidateQueries({ queryKey: ["/api/schedules/team"] });
   }
 
   // Filter to visible date range
