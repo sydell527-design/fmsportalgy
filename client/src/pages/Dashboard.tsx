@@ -11,13 +11,14 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import {
   Users, Clock, CheckCircle2, AlertTriangle, FileText,
   TrendingUp, Calendar, PenLine, XCircle, Building2,
   Trash2, Shield, ShieldOff, Radio, Search, ChevronDown,
   ChevronRight, LayoutDashboard, RefreshCw, Filter,
-  Maximize2, Minimize2, MapPin, Briefcase,
+  Maximize2, Minimize2, MapPin, Briefcase, LogOut, Loader2,
 } from "lucide-react";
 import { format, differenceInMinutes, parse, startOfMonth, endOfMonth } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
@@ -120,6 +121,56 @@ export default function Dashboard() {
   const [deleteTarget, setDeleteTarget] = useState<{
     label: string; eids: string[]; startDate: string; endDate: string; count: number;
   } | null>(null);
+
+  // ── End-shift state (admin/supervisor force clock-out) ───────────────────────
+  const [endShiftTarget, setEndShiftTarget] = useState<Timesheet | null>(null);
+  const [endShiftCo,    setEndShiftCo]      = useState("");
+  const [endShiftBrk,   setEndShiftBrk]     = useState("30");
+  const [endShiftNote,  setEndShiftNote]     = useState("");
+  const [endShiftBusy,  setEndShiftBusy]     = useState(false);
+
+  function openEndShift(ts: Timesheet) {
+    const now = new Date();
+    setEndShiftCo(format(now, "HH:mm"));
+    setEndShiftBrk("30");
+    setEndShiftNote(`Shift ended by ${user.name}`);
+    setEndShiftTarget(ts);
+  }
+
+  async function handleEndShift() {
+    if (!endShiftTarget) return;
+    setEndShiftBusy(true);
+    try {
+      const ci = endShiftTarget.ci ?? "00:00";
+      const co = endShiftCo;
+      const brk = parseInt(endShiftBrk, 10) || 0;
+      const [ch, cm] = ci.split(":").map(Number);
+      const [oh, om] = co.split(":").map(Number);
+      let totalMins = oh * 60 + om - (ch * 60 + cm);
+      if (totalMins < 0) totalMins += 24 * 60; // overnight
+      const workMins = Math.max(0, totalMins - brk);
+      const totalH = Math.round((workMins / 60) * 100) / 100;
+      const reg = Math.min(8, totalH);
+      const ot  = Math.max(0, totalH - 8);
+      await updateTimesheet({
+        id:    endShiftTarget.id,
+        co,
+        reg:   Math.round(reg * 100) / 100,
+        ot:    Math.round(ot  * 100) / 100,
+        ph:    0,
+        brk,
+        meals: totalH >= 8 ? 1 : 0,
+        status: "pending_employee",
+        notes: endShiftNote || `Shift ended by ${user.name}`,
+      });
+      toast({ title: "Shift ended", description: `${userMap[endShiftTarget.eid]?.name ?? endShiftTarget.eid} clocked out at ${co}` });
+      setEndShiftTarget(null);
+    } catch (err: any) {
+      toast({ title: "Failed", description: err.message, variant: "destructive" });
+    } finally {
+      setEndShiftBusy(false);
+    }
+  }
 
   // ── Expand state (agency cards) ──────────────────────────────────────────────
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -581,6 +632,87 @@ export default function Dashboard() {
           {/* ── RIGHT: Operations Panel ─────────────────────────────────────── */}
           <div className="flex-1 flex flex-col overflow-hidden">
 
+            {/* ── End Shift Dialog ──────────────────────────────────────────── */}
+            <Dialog open={!!endShiftTarget} onOpenChange={(o) => { if (!o) setEndShiftTarget(null); }}>
+              <DialogContent className="max-w-sm">
+                <DialogHeader>
+                  <DialogTitle className="flex items-center gap-2">
+                    <LogOut className="w-4 h-4 text-destructive" /> End Shift
+                  </DialogTitle>
+                  <DialogDescription>
+                    Manually clock out <strong>{endShiftTarget ? (userMap[endShiftTarget.eid]?.name ?? endShiftTarget.eid) : ""}</strong> who
+                    clocked in at <strong>{endShiftTarget?.ci}</strong> and forgot to clock out.
+                    Hours will be calculated automatically.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4 py-1">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <Label className="text-xs">Clock-out Time</Label>
+                      <Input
+                        type="time"
+                        value={endShiftCo}
+                        onChange={(e) => setEndShiftCo(e.target.value)}
+                        data-testid="input-end-shift-co"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Break (mins)</Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        max={120}
+                        value={endShiftBrk}
+                        onChange={(e) => setEndShiftBrk(e.target.value)}
+                        data-testid="input-end-shift-brk"
+                      />
+                    </div>
+                  </div>
+                  {endShiftTarget && endShiftCo && (() => {
+                    const [ch, cm] = (endShiftTarget.ci ?? "00:00").split(":").map(Number);
+                    const [oh, om] = endShiftCo.split(":").map(Number);
+                    let totalMins = oh * 60 + om - (ch * 60 + cm);
+                    if (totalMins < 0) totalMins += 24 * 60;
+                    const workMins = Math.max(0, totalMins - (parseInt(endShiftBrk, 10) || 0));
+                    const totalH = workMins / 60;
+                    const reg = Math.min(8, totalH);
+                    const ot  = Math.max(0, totalH - 8);
+                    return (
+                      <div className="rounded-lg bg-muted/40 px-3 py-2 text-xs text-muted-foreground flex gap-4">
+                        <span>Total: <strong className="text-foreground">{totalH.toFixed(2)}h</strong></span>
+                        <span>Reg: <strong className="text-foreground">{reg.toFixed(2)}h</strong></span>
+                        {ot > 0 && <span>OT: <strong className="text-amber-600">{ot.toFixed(2)}h</strong></span>}
+                      </div>
+                    );
+                  })()}
+                  <div className="space-y-1">
+                    <Label className="text-xs">Note</Label>
+                    <Textarea
+                      rows={2}
+                      value={endShiftNote}
+                      onChange={(e) => setEndShiftNote(e.target.value)}
+                      className="text-xs resize-none"
+                      placeholder="Reason for manual clock-out…"
+                      data-testid="input-end-shift-note"
+                    />
+                  </div>
+                </div>
+                <div className="flex justify-end gap-2 pt-1">
+                  <Button variant="outline" size="sm" onClick={() => setEndShiftTarget(null)}>Cancel</Button>
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    disabled={!endShiftCo || endShiftBusy}
+                    onClick={handleEndShift}
+                    data-testid="button-confirm-end-shift"
+                  >
+                    {endShiftBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" /> : <LogOut className="w-3.5 h-3.5 mr-1.5" />}
+                    End Shift
+                  </Button>
+                </div>
+              </DialogContent>
+            </Dialog>
+
             {/* ── Live Personnel Board ──────────────────────────────────────── */}
             <div className="flex flex-col" style={{ flex: "0 0 auto", maxHeight: "50%" }}>
               <div className="flex items-center gap-2 px-4 py-3 border-b bg-muted/20">
@@ -635,7 +767,7 @@ export default function Dashboard() {
                     {liveDisplayed.map((ts) => {
                       const info = userMap[ts.eid];
                       return (
-                        <div key={ts.id} className="border rounded-lg bg-card px-3 py-2.5 flex items-center gap-2.5 shadow-sm" data-testid={`live-card-${ts.id}`}>
+                        <div key={ts.id} className="border rounded-lg bg-card px-3 py-2.5 flex items-center gap-2.5 shadow-sm group" data-testid={`live-card-${ts.id}`}>
                           <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center text-green-700 font-bold text-xs shrink-0">
                             {info?.av ?? ts.eid.slice(0, 2).toUpperCase()}
                           </div>
@@ -657,9 +789,21 @@ export default function Dashboard() {
                               )}
                             </div>
                           </div>
-                          <div className="text-right shrink-0">
-                            <p className="text-xs font-mono font-semibold text-green-600">{ts.ci}</p>
-                            <LiveElapsed ci={ts.ci ?? "00:00"} date={ts.date} className="text-[10px] text-muted-foreground font-mono" />
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <div className="text-right">
+                              <p className="text-xs font-mono font-semibold text-green-600">{ts.ci}</p>
+                              <LiveElapsed ci={ts.ci ?? "00:00"} date={ts.date} className="text-[10px] text-muted-foreground font-mono" />
+                            </div>
+                            {(isAdmin || isSupervisor) && (
+                              <button
+                                onClick={() => openEndShift(ts)}
+                                className="w-7 h-7 rounded-md flex items-center justify-center hover:bg-destructive/10 hover:text-destructive text-muted-foreground transition-colors opacity-0 group-hover:opacity-100"
+                                title="End shift (force clock-out)"
+                                data-testid={`button-end-shift-${ts.id}`}
+                              >
+                                <LogOut className="w-3.5 h-3.5" />
+                              </button>
+                            )}
                           </div>
                         </div>
                       );
@@ -774,6 +918,18 @@ export default function Dashboard() {
                                 <LiveElapsed ci={ts.ci ?? "00:00"} date={ts.date} className="text-sm font-semibold font-mono" />
                               </div>
                             </div>
+                            {/* End Shift button */}
+                            {(isAdmin || isSupervisor) && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="w-full text-destructive border-destructive/30 hover:bg-destructive/10 hover:border-destructive text-xs h-7"
+                                onClick={() => openEndShift(ts)}
+                                data-testid={`button-end-shift-full-${ts.id}`}
+                              >
+                                <LogOut className="w-3 h-3 mr-1.5" /> End Shift
+                              </Button>
+                            )}
                           </div>
                         );
                       })}
