@@ -397,20 +397,13 @@ export default function Dashboard() {
     refetchInterval: 15_000,
   });
   const [pwResetOpen, setPwResetOpen] = useState(false);
-  const [pwResetPasswords, setPwResetPasswords] = useState<Record<number, string>>({});
   const [pwResetBusy, setPwResetBusy] = useState<number | null>(null);
 
   const handlePwReset = async (id: number) => {
-    const newPassword = pwResetPasswords[id]?.trim();
-    if (!newPassword || newPassword.length < 4) {
-      toast({ title: "Password too short", description: "Must be at least 4 characters.", variant: "destructive" });
-      return;
-    }
     setPwResetBusy(id);
     try {
-      await apiRequest("PATCH", `/api/password-reset-requests/${id}/resolve`, { newPassword, resetBy: user.userId });
-      toast({ title: "Password reset", description: "Employee's password has been updated and they will be prompted to change it on next login." });
-      setPwResetPasswords((prev) => { const n = { ...prev }; delete n[id]; return n; });
+      await apiRequest("PATCH", `/api/password-reset-requests/${id}/resolve`, { newPassword: "temp", resetBy: user.userId });
+      toast({ title: "Password reset", description: "Password reset to 'temp'. Employee will be prompted to change it on next login." });
       refetchPwReset();
     } catch {
       toast({ title: "Reset failed", description: "Please try again.", variant: "destructive" });
@@ -1522,32 +1515,21 @@ export default function Dashboard() {
                         Pending
                       </span>
                     </div>
-                    <div className="flex gap-2">
-                      <div className="relative flex-1">
-                        <KeyRound className="absolute left-3 top-2.5 w-3.5 h-3.5 text-muted-foreground" />
-                        <input
-                          type="text"
-                          placeholder="Enter new temporary password"
-                          data-testid={`input-new-password-${req.id}`}
-                          value={pwResetPasswords[req.id] ?? ""}
-                          onChange={(e) => setPwResetPasswords((prev) => ({ ...prev, [req.id]: e.target.value }))}
-                          className="w-full pl-8 pr-3 py-2 text-sm border rounded-lg bg-background focus:outline-none focus:ring-2 focus:ring-primary/30 transition-all"
-                        />
-                      </div>
+                    <div className="flex items-center justify-between gap-2 pt-1">
+                      <p className="text-[11px] text-muted-foreground">
+                        Password will be reset to <span className="font-mono font-semibold text-foreground">temp</span>. Employee must change it on next login.
+                      </p>
                       <button
                         onClick={() => handlePwReset(req.id)}
-                        disabled={pwResetBusy === req.id || !(pwResetPasswords[req.id]?.trim())}
+                        disabled={pwResetBusy === req.id}
                         data-testid={`button-reset-pw-${req.id}`}
-                        className="px-4 py-2 text-sm font-semibold bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-1.5 whitespace-nowrap"
+                        className="px-4 py-2 text-sm font-semibold bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0"
                       >
                         {pwResetBusy === req.id
                           ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Resetting...</>
                           : <><CheckCircle2 className="w-3.5 h-3.5" /> Reset</>}
                       </button>
                     </div>
-                    <p className="text-[10px] text-muted-foreground">
-                      After reset, the employee will be required to change their password on next login.
-                    </p>
                   </div>
                 ))
               )}
