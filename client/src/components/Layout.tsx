@@ -84,15 +84,14 @@ export function Layout({ children }: LayoutProps) {
               <p className="text-[11px] text-sidebar-foreground/50 capitalize truncate">{user.pos}</p>
             </div>
           </div>
-          <Button
-            variant="ghost"
-            className="w-full justify-start text-sm text-sidebar-foreground/60 h-9"
+          <button
+            className="w-full flex items-center gap-2 px-3 py-2 rounded-md text-sm text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-foreground transition-colors"
             onClick={() => logout()}
             data-testid="button-logout"
           >
-            <LogOut className="w-4 h-4 mr-2" />
+            <LogOut className="w-4 h-4 shrink-0" />
             Sign Out
-          </Button>
+          </button>
         </div>
       </aside>
 
