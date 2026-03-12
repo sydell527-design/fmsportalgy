@@ -1228,7 +1228,7 @@ export default function SchedulePage() {
                                     </div>
                                   ))}
                                   {cellShifts.length === 0 && (
-                                    <div className="text-center text-[9px] text-muted-foreground/40 italic py-1 group-hover:hidden">Off Duty</div>
+                                    <div className="flex items-center justify-center min-h-[52px] text-[10px] font-medium text-muted-foreground/60 tracking-wide group-hover:hidden">Off Duty</div>
                                   )}
                                   <button
                                     onClick={() => openBuilder(d, emp.userId)}
@@ -1360,7 +1360,7 @@ export default function SchedulePage() {
                               </div>
                             ))}
                             {cellShifts.length === 0 && empHasAnyShift && (
-                              <div className="text-center text-[9px] text-muted-foreground/40 italic py-1 group-hover:hidden">Off Duty</div>
+                              <div className="flex items-center justify-center min-h-[52px] text-[10px] font-medium text-muted-foreground/60 tracking-wide group-hover:hidden">Off Duty</div>
                             )}
                             {isPrivileged && (
                               <button
