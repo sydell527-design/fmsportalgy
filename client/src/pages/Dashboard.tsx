@@ -873,9 +873,6 @@ export default function Dashboard() {
               </div>
               <p className="text-primary-foreground/70 text-xs">{format(new Date(), "EEEE, MMMM d, yyyy")} · {user.name} · {user.pos}</p>
             </div>
-            <div className="flex items-center gap-2">
-              <ClockInOut />
-            </div>
           </div>
 
           {/* KPI strip */}
