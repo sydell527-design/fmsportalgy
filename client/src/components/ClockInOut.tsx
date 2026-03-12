@@ -3,9 +3,11 @@ import { useAuth } from "@/hooks/use-auth";
 import { useCreateTimesheet, useTimesheets, useUpdateTimesheet } from "@/hooks/use-timesheets";
 import { useGeofences } from "@/hooks/use-geofences";
 import { useSchedules } from "@/hooks/use-schedules";
+import { useCreateRequest } from "@/hooks/use-requests";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { MapPin, Clock, LogIn, LogOut, CheckCircle2, Navigation, AlertTriangle, PenLine, ShieldCheck, Car, Wifi, Shield, ShieldOff } from "lucide-react";
+import { MapPin, Clock, LogIn, LogOut, CheckCircle2, Navigation, AlertTriangle, PenLine, ShieldCheck, Car, Wifi, Shield, ShieldOff, Siren, HeartPulse, UserX } from "lucide-react";
 import { useLocation } from "wouter";
 import { format } from "date-fns";
 import {
@@ -99,7 +101,10 @@ export function ClockInOut() {
   const { data: mySchedules = [] } = useSchedules(user?.userId);
   const { mutateAsync: createTimesheet, isPending: isCreating } = useCreateTimesheet();
   const { mutateAsync: updateTimesheet, isPending: isUpdating } = useUpdateTimesheet();
+  const { mutateAsync: createRequest, isPending: isSubmittingAction } = useCreateRequest();
   const { toast } = useToast();
+  const [actionOpen, setActionOpen] = useState(false);
+  const [actionNote, setActionNote] = useState("");
 
   const [currentTime, setCurrentTime] = useState(new Date());
   const [selectedZone, setSelectedZone] = useState("");
@@ -426,39 +431,44 @@ export function ClockInOut() {
               </div>
 
               {/* Auto-detected shift info (read-only) */}
-              <div className={`flex items-start gap-3 rounded-md border px-3 py-2.5 text-sm ${
+              <div className={`rounded-md border px-3 py-2.5 text-sm ${
                 dayStatus === "On Day"
                   ? "bg-green-50 border-green-200 text-green-900"
                   : "bg-amber-50 border-amber-200 text-amber-900"
               }`} data-testid="shift-status-info">
-                <div className="mt-0.5 shrink-0">
-                  {dayStatus === "On Day"
-                    ? <CheckCircle2 className="w-4 h-4 text-green-600" />
-                    : <AlertTriangle className="w-4 h-4 text-amber-600" />}
+                <div className="flex items-start gap-3">
+                  <div className="mt-0.5 shrink-0">
+                    {dayStatus === "On Day"
+                      ? <CheckCircle2 className="w-4 h-4 text-green-600" />
+                      : <AlertTriangle className="w-4 h-4 text-amber-600" />}
+                  </div>
+                  <div className="space-y-0.5 flex-1">
+                    <p className="font-semibold leading-tight">
+                      {dayStatus === "On Day" ? "Scheduled today — On Day" : "Not on schedule — Off Day"}
+                    </p>
+                    <p className="text-xs opacity-80">
+                      {armedStatus === "Armed"
+                        ? <><Shield className="w-3 h-3 inline mr-0.5" />Armed</>
+                        : <><ShieldOff className="w-3 h-3 inline mr-0.5" />Unarmed</>}
+                      {" · "}
+                      {todaySchedule
+                        ? `Shift: ${todaySchedule.shiftStart}–${todaySchedule.shiftEnd}`
+                        : `from profile default`}
+                      {todaySchedule?.location && ` · ${todaySchedule.location}`}
+                      {todaySchedule?.company && ` · ${todaySchedule.company}`}
+                    </p>
+                  </div>
                 </div>
-                <div className="space-y-0.5">
-                  <p className="font-semibold leading-tight">
-                    {dayStatus === "On Day" ? "Scheduled today — On Day" : "Not on schedule — Off Day"}
-                  </p>
-                  <p className="text-xs opacity-80">
-                    {armedStatus === "Armed"
-                      ? <><Shield className="w-3 h-3 inline mr-0.5" />Armed</>
-                      : <><ShieldOff className="w-3 h-3 inline mr-0.5" />Unarmed</>}
-                    {" · "}
-                    {todaySchedule
-                      ? `from schedule (${todaySchedule.shiftStart}–${todaySchedule.shiftEnd})`
-                      : `from profile default`}
-                  </p>
-                </div>
-              </div>
-
-              {/* Client / Agency (auto-filled from zone) */}
-              <div>
-                <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide mb-1.5">Client / Agency</p>
-                <select className={selectCls} value={client} onChange={(e) => setClient(e.target.value as ClientAgency)} data-testid="select-client">
-                  <option value="">— Select client —</option>
-                  {CLIENT_AGENCIES.map((c) => <option key={c} value={c}>{c}</option>)}
-                </select>
+                {/* Take Action — only when scheduled but not yet clocked in */}
+                {dayStatus === "On Day" && !hasClockedIn && (
+                  <button
+                    onClick={() => setActionOpen(true)}
+                    className="mt-2 w-full flex items-center justify-center gap-1.5 text-xs font-semibold text-green-800 underline underline-offset-2 hover:text-green-700 transition-colors"
+                    data-testid="button-take-action"
+                  >
+                    <Siren className="w-3 h-3" /> Can't make it today? Report here
+                  </button>
+                )}
               </div>
 
               {/* Enable GPS */}
@@ -670,6 +680,70 @@ export function ClockInOut() {
           </div>
         );
       })()}
+
+      {/* ── Take Action dialog ──────────────────────────────────────────────── */}
+      <Dialog open={actionOpen} onOpenChange={(o) => { setActionOpen(o); if (!o) setActionNote(""); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Siren className="w-4 h-4 text-orange-500" /> Report Attendance Issue
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground -mt-1">
+            Select the reason you cannot attend your scheduled shift today ({format(new Date(), "MMMM d, yyyy")}).
+            Your supervisor and admin will be notified immediately.
+          </p>
+          <div className="space-y-2 pt-1">
+            {[
+              { sub: "Sick",               icon: <HeartPulse className="w-4 h-4" />, label: "Report Sick",           desc: "I am unwell and cannot attend my shift." },
+              { sub: "Emergency",          icon: <Siren      className="w-4 h-4" />, label: "Personal Emergency",    desc: "An urgent personal situation prevents attendance." },
+              { sub: "Absent",             icon: <UserX      className="w-4 h-4" />, label: "Report Absence",        desc: "I will be absent from my shift today." },
+            ].map(({ sub, icon, label, desc }) => (
+              <button
+                key={sub}
+                disabled={isSubmittingAction}
+                className="w-full flex items-start gap-3 border rounded-lg px-4 py-3 text-left hover:border-primary hover:bg-primary/5 transition-colors disabled:opacity-50"
+                data-testid={`action-${sub.toLowerCase()}`}
+                onClick={async () => {
+                  try {
+                    await createRequest({
+                      reqId: `ACT-${user.userId}-${Date.now()}`,
+                      eid:   user.userId,
+                      type:  "Attendance",
+                      sub,
+                      date:  format(new Date(), "yyyy-MM-dd"),
+                      reason: actionNote.trim() || desc,
+                      status: "pending",
+                    });
+                    toast({ title: "Report submitted", description: `Your ${label.toLowerCase()} has been sent to your supervisor and admin.` });
+                    setActionOpen(false);
+                    setActionNote("");
+                  } catch (err: any) {
+                    toast({ title: "Failed to submit", description: err.message, variant: "destructive" });
+                  }
+                }}
+              >
+                <span className="text-primary mt-0.5 shrink-0">{icon}</span>
+                <div>
+                  <p className="font-semibold text-sm leading-tight">{label}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{desc}</p>
+                </div>
+              </button>
+            ))}
+          </div>
+          <div className="pt-1">
+            <label className="text-xs font-medium text-muted-foreground">Additional note (optional)</label>
+            <textarea
+              value={actionNote}
+              onChange={(e) => setActionNote(e.target.value)}
+              placeholder="e.g. Doctor's appointment, family emergency…"
+              rows={2}
+              className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-ring"
+              data-testid="input-action-note"
+            />
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

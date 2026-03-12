@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Calendar, Clock, ArrowLeftRight, FileText, CheckCircle2, XCircle, MessageSquare } from "lucide-react";
+import { Plus, Calendar, Clock, ArrowLeftRight, FileText, CheckCircle2, XCircle, MessageSquare, Siren } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 
@@ -19,6 +19,7 @@ const TYPE_ICONS: Record<string, any> = {
   Overtime: Clock,
   "Shift Swap": ArrowLeftRight,
   "Payroll Dispute": FileText,
+  Attendance: Siren,
 };
 
 function statusVariant(status: string): "default" | "secondary" | "destructive" | "outline" {
@@ -78,14 +79,14 @@ export default function Requests() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-5">
         <div>
           <h1 className="text-2xl font-bold">Requests</h1>
-          <p className="text-muted-foreground text-sm mt-0.5">Leave, overtime, shift swap, and dispute requests</p>
+          <p className="text-muted-foreground text-sm mt-0.5">Leave, overtime, shift swap, attendance reports, and dispute requests</p>
         </div>
         {user?.role === "employee" && <RequestDialog />}
       </div>
 
       {/* Filter tabs */}
       <div className="flex flex-wrap gap-2 mb-5">
-        {["All", "Leave", "Overtime", "Shift Swap", "Payroll Dispute"].map((t) => (
+        {["All", "Attendance", "Leave", "Overtime", "Shift Swap", "Payroll Dispute"].map((t) => (
           <button
             key={t}
             onClick={() => setFilterType(t)}

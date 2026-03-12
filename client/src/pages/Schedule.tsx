@@ -20,7 +20,7 @@ import {
 import {
   ChevronLeft, ChevronRight, Plus, Trash2, Edit2, CalendarDays,
   Shield, ShieldOff, Clock, MapPin, Users, User, Search, Check,
-  CalendarRange, Loader2,
+  CalendarRange, Loader2, Building2,
 } from "lucide-react";
 import {
   FMS_LOCATIONS, CLIENT_AGENCIES,
@@ -1020,8 +1020,8 @@ export default function SchedulePage() {
           </DialogContent>
         </Dialog>
 
-        {/* ── Desktop: Agency Roster View ──────────────────────────────────── */}
-        {adminDesktopView === "agency" && (
+        {/* ── Desktop: Agency Roster View (admin/supervisor only) ─────────── */}
+        {isPrivileged && adminDesktopView === "agency" && (
         <div className="hidden lg:block overflow-x-auto">
           <table className="w-full border-collapse text-sm">
             <thead>
@@ -1111,8 +1111,8 @@ export default function SchedulePage() {
         </div>
         )}
 
-        {/* ── Desktop: Employee Grid View ───────────────────────────────────── */}
-        {adminDesktopView === "employee" && (
+        {/* ── Desktop: Employee Grid View (admin/supervisor only) ──────────── */}
+        {isPrivileged && adminDesktopView === "employee" && (
         <div className="hidden lg:block overflow-x-auto">
           <table className="w-full border-collapse text-sm">
             <thead>
@@ -1211,6 +1211,122 @@ export default function SchedulePage() {
               )}
             </tbody>
           </table>
+        </div>
+        )}
+
+        {/* ── Desktop: Employee personal schedule (non-admin) ─────────────── */}
+        {!isPrivileged && (
+        <div className="hidden lg:flex gap-6">
+
+          {/* Left: Calendar */}
+          <div className="flex-1 min-w-0">
+            {/* Month nav */}
+            <div className="flex items-center justify-between mb-4">
+              <button onClick={() => setEmpCalAnchor((a) => subMonths(a, 1))} className="p-1.5 rounded-md hover:bg-muted" data-testid="button-emp-prev-month-desktop"><ChevronLeft className="w-4 h-4" /></button>
+              <div className="flex items-center gap-3">
+                <h2 className="text-lg font-bold">{format(empCalAnchor, "MMMM yyyy")}</h2>
+                {!empTodayInCurrentMonth && (
+                  <button onClick={() => setEmpCalAnchor(startOfMonth(new Date()))} className="text-xs text-primary font-medium hover:underline" data-testid="button-emp-today-desktop">Today</button>
+                )}
+              </div>
+              <button onClick={() => setEmpCalAnchor((a) => addMonths(a, 1))} className="p-1.5 rounded-md hover:bg-muted" data-testid="button-emp-next-month-desktop"><ChevronRight className="w-4 h-4" /></button>
+            </div>
+            {/* Period tabs */}
+            <div className="flex border rounded-lg overflow-hidden mb-4">
+              {([1, 2] as const).map((p) => {
+                const yr = empCalAnchor.getFullYear(), mo = empCalAnchor.getMonth();
+                const lbl = p === 1 ? `Period 1 · ${format(empCalAnchor, "MMM")} 1–15`
+                  : `Period 2 · ${format(empCalAnchor, "MMM")} 16–${new Date(yr, mo + 1, 0).getDate()}`;
+                return (
+                  <button key={p} onClick={() => setEmpPeriod(p)} className={`flex-1 py-2 text-sm font-semibold transition-colors ${empPeriod === p ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted"}`} data-testid={`button-emp-period-desktop-${p}`}>{lbl}</button>
+                );
+              })}
+            </div>
+            {/* DOW headers */}
+            <div className="grid grid-cols-7 mb-1">
+              {["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].map((d) => (
+                <div key={d} className="text-center text-[11px] font-bold text-muted-foreground uppercase py-1">{d}</div>
+              ))}
+            </div>
+            {/* Calendar grid */}
+            <div className="grid grid-cols-7 border-l border-t border-border/30 rounded-md overflow-hidden">
+              {empCalGrid.map((d, i) => {
+                const ds = format(d, "yyyy-MM-dd");
+                const inMonth = format(d, "yyyy-MM") === format(empCalAnchor, "yyyy-MM");
+                const inPeriod = ds >= empPeriodBounds.start && ds <= empPeriodBounds.end;
+                const isToday = ds === todayStr;
+                const dayShifts = empShiftByDate[ds] ?? [];
+                return (
+                  <div key={i} className={`border-b border-r border-border/30 min-h-[80px] p-1.5 ${!inMonth ? "bg-muted/10 opacity-30" : !inPeriod ? "bg-muted/5 opacity-50" : isToday ? "bg-primary/5" : ""}`}>
+                    <div className={`text-[11px] font-bold mb-1 flex items-center justify-between`}>
+                      {isToday ? (
+                        <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-primary text-primary-foreground text-[10px] font-bold">{format(d, "d")}</span>
+                      ) : <span className={!inMonth || !inPeriod ? "text-muted-foreground" : "text-foreground"}>{format(d, "d")}</span>}
+                    </div>
+                    {inMonth && inPeriod && dayShifts.length === 0 && (
+                      <span className="text-[9px] text-muted-foreground/60 italic">Off Duty</span>
+                    )}
+                    {dayShifts.map((s) => (
+                      <div key={s.id} className={`rounded p-1 mb-0.5 text-[10px] leading-tight ${s.armed === "Armed" ? "bg-red-100 border border-red-200 text-red-900" : "bg-green-100 border border-green-200 text-green-900"}`} data-testid={`emp-shift-desktop-${s.id}`}>
+                        <div className="font-bold">{fmt12(s.shiftStart)}–{fmt12(s.shiftEnd)}</div>
+                        {s.company && <div className="truncate opacity-80 font-semibold">{s.company}</div>}
+                        {s.location && <div className="truncate opacity-70">{s.location}</div>}
+                      </div>
+                    ))}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Right: Period shift list */}
+          <div className="w-80 shrink-0">
+            <div className="bg-primary text-primary-foreground rounded-t-lg px-4 py-3">
+              <p className="font-bold text-sm">{empPeriodBounds.label}</p>
+              <p className="text-xs opacity-80 mt-0.5">
+                {empPeriodShifts.length} shift{empPeriodShifts.length !== 1 ? "s" : ""}
+                {empTotalHours > 0 ? `  ·  ${empTotalHours % 1 === 0 ? empTotalHours : empTotalHours.toFixed(1)} hrs scheduled` : ""}
+              </p>
+            </div>
+            <div className="border border-t-0 rounded-b-lg overflow-hidden">
+              {empPeriodShifts.length === 0 ? (
+                <div className="px-4 py-8 text-center text-sm text-muted-foreground italic">No shifts scheduled this period.</div>
+              ) : (
+                <div className="divide-y">
+                  {empPeriodShifts.sort((a, b) => a.date.localeCompare(b.date)).map((s) => (
+                    <div key={s.id} className="px-4 py-3" data-testid={`emp-period-shift-${s.id}`}>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-xs font-bold text-foreground">{format(parseISO(s.date), "EEE, MMM d")}</span>
+                        <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${s.armed === "Armed" ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700"}`}>
+                          {s.armed === "Armed" ? "Armed" : "Unarmed"}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1.5 text-sm font-semibold text-foreground mb-0.5">
+                        <Clock className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                        {fmt12(s.shiftStart)} – {fmt12(s.shiftEnd)}
+                      </div>
+                      {s.company && (
+                        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                          <Building2 className="w-3 h-3 shrink-0" /> {s.company}
+                        </div>
+                      )}
+                      {s.location && (
+                        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                          <MapPin className="w-3 h-3 shrink-0" /> {s.location}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            {/* Legend */}
+            <div className="flex gap-4 mt-3 text-[11px] text-muted-foreground">
+              <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-green-400 inline-block" /> On Duty (Unarmed)</span>
+              <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-red-400 inline-block" /> On Duty (Armed)</span>
+            </div>
+          </div>
+
         </div>
         )}
 
@@ -1466,19 +1582,20 @@ export default function SchedulePage() {
                   const dow       = d.getDay();
                   const isWkend   = dow === 0 || dow === 6;
                   const dayShifts = empShiftByDate[ds] ?? [];
+                  const hasShift  = dayShifts.length > 0;
 
                   return (
                     <div
                       key={i}
-                      className={`min-h-[60px] p-1 border-b border-r border-border/20 ${
-                        !inMonth   ? "bg-muted/10 opacity-40"
-                        : !inPeriod ? "bg-muted/10 opacity-60"
-                        : isToday  ? "bg-primary/8"
-                        : isWkend  ? "bg-muted/20"
+                      className={`min-h-[68px] p-1 border-b border-r border-border/20 ${
+                        !inMonth    ? "bg-muted/10 opacity-30"
+                        : !inPeriod ? "bg-muted/5 opacity-50"
+                        : isToday   ? "bg-primary/5"
+                        : isWkend   ? "bg-muted/20"
                         : "bg-background"
                       }`}
                     >
-                      {/* Day number — fixed h-5 keeps all cells the same height */}
+                      {/* Day number */}
                       <div className={`h-5 flex items-center text-[11px] font-semibold leading-none mb-1 ${
                         isToday   ? "text-primary"
                         : !inMonth || !inPeriod ? "text-muted-foreground"
@@ -1491,20 +1608,27 @@ export default function SchedulePage() {
                           </span>
                         ) : format(d, "d")}
                       </div>
-                      {/* Shift chips */}
+
+                      {/* Off Duty indicator */}
+                      {inMonth && inPeriod && !hasShift && (
+                        <div className="text-[8px] text-muted-foreground/50 italic text-center mt-1">Off</div>
+                      )}
+
+                      {/* Shift chips — show agency + time */}
                       {dayShifts.map((s) => (
                         <div
                           key={s.id}
-                          className={`w-full rounded text-center text-white text-[7px] font-medium py-0.5 mb-0.5 leading-tight tabular-nums px-0.5 ${
-                            s.armed === "Armed" ? "bg-red-500" : "bg-blue-500"
+                          className={`w-full rounded px-0.5 py-0.5 mb-0.5 leading-tight ${
+                            s.armed === "Armed"
+                              ? "bg-red-100 border border-red-200 text-red-900"
+                              : "bg-green-100 border border-green-200 text-green-900"
                           }`}
                           data-testid={`emp-shift-${s.id}`}
                         >
-                          <div className="font-semibold">{fmt12(s.shiftStart)}</div>
-                          <div className="opacity-60 text-[5px] tracking-widest">────</div>
-                          <div className="font-semibold">{fmt12(s.shiftEnd)}</div>
+                          <div className="text-[8px] font-bold tabular-nums">{fmt12(s.shiftStart)}</div>
+                          <div className="text-[7px] opacity-70 tabular-nums">{fmt12(s.shiftEnd)}</div>
                           {s.company && (
-                            <div className="mt-0.5 text-[5px] opacity-80 truncate font-semibold tracking-wide">{s.company}</div>
+                            <div className="text-[6px] font-semibold opacity-80 truncate mt-0.5 uppercase tracking-wide">{s.company}</div>
                           )}
                         </div>
                       ))}
@@ -1514,23 +1638,38 @@ export default function SchedulePage() {
               </div>
 
               {/* Period summary bar */}
-              <div className="flex items-center justify-between px-4 py-3 bg-muted/10 border-t">
-                <div>
-                  <p className="text-[11px] font-bold text-foreground">{empPeriodBounds.label}</p>
-                  <p className="text-[10px] text-muted-foreground mt-0.5">
-                    {empPeriodShifts.length} shift{empPeriodShifts.length !== 1 ? "s" : ""}
-                    {empTotalHours > 0 ? `  ·  ${empTotalHours % 1 === 0 ? empTotalHours : empTotalHours.toFixed(1)} hrs` : ""}
-                  </p>
+              <div className="px-4 py-3 bg-muted/10 border-t space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-[11px] font-bold text-foreground">{empPeriodBounds.label}</p>
+                    <p className="text-[10px] text-muted-foreground mt-0.5">
+                      {empPeriodShifts.length} shift{empPeriodShifts.length !== 1 ? "s" : ""}
+                      {empTotalHours > 0 ? `  ·  ${empTotalHours % 1 === 0 ? empTotalHours : empTotalHours.toFixed(1)} hrs` : ""}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
+                    <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded inline-block bg-red-400" /> Armed</span>
+                    <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded inline-block bg-green-400" /> Unarmed</span>
+                  </div>
                 </div>
-                {/* Armed / Unarmed legend */}
-                <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
-                  <span className="flex items-center gap-1">
-                    <span className="w-2.5 h-2.5 rounded inline-block bg-red-500" /> Armed
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <span className="w-2.5 h-2.5 rounded inline-block bg-blue-500" /> Unarmed
-                  </span>
-                </div>
+
+                {/* Shift detail list for the period */}
+                {empPeriodShifts.length > 0 && (
+                  <div className="mt-2 space-y-1">
+                    <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide">Period Shifts</p>
+                    {empPeriodShifts.sort((a, b) => a.date.localeCompare(b.date)).map((s) => (
+                      <div key={s.id} className={`flex flex-col rounded-md px-3 py-2 border ${s.armed === "Armed" ? "bg-red-50 border-red-200" : "bg-green-50 border-green-200"}`} data-testid={`emp-period-row-${s.id}`}>
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] font-bold text-foreground">{format(parseISO(s.date), "EEE, MMM d")}</span>
+                          <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${s.armed === "Armed" ? "bg-red-200 text-red-800" : "bg-green-200 text-green-800"}`}>{s.armed ?? "Unarmed"}</span>
+                        </div>
+                        <div className="text-[11px] font-semibold mt-0.5">{fmt12(s.shiftStart)} – {fmt12(s.shiftEnd)}</div>
+                        {s.company && <div className="text-[10px] text-muted-foreground flex items-center gap-1 mt-0.5"><Building2 className="w-3 h-3 shrink-0" />{s.company}</div>}
+                        {s.location && <div className="text-[10px] text-muted-foreground flex items-center gap-1"><MapPin className="w-3 h-3 shrink-0" />{s.location}</div>}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </>
         )}
