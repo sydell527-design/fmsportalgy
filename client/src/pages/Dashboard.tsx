@@ -384,7 +384,8 @@ export default function Dashboard() {
   const { data: allSchedules, refetch: refetchSchedules } = useQuery<Schedule[]>({
     queryKey: ["/api/schedules/all"],
     enabled: isAdmin || isSupervisor,
-    refetchInterval: 60_000,
+    refetchInterval: 10_000,
+    refetchOnWindowFocus: true,
   });
 
   // ── Filters ─────────────────────────────────────────────────────────────────
