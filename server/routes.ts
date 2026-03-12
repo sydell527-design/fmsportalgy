@@ -399,6 +399,33 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     } catch { res.status(500).json({ message: "Server error" }); }
   });
 
+  // ── PASSWORD RESET REQUESTS ────────────────────────────────────────────────
+  app.post("/api/password-reset-requests", async (req, res) => {
+    try {
+      const { userId } = req.body;
+      if (!userId) return res.status(400).json({ message: "Employee ID is required" });
+      const result = await storage.createPasswordResetRequest(String(userId).trim());
+      if (!result) return res.status(404).json({ message: "Employee ID not found. Please contact your admin directly." });
+      res.status(201).json({ message: "Password reset requested successfully" });
+    } catch { res.status(500).json({ message: "Server error" }); }
+  });
+
+  app.get("/api/password-reset-requests", async (_req, res) => {
+    try {
+      res.json(await storage.getPasswordResetRequests());
+    } catch { res.status(500).json({ message: "Server error" }); }
+  });
+
+  app.patch("/api/password-reset-requests/:id/resolve", async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const { newPassword, resetBy } = req.body;
+      if (!newPassword || String(newPassword).length < 4) return res.status(400).json({ message: "New password must be at least 4 characters" });
+      await storage.resolvePasswordResetRequest(id, String(newPassword), String(resetBy ?? "admin"));
+      res.json({ message: "Password reset successfully" });
+    } catch { res.status(500).json({ message: "Server error" }); }
+  });
+
   await seedDatabase();
   return httpServer;
 }
@@ -457,33 +484,6 @@ async function seedDatabase() {
     { reqId:"REQ004", eid:"1004", type:"Shift Swap", sub:"Shift Swap", start:`${year}-${month}-22`, end:`${year}-${month}-22`, reason:"Personal commitment", status:"pending", at:`${year}-${month}-16 10:00`, comments:[] },
   ];
   for (const req of reqseed) await storage.createRequest(req as any);
-
-  // ── PASSWORD RESET REQUESTS ────────────────────────────────────────────────
-  app.post("/api/password-reset-requests", async (req, res) => {
-    try {
-      const { userId } = req.body;
-      if (!userId) return res.status(400).json({ message: "Employee ID is required" });
-      const result = await storage.createPasswordResetRequest(String(userId).trim());
-      if (!result) return res.status(404).json({ message: "Employee ID not found. Please contact your admin directly." });
-      res.status(201).json({ message: "Password reset requested successfully" });
-    } catch { res.status(500).json({ message: "Server error" }); }
-  });
-
-  app.get("/api/password-reset-requests", async (_req, res) => {
-    try {
-      res.json(await storage.getPasswordResetRequests());
-    } catch { res.status(500).json({ message: "Server error" }); }
-  });
-
-  app.patch("/api/password-reset-requests/:id/resolve", async (req, res) => {
-    try {
-      const id = Number(req.params.id);
-      const { newPassword, resetBy } = req.body;
-      if (!newPassword || String(newPassword).length < 4) return res.status(400).json({ message: "New password must be at least 4 characters" });
-      await storage.resolvePasswordResetRequest(id, String(newPassword), String(resetBy ?? "admin"));
-      res.json({ message: "Password reset successfully" });
-    } catch { res.status(500).json({ message: "Server error" }); }
-  });
 
   // Seed geofences
   const geoSeed = [
