@@ -95,8 +95,9 @@ export default function Dashboard() {
 
   const isAdmin = user.role === "admin" || user.role === "manager";
   const isSupervisor =
-    user.role === "employee" &&
-    (users ?? []).some((u) => u.userId !== user.userId && (u.fa === user.pos || u.sa === user.pos));
+    !isAdmin &&
+    ((user.pos ?? "").toLowerCase().includes("supervisor") ||
+      (users ?? []).some((u) => u.userId !== user.userId && (u.fa === user.pos || u.sa === user.pos)));
 
   // ── Admin schedule data ──────────────────────────────────────────────────────
   const { data: allSchedules, refetch: refetchSchedules } = useQuery<Schedule[]>({
@@ -260,7 +261,12 @@ export default function Dashboard() {
   const myMonthTs = myTs.filter((t) => t.date?.startsWith(currentMonth));
   const myRegHours = myMonthTs.filter((t) => t.status === "approved").reduce((s, t) => s + (t.reg ?? 0), 0);
   const myOtHours = myMonthTs.filter((t) => t.status === "approved").reduce((s, t) => s + (t.ot ?? 0), 0);
-  const myPending = myTs.filter((t) => t.status === "pending_employee" && !!t.co);
+  const ABSENCE_STATUSES = ["Sick", "Absent", "Annual Leave"];
+  const isAbsenceRecord = (t: Timesheet) => ABSENCE_STATUSES.includes(t.dayStatus ?? "");
+  // "Awaiting My Signature" = pending_employee AND either has a clock-out OR is an absence record (no co expected)
+  const myPending = myTs.filter((t) =>
+    t.status === "pending_employee" && (!!t.co || isAbsenceRecord(t))
+  );
   const officersNeedingSignoff = isSupervisor
     ? (timesheets ?? []).filter((ts) => {
         const emp = (users ?? []).find((u) => u.userId === ts.eid);
@@ -384,15 +390,22 @@ export default function Dashboard() {
             <div className="bg-card border rounded-xl p-5 shadow-sm">
               <h3 className="font-semibold text-sm mb-3">Timesheets Awaiting Your Signature</h3>
               <div className="space-y-2">
-                {myPending.map((ts) => (
-                  <div key={ts.id} className="flex items-center justify-between py-2 border-b last:border-0">
-                    <div>
-                      <span className="font-medium text-sm">{ts.date}</span>
-                      <span className="text-muted-foreground text-xs ml-3">{ts.ci} → {ts.co}</span>
+                {myPending.map((ts) => {
+                  const absence = isAbsenceRecord(ts);
+                  return (
+                    <div key={ts.id} className="flex items-center justify-between py-2 border-b last:border-0">
+                      <div>
+                        <span className="font-medium text-sm">{ts.date}</span>
+                        {absence ? (
+                          <span className="text-amber-600 text-xs ml-3 font-medium">{ts.dayStatus}</span>
+                        ) : (
+                          <span className="text-muted-foreground text-xs ml-3">{ts.ci} → {ts.co}</span>
+                        )}
+                      </div>
+                      <Badge variant="outline" className="text-xs text-blue-600 border-blue-200 bg-blue-50">Sign Required</Badge>
                     </div>
-                    <Badge variant="outline" className="text-xs text-blue-600 border-blue-200 bg-blue-50">Sign Required</Badge>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}
