@@ -703,16 +703,46 @@ export function ClockInOut() {
                 data-testid={`action-${sub.toLowerCase()}`}
                 onClick={async () => {
                   try {
+                    const todayStr = format(new Date(), "yyyy-MM-dd");
+                    const reason   = actionNote.trim() || desc;
+                    const tsStatus = sub === "Sick" ? "Sick" : "Absent";
+
                     await createRequest({
-                      reqId: `ACT-${user.userId}-${Date.now()}`,
-                      eid:   user.userId,
-                      type:  "Attendance",
+                      reqId:  `ACT-${user.userId}-${Date.now()}`,
+                      eid:    user.userId,
+                      type:   "Attendance",
                       sub,
-                      date:  format(new Date(), "yyyy-MM-dd"),
-                      reason: actionNote.trim() || desc,
+                      date:   todayStr,
+                      reason,
                       status: "pending",
                     });
-                    toast({ title: "Report submitted", description: `Your ${label.toLowerCase()} has been sent to your supervisor and admin.` });
+
+                    // Only auto-create a timesheet entry if none exists for today
+                    const alreadyHasTs = (timesheets ?? []).some((t) => t.date === todayStr);
+                    if (!alreadyHasTs) {
+                      await createTimesheet({
+                        tsId:       `TS-${user.userId}-${Date.now()}`,
+                        eid:        user.userId,
+                        date:       todayStr,
+                        ci:         null,
+                        co:         null,
+                        gIn:        null,
+                        gOut:       null,
+                        zone:       todaySchedule?.location ?? null,
+                        post:       null,
+                        dayStatus:  tsStatus,
+                        holidayType: null,
+                        armed:      armedStatus,
+                        client:     (todaySchedule?.client ?? null) as any,
+                        status:     "pending_employee",
+                        reg: 0, ot: 0, ph: 0, brk: 0, meals: 0,
+                        notes:      reason,
+                        edited:     false,
+                        hist:       [],
+                      } as any);
+                    }
+
+                    toast({ title: "Report submitted", description: `Your ${label.toLowerCase()} has been recorded on your timesheet and sent to your supervisor.` });
                     setActionOpen(false);
                     setActionNote("");
                   } catch (err: any) {
