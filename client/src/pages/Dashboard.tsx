@@ -95,7 +95,7 @@ type AdherenceRow = {
   sched: Schedule;
   emp: { name: string; pos: string; av: string; status: string } | undefined;
   ts: Timesheet | undefined;
-  status: "on-time" | "late" | "not-in" | "absent" | "done";
+  status: "on-time" | "late" | "not-in" | "absent" | "done" | "unscheduled";
   lateMins: number;
 };
 
@@ -110,7 +110,7 @@ function AdherencePanel({
   showElapsed = false,
 }: {
   rows: AdherenceRow[];
-  summary: { total: number; onTime: number; late: number; notIn: number; absent: number; done: number };
+  summary: { total: number; onTime: number; late: number; notIn: number; absent: number; done: number; unscheduled: number };
   adherenceFilter: string;
   setAdherenceFilter: (v: any) => void;
   openEndShift: (ts: Timesheet) => void;
@@ -119,20 +119,22 @@ function AdherencePanel({
   showElapsed?: boolean;
 }) {
   const chips = [
-    { key: "all",      label: "All",      count: summary.total,   color: "bg-muted text-muted-foreground border-border" },
-    { key: "not-in",   label: "Not In",   count: summary.notIn,   color: "bg-red-50 text-red-700 border-red-200" },
-    { key: "late",     label: "Late",     count: summary.late,    color: "bg-purple-50 text-purple-700 border-purple-200" },
-    { key: "absent",   label: "Absent",   count: summary.absent,  color: "bg-orange-50 text-orange-700 border-orange-200" },
-    { key: "on-time",  label: "On Time",  count: summary.onTime,  color: "bg-green-50 text-green-700 border-green-200" },
-    { key: "done",     label: "Done",     count: summary.done,    color: "bg-blue-50 text-blue-700 border-blue-200" },
-  ];
+    { key: "all",          label: "All",          count: summary.total,        color: "bg-muted text-muted-foreground border-border" },
+    { key: "not-in",       label: "Not In",       count: summary.notIn,        color: "bg-red-50 text-red-700 border-red-200" },
+    { key: "late",         label: "Late",         count: summary.late,         color: "bg-purple-50 text-purple-700 border-purple-200" },
+    { key: "absent",       label: "Absent",       count: summary.absent,       color: "bg-orange-50 text-orange-700 border-orange-200" },
+    { key: "on-time",      label: "On Time",      count: summary.onTime,       color: "bg-green-50 text-green-700 border-green-200" },
+    { key: "done",         label: "Done",         count: summary.done,         color: "bg-blue-50 text-blue-700 border-blue-200" },
+    { key: "unscheduled",  label: "Unscheduled",  count: summary.unscheduled,  color: "bg-teal-50 text-teal-700 border-teal-200" },
+  ].filter((c) => c.key === "all" || c.count > 0);
 
   function statusInfo(r: AdherenceRow) {
-    if (r.status === "on-time")  return { icon: <UserCheck className="w-3.5 h-3.5 text-green-600" />, label: "On Time",    bg: "border-green-200 bg-green-50" };
-    if (r.status === "late")     return { icon: <Timer className="w-3.5 h-3.5 text-purple-600" />,    label: `Late ${fmtDuration(r.lateMins)}`, bg: "border-purple-200 bg-purple-50" };
-    if (r.status === "not-in")   return { icon: <UserX className="w-3.5 h-3.5 text-red-500" />,       label: "Not In",     bg: "border-red-200 bg-red-50" };
-    if (r.status === "absent")   return { icon: <XCircle className="w-3.5 h-3.5 text-orange-600" />,  label: r.ts?.dayStatus ?? "Absent", bg: "border-orange-200 bg-orange-50" };
-    if (r.status === "done")     return { icon: <CheckCircle2 className="w-3.5 h-3.5 text-blue-500" />, label: `Done ${r.ts?.co ?? ""}`, bg: "border-blue-200 bg-blue-50" };
+    if (r.status === "on-time")      return { icon: <UserCheck className="w-3.5 h-3.5 text-green-600" />,  label: "On Time",    bg: "border-green-200 bg-green-50" };
+    if (r.status === "late")         return { icon: <Timer className="w-3.5 h-3.5 text-purple-600" />,      label: `Late ${fmtDuration(r.lateMins)}`, bg: "border-purple-200 bg-purple-50" };
+    if (r.status === "not-in")       return { icon: <UserX className="w-3.5 h-3.5 text-red-500" />,         label: "Not In",     bg: "border-red-200 bg-red-50" };
+    if (r.status === "absent")       return { icon: <XCircle className="w-3.5 h-3.5 text-orange-600" />,    label: r.ts?.dayStatus ?? "Absent", bg: "border-orange-200 bg-orange-50" };
+    if (r.status === "done")         return { icon: <CheckCircle2 className="w-3.5 h-3.5 text-blue-500" />, label: `Done ${r.ts?.co ?? ""}`, bg: "border-blue-200 bg-blue-50" };
+    if (r.status === "unscheduled")  return { icon: <Radio className="w-3.5 h-3.5 text-teal-600" />,        label: "Unscheduled", bg: "border-teal-200 bg-teal-50" };
     return { icon: null, label: r.status, bg: "" };
   }
 
@@ -202,10 +204,17 @@ function AdherencePanel({
               <div className="flex-1 min-w-0">
                 <p className="font-semibold text-sm truncate">{emp?.name ?? sched.eid}</p>
                 <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground mt-0.5">
-                  <span className="flex items-center gap-0.5">
-                    <Clock className="w-3 h-3" />
-                    Scheduled {sched.shiftStart}–{sched.shiftEnd}
-                  </span>
+                  {sched.id !== -1 ? (
+                    <span className="flex items-center gap-0.5">
+                      <Clock className="w-3 h-3" />
+                      Scheduled {sched.shiftStart}–{sched.shiftEnd}
+                    </span>
+                  ) : (
+                    <span className="flex items-center gap-0.5 text-teal-600">
+                      <Radio className="w-3 h-3" />
+                      No schedule — clocked in
+                    </span>
+                  )}
                   {ts?.ci && <span>In: <strong className="text-foreground">{ts.ci}</strong></span>}
                   {sched.client && <span className="flex items-center gap-0.5"><Briefcase className="w-3 h-3" />{sched.client}</span>}
                 </div>
@@ -439,10 +448,11 @@ export default function Dashboard() {
 
   // ── Schedule Adherence (today) ───────────────────────────────────────────────
   const todayAdherence = useMemo(() => {
-    if (!allSchedules) return [];
     const GRACE = 15;
     const seen = new Set<string>();
-    return (allSchedules ?? [])
+
+    // 1. Schedule-based rows
+    const schedRows: AdherenceRow[] = (allSchedules ?? [])
       .filter((s) => s.date === today)
       .filter((s) => { if (seen.has(s.eid)) return false; seen.add(s.eid); return true; })
       .map((sched) => {
@@ -450,7 +460,7 @@ export default function Dashboard() {
         const emp = userMap[sched.eid];
         const [sh, sm] = sched.shiftStart.split(":").map(Number);
         const schedMins = sh * 60 + sm;
-        let status: "on-time" | "late" | "not-in" | "absent" | "done";
+        let status: AdherenceRow["status"] = "not-in";
         let lateMins = 0;
         const ABSENCE = ["Sick", "Absent", "Annual Leave"];
         if (ts?.dayStatus && ABSENCE.includes(ts.dayStatus)) {
@@ -461,15 +471,37 @@ export default function Dashboard() {
           const [ch, cm] = ts.ci.split(":").map(Number);
           lateMins = Math.max(0, ch * 60 + cm - schedMins - GRACE);
           status = lateMins > 0 ? "late" : "on-time";
-        } else {
-          status = "not-in";
         }
         return { sched, emp, ts, status, lateMins };
-      })
-      .sort((a, b) => {
-        const ord: Record<string, number> = { absent: 0, "not-in": 1, late: 2, done: 3, "on-time": 4 };
-        return (ord[a.status] ?? 9) - (ord[b.status] ?? 9);
       });
+
+    // 2. Unscheduled clock-ins — active timesheets for today with no matching schedule
+    // Exclude "00:00" ci which is used for off-days/holidays (not real clock-ins)
+    const unscheduledRows: AdherenceRow[] = (timesheets ?? [])
+      .filter((t) => t.date === today && t.ci && t.ci !== "00:00" && !t.co && !seen.has(t.eid))
+      .map((ts) => {
+        seen.add(ts.eid);
+        const emp = userMap[ts.eid];
+        const syntheticSched: Schedule = {
+          id: -1,
+          eid: ts.eid,
+          date: today,
+          shiftStart: ts.ci ?? "00:00",
+          shiftEnd: "",
+          location: ts.zone ?? null,
+          armed: ts.armed ?? null,
+          client: ts.client ?? null,
+          company: null,
+          notes: null,
+          createdBy: "",
+        };
+        return { sched: syntheticSched, emp, ts, status: "unscheduled" as const, lateMins: 0 };
+      });
+
+    return [...schedRows, ...unscheduledRows].sort((a, b) => {
+      const ord: Record<string, number> = { absent: 0, "not-in": 1, late: 2, unscheduled: 3, done: 4, "on-time": 5 };
+      return (ord[a.status] ?? 9) - (ord[b.status] ?? 9);
+    });
   }, [allSchedules, timesheets, today, yesterday, userMap]);
 
   const adherenceSummary = useMemo(() => ({
@@ -479,6 +511,7 @@ export default function Dashboard() {
     notIn: todayAdherence.filter((r) => r.status === "not-in").length,
     absent: todayAdherence.filter((r) => r.status === "absent").length,
     done: todayAdherence.filter((r) => r.status === "done").length,
+    unscheduled: todayAdherence.filter((r) => r.status === "unscheduled").length,
   }), [todayAdherence]);
 
   // Supervisor sees only their direct reports; admin sees all
@@ -490,7 +523,7 @@ export default function Dashboard() {
     });
   }, [isAdmin, todayAdherence, users, user.pos]);
 
-  const [adherenceFilter, setAdherenceFilter] = useState<"all" | "not-in" | "late" | "absent" | "on-time" | "done">("all");
+  const [adherenceFilter, setAdherenceFilter] = useState<"all" | "not-in" | "late" | "absent" | "on-time" | "done" | "unscheduled">("all");
   const filteredAdherence = useMemo(() =>
     adherenceFilter === "all" ? myAdherence : myAdherence.filter((r) => r.status === adherenceFilter),
     [myAdherence, adherenceFilter],
