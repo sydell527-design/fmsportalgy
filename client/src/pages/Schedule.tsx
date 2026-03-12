@@ -13,7 +13,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import {
-  format, startOfWeek, addDays, addWeeks, subWeeks,
+  format, startOfWeek, addDays,
   startOfMonth, endOfMonth, addMonths, subMonths, eachDayOfInterval,
   getDay, parseISO,
 } from "date-fns";
@@ -29,7 +29,7 @@ import {
 import type { Schedule } from "@shared/schema";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
-type ViewMode = "week" | "fortnight" | "month";
+type ViewMode = "fortnight" | "month";
 type DayIdx  = 0 | 1 | 2 | 3 | 4 | 5 | 6; // 0=Mon … 6=Sun
 
 const DAY_LABELS: Record<DayIdx, string> = {
@@ -44,32 +44,49 @@ function dateToDayIdx(d: Date): DayIdx {
 
 // ── Range helpers ─────────────────────────────────────────────────────────────
 function getRangeDays(anchor: Date, mode: ViewMode): Date[] {
-  if (mode === "week") {
-    const s = startOfWeek(anchor, { weekStartsOn: 1 });
-    return Array.from({ length: 7 }, (_, i) => addDays(s, i));
-  }
   if (mode === "fortnight") {
-    const s = startOfWeek(anchor, { weekStartsOn: 1 });
-    return Array.from({ length: 14 }, (_, i) => addDays(s, i));
+    const yr = anchor.getFullYear();
+    const mo = anchor.getMonth();
+    const day = anchor.getDate();
+    if (day <= 15) {
+      return Array.from({ length: 15 }, (_, i) => new Date(yr, mo, i + 1));
+    } else {
+      const lastDay = new Date(yr, mo + 1, 0).getDate();
+      return Array.from({ length: lastDay - 15 }, (_, i) => new Date(yr, mo, i + 16));
+    }
   }
   return eachDayOfInterval({ start: startOfMonth(anchor), end: endOfMonth(anchor) });
 }
 
 function advance(anchor: Date, mode: ViewMode, dir: 1 | -1): Date {
-  if (mode === "week")      return dir === 1 ? addWeeks(anchor, 1)  : subWeeks(anchor, 1);
-  if (mode === "fortnight") return dir === 1 ? addWeeks(anchor, 2)  : subWeeks(anchor, 2);
+  if (mode === "fortnight") {
+    const yr = anchor.getFullYear();
+    const mo = anchor.getMonth();
+    const day = anchor.getDate();
+    if (dir === 1) {
+      return day <= 15 ? new Date(yr, mo, 16) : new Date(yr, mo + 1, 1);
+    } else {
+      return day > 15 ? new Date(yr, mo, 1) : new Date(yr, mo - 1, 16);
+    }
+  }
   return dir === 1 ? addMonths(anchor, 1) : subMonths(anchor, 1);
 }
 
 function todayAnchor(mode: ViewMode): Date {
-  if (mode === "month") return startOfMonth(new Date());
-  return startOfWeek(new Date(), { weekStartsOn: 1 });
+  const n = new Date();
+  if (mode === "fortnight") {
+    return new Date(n.getFullYear(), n.getMonth(), n.getDate() <= 15 ? 1 : 16);
+  }
+  return startOfMonth(n);
 }
 
 function rangeLabel(days: Date[], mode: ViewMode): string {
   if (!days.length) return "";
   if (mode === "month") return format(days[0], "MMMM yyyy");
-  return `${format(days[0], "MMM d")} – ${format(days[days.length - 1], "MMM d, yyyy")}`;
+  const first = days[0];
+  const last  = days[days.length - 1];
+  const pNum  = first.getDate() <= 15 ? 1 : 2;
+  return `Period ${pNum} · ${format(first, "MMM d")} – ${format(last, "d, yyyy")}`;
 }
 
 function fmt12(time: string): string {
@@ -664,8 +681,8 @@ export default function SchedulePage() {
   const isPrivileged = user?.role === "admin" || user?.role === "manager" || isSupervisor;
 
   // View mode + anchor (desktop)
-  const [viewMode, setViewMode] = useState<ViewMode>("week");
-  const [anchor,   setAnchor]   = useState<Date>(() => todayAnchor("week"));
+  const [viewMode, setViewMode] = useState<ViewMode>("fortnight");
+  const [anchor,   setAnchor]   = useState<Date>(() => todayAnchor("fortnight"));
 
   // Admin mobile roster-grid state (independent week anchor, Mon-first)
   const [mobileGridAnchor, setMobileGridAnchor] = useState<Date>(
@@ -695,6 +712,7 @@ export default function SchedulePage() {
 
   // Admin desktop view: agency roster (default) or employee grid
   const [adminDesktopView, setAdminDesktopView] = useState<"agency" | "employee">("agency");
+  const [agencyFilter, setAgencyFilter] = useState<string>(CLIENT_AGENCIES[0]);
   const [clearConfirm, setClearConfirm] = useState(false);
 
   const deleteAny   = useDeleteAnySchedule();
@@ -883,7 +901,7 @@ export default function SchedulePage() {
   }
 
   // Column widths per mode
-  const colMin = viewMode === "week" ? "min-w-[110px]" : viewMode === "fortnight" ? "min-w-[80px]" : "min-w-[58px]";
+  const colMin = viewMode === "fortnight" ? "min-w-[62px]" : "min-w-[50px]";
 
   const modeBtnCls = (m: ViewMode) =>
     `px-3 py-1 text-sm rounded-md border transition-colors ${
@@ -923,7 +941,6 @@ export default function SchedulePage() {
           <div className="flex flex-col gap-3">
             {/* Top row: view-mode tabs + Agency/Employee toggle + Clear */}
             <div className="flex items-center gap-2 flex-wrap">
-              <button className={modeBtnCls("week")}       onClick={() => switchMode("week")}       data-testid="button-view-week">Week</button>
               <button className={modeBtnCls("fortnight")}  onClick={() => switchMode("fortnight")}  data-testid="button-view-fortnight">Fortnight</button>
               <button className={modeBtnCls("month")}      onClick={() => switchMode("month")}      data-testid="button-view-month">Month</button>
 
@@ -1022,92 +1039,135 @@ export default function SchedulePage() {
 
         {/* ── Desktop: Agency Roster View (admin/supervisor only) ─────────── */}
         {isPrivileged && adminDesktopView === "agency" && (
-        <div className="hidden lg:block overflow-x-auto">
-          <table className="w-full border-collapse text-sm">
-            <thead>
-              <tr className="border-b border-border">
-                <th className="text-left py-2 pr-3 pl-2 font-semibold text-foreground w-36 shrink-0 sticky left-0 bg-background z-10 border-r border-border/40">
-                  <div className="flex items-center gap-1.5 text-xs uppercase tracking-wide text-muted-foreground">
-                    <MapPin className="w-3.5 h-3.5" /> Agency
-                  </div>
-                </th>
-                {days.map((d, i) => {
-                  const isToday = format(d, "yyyy-MM-dd") === todayStr;
-                  return (
-                    <th key={i} className={`text-center py-1.5 px-1 font-medium ${colMin} ${isToday ? "text-primary" : "text-muted-foreground"}`}>
-                      <div className={`flex flex-col items-center rounded-md px-0.5 py-0.5 ${isToday ? "bg-primary/10" : ""}`}>
-                        <span className="text-[9px] uppercase tracking-wide">{format(d, "EEE")}</span>
-                        <span className={`text-xs font-bold ${isToday ? "text-primary" : ""}`}>{format(d, "d")}</span>
-                      </div>
-                    </th>
-                  );
-                })}
-              </tr>
-            </thead>
-            <tbody>
-              {CLIENT_AGENCIES.map((agency) => (
-                <tr key={agency} className="border-t border-border/40 hover:bg-muted/5 group">
-                  <td className="py-2 pr-2 pl-2 align-top sticky left-0 bg-background group-hover:bg-muted/5 z-10 border-r border-border/40 min-w-[130px]">
-                    <div className="font-semibold text-sm">{agency}</div>
-                  </td>
-                  {days.map((d, i) => {
-                    const dateStr   = format(d, "yyyy-MM-dd");
-                    const key       = `${agency.toLowerCase()}::${dateStr}`;
-                    const cellShifts = agencyMap[key] ?? [];
-                    const isToday   = dateStr === todayStr;
-                    return (
-                      <td key={i} className={`py-1 px-1 align-top ${colMin} ${isToday ? "bg-primary/5" : ""}`}>
-                        <div className="space-y-1">
-                          {cellShifts.map((s) => (
-                            <div
-                              key={s.id}
-                              className={`rounded px-1.5 py-1 text-[11px] leading-tight border flex items-start justify-between gap-0.5 ${
-                                s.armed === "Armed"
-                                  ? "bg-red-50 border-red-200 text-red-900 dark:bg-red-950 dark:border-red-800 dark:text-red-100"
-                                  : "bg-blue-50 border-blue-200 text-blue-900 dark:bg-blue-950 dark:border-blue-800 dark:text-blue-100"
-                              }`}
-                              data-testid={`agency-cell-${s.id}`}
-                            >
-                              <div className="min-w-0">
-                                <div className="font-semibold truncate max-w-[90px]">{userMap[s.eid] ?? s.eid}</div>
-                                <div className="opacity-80 whitespace-nowrap">{fmt12(s.shiftStart)} – {fmt12(s.shiftEnd)}</div>
-                                {s.company && (
-                                  <div className="text-[9px] opacity-70 font-semibold truncate">{s.company}</div>
-                                )}
-                                <div className="flex items-center gap-0.5 mt-0.5 opacity-70">
-                                  {s.armed === "Armed" ? <Shield className="w-2.5 h-2.5 shrink-0" /> : <ShieldOff className="w-2.5 h-2.5 shrink-0" />}
-                                  <span>{s.armed ?? "Unarmed"}</span>
-                                </div>
-                              </div>
-                              {isPrivileged && (
-                                <button
-                                  onClick={() => deleteAny.mutate(s.id)}
-                                  className="shrink-0 w-4 h-4 rounded hover:bg-black/10 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity mt-0.5"
-                                  title="Delete shift"
-                                  data-testid={`button-delete-agency-shift-${s.id}`}
-                                >
-                                  <Trash2 className="w-2.5 h-2.5" />
-                                </button>
-                              )}
-                            </div>
-                          ))}
-                          {isPrivileged && (
-                            <button
-                              onClick={() => openBuilder(d)}
-                              className="w-full rounded border border-dashed border-border/60 text-muted-foreground/60 hover:border-primary hover:text-primary py-0.5 flex items-center justify-center transition-colors opacity-0 group-hover:opacity-100"
-                              data-testid={`button-add-agency-${agency}-${i}`}
-                            >
-                              <Plus className="w-2.5 h-2.5" />
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                    );
-                  })}
-                </tr>
+        <div className="hidden lg:block space-y-3">
+          {/* Agency dropdown */}
+          <div className="flex items-center gap-3">
+            <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-1.5">
+              <Building2 className="w-3.5 h-3.5" /> Agency
+            </label>
+            <select
+              value={agencyFilter}
+              onChange={(e) => setAgencyFilter(e.target.value)}
+              className="border border-border rounded-md px-3 py-1.5 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary/30"
+              data-testid="select-agency-filter"
+            >
+              {CLIENT_AGENCIES.map((a) => (
+                <option key={a} value={a}>{a}</option>
               ))}
-            </tbody>
-          </table>
+            </select>
+          </div>
+
+          {/* Roster grid: employees as rows, dates as columns */}
+          <div className="overflow-x-auto">
+            {(() => {
+              const agencyShiftsInPeriod = visibleSchedules.filter(
+                (s) => (s.client ?? "").toLowerCase() === agencyFilter.toLowerCase()
+              );
+              const agencyEids = Array.from(new Set(agencyShiftsInPeriod.map((s) => s.eid)));
+              const agencyEmployees = activeEmployees.filter((e) => agencyEids.includes(e.userId));
+
+              return (
+                <table className="w-full border-collapse text-sm">
+                  <thead>
+                    <tr className="border-b border-border">
+                      <th className="text-left py-2 pr-3 pl-2 font-semibold sticky left-0 bg-background z-10 border-r border-border/40 min-w-[160px]">
+                        <div className="flex items-center gap-1.5 text-xs uppercase tracking-wide text-muted-foreground">
+                          <Users className="w-3.5 h-3.5" /> Employee
+                        </div>
+                      </th>
+                      {days.map((d, i) => {
+                        const isToday = format(d, "yyyy-MM-dd") === todayStr;
+                        return (
+                          <th key={i} className={`text-center py-1.5 px-1 font-medium ${colMin}`}>
+                            <div className={`flex flex-col items-center rounded-md px-0.5 py-0.5 ${isToday ? "bg-primary/10" : ""}`}>
+                              <span className="text-[9px] uppercase tracking-wide text-muted-foreground">{format(d, "EEE")}</span>
+                              <span className={`text-xs font-bold ${isToday ? "text-primary" : "text-foreground"}`}>{format(d, "d")}</span>
+                            </div>
+                          </th>
+                        );
+                      })}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {agencyEmployees.length === 0 ? (
+                      <tr>
+                        <td colSpan={days.length + 1} className="py-12 text-center text-muted-foreground text-sm italic">
+                          No shifts scheduled for {agencyFilter} in this period.
+                        </td>
+                      </tr>
+                    ) : (
+                      agencyEmployees.map((emp) => (
+                        <tr key={emp.userId} className="border-t border-border/40 hover:bg-muted/10 group">
+                          <td className="py-2 pr-3 pl-2 align-middle sticky left-0 bg-background group-hover:bg-muted/10 z-10 border-r border-border/40">
+                            <button
+                              className="text-left w-full hover:text-primary transition-colors"
+                              onClick={() => openBuilder(undefined, emp.userId)}
+                              data-testid={`button-agency-emp-row-${emp.userId}`}
+                            >
+                              <div className="font-medium text-sm truncate max-w-[145px]">{emp.name}</div>
+                              <div className="text-[11px] text-muted-foreground truncate max-w-[145px]">{emp.pos}</div>
+                            </button>
+                          </td>
+                          {days.map((d, i) => {
+                            const dateStr = format(d, "yyyy-MM-dd");
+                            const cellShifts = (scheduleMap[`${emp.userId}::${dateStr}`] ?? []).filter(
+                              (s) => (s.client ?? "").toLowerCase() === agencyFilter.toLowerCase()
+                            );
+                            const isToday = dateStr === todayStr;
+                            return (
+                              <td key={i} className={`py-1 px-1 align-top ${colMin} ${isToday ? "bg-primary/5" : ""}`}>
+                                <div className="space-y-0.5">
+                                  {cellShifts.map((s) => (
+                                    <div
+                                      key={s.id}
+                                      className={`rounded px-1.5 py-1 text-[10px] leading-tight border flex items-start justify-between gap-0.5 cursor-pointer hover:shadow-sm transition-shadow ${
+                                        s.armed === "Armed"
+                                          ? "bg-red-50 border-red-200 text-red-900 dark:bg-red-950 dark:border-red-800 dark:text-red-100"
+                                          : "bg-blue-50 border-blue-200 text-blue-900 dark:bg-blue-950 dark:border-blue-800 dark:text-blue-100"
+                                      }`}
+                                      onClick={() => setEditShift(s)}
+                                      data-testid={`agency-cell-${s.id}`}
+                                    >
+                                      <div className="min-w-0">
+                                        <div className="font-semibold whitespace-nowrap">{fmt12(s.shiftStart)}</div>
+                                        <div className="opacity-80 whitespace-nowrap">{fmt12(s.shiftEnd)}</div>
+                                        {s.location && <div className="truncate opacity-70 text-[9px]">{s.location}</div>}
+                                        <div className="flex items-center gap-0.5 mt-0.5 opacity-70">
+                                          {s.armed === "Armed" ? <Shield className="w-2 h-2 shrink-0" /> : <ShieldOff className="w-2 h-2 shrink-0" />}
+                                        </div>
+                                      </div>
+                                      <button
+                                        onClick={(e) => { e.stopPropagation(); deleteAny.mutate(s.id); }}
+                                        className="shrink-0 w-4 h-4 rounded hover:bg-black/10 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                                        title="Delete shift"
+                                        data-testid={`button-delete-agency-shift-${s.id}`}
+                                      >
+                                        <Trash2 className="w-2.5 h-2.5" />
+                                      </button>
+                                    </div>
+                                  ))}
+                                  {cellShifts.length === 0 && (
+                                    <div className="text-center text-[10px] text-muted-foreground/30 py-1">–</div>
+                                  )}
+                                  <button
+                                    onClick={() => openBuilder(d, emp.userId)}
+                                    className="w-full rounded border border-dashed border-border/60 text-muted-foreground/60 hover:border-primary hover:text-primary py-0.5 flex items-center justify-center transition-colors opacity-0 group-hover:opacity-100"
+                                    data-testid={`button-add-agency-${emp.userId}-${i}`}
+                                  >
+                                    <Plus className="w-2.5 h-2.5" />
+                                  </button>
+                                </div>
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              );
+            })()}
+          </div>
         </div>
         )}
 
@@ -1167,9 +1227,9 @@ export default function SchedulePage() {
                             {cellShifts.map((s) => (
                               <div
                                 key={s.id}
-                                className={`rounded px-1.5 py-1 leading-tight border hover:shadow-sm transition-shadow ${
+                                className={`rounded px-1.5 py-1 leading-tight border hover:shadow-sm transition-shadow text-[10px] ${
                                   isPrivileged ? "cursor-pointer" : ""
-                                } ${viewMode === "week" ? "text-[11px]" : "text-[10px]"} ${
+                                } ${
                                   s.armed === "Armed"
                                     ? "bg-red-50 border-red-200 text-red-900 dark:bg-red-950 dark:border-red-800 dark:text-red-100"
                                     : "bg-blue-50 border-blue-200 text-blue-900 dark:bg-blue-950 dark:border-blue-800 dark:text-blue-100"
@@ -1179,17 +1239,12 @@ export default function SchedulePage() {
                               >
                                 <div className="font-semibold whitespace-nowrap">{fmt12(s.shiftStart)}</div>
                                 <div className="opacity-80 whitespace-nowrap">{fmt12(s.shiftEnd)}</div>
-                                {viewMode === "week" && s.location && (
-                                  <div className="truncate opacity-70 text-[10px]">{s.location}</div>
-                                )}
-                                {viewMode === "week" && s.company && (
-                                  <div className="truncate opacity-70 text-[9px] font-semibold">{s.company}</div>
-                                )}
+                                {s.client && <div className="truncate opacity-70 text-[9px] font-semibold">{s.client}</div>}
+                                {s.location && <div className="truncate opacity-60 text-[9px]">{s.location}</div>}
                                 <div className="flex items-center gap-0.5 mt-0.5">
                                   {s.armed === "Armed"
                                     ? <Shield className="w-2 h-2 shrink-0" />
                                     : <ShieldOff className="w-2 h-2 shrink-0" />}
-                                  {viewMode === "week" && <span>{s.armed ?? "Unarmed"}</span>}
                                 </div>
                               </div>
                             ))}
@@ -1681,7 +1736,7 @@ export default function SchedulePage() {
           <Card className="p-4">
             <h3 className="text-sm font-semibold mb-2 flex items-center gap-1.5">
               <CalendarDays className="w-4 h-4 text-primary" />
-              {viewMode === "week" ? "Week" : viewMode === "fortnight" ? "Fortnight" : "Month"} Summary
+              {viewMode === "fortnight" ? "Fortnight" : "Month"} Summary
             </h3>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
               <div>
