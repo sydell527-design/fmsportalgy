@@ -377,8 +377,8 @@ function redistributeTimeHours(approvedTs: Timesheet[], carryForwardHours: numbe
       dayReg = 8; weekContrib = 8; totalAL += 8;
     } else if (dayStatus === "Sick") {
       // Person did not work — no pay, no contribution to the weekly 40-hr cap.
-    } else if (dayStatus === "Off Day") {
-      dayOT = rawHours; // all OT; Off Day does NOT count toward weekly cap
+    } else if (dayStatus === "Off Duty") {
+      dayOT = rawHours; // all OT; Off Duty does NOT count toward weekly cap
     } else if (dayStatus === "Absent") {
       // No-show / AWOL — no pay, no cap contribution
     } else if (dayStatus === "Holiday") {
@@ -432,7 +432,7 @@ function redistributeTimeHours(approvedTs: Timesheet[], carryForwardHours: numbe
       armedDates.add(ts.date);
     }
     // Track missed days for risk-pay table input (14 - missedDays → lookupRiskPay).
-    // Off Days are NOT missed — they are scheduled rest.
+    // Off Duty days are NOT missed — they are scheduled rest.
     //
     // For Sick days, the note distinguishes two cases:
     //   • Notes contain "sick leave" or "sickleave" (case-insensitive)
@@ -615,7 +615,7 @@ export function calcPayroll(
     armedDays          = dist.armedDays;
     responsibilityDays = dist.responsibilityDays;
     // Risk-pay table input: 14 - missed days. 0 missed → 14 → GYD 5,000 (full period).
-    // Off Days are NOT missed — only Sick/Absent/Annual Leave reduce the count.
+    // Off Duty days are NOT missed — only Sick/Absent/Annual Leave reduce the count.
     // Guard: only give risk pay when the employee actually has Armed shifts in this period.
     const hasArmedActivity = armedDays > 0 || dist.armedMissedDays > 0;
     riskTableInput    = hasArmedActivity ? Math.max(0, 14 - dist.armedMissedDays) : 0;

@@ -178,7 +178,7 @@ export default function Timesheets() {
     if (n === "sick" || n.includes("report sick") || n.includes("sick leave")) return "Sick";
     if (n === "absent" || n.includes("report absent")) return "Absent";
     if (n.includes("annual leave") || n === "al") return "Annual Leave";
-    if (n.includes("off duty") || n.includes("off day") || n === "day off" || n.includes("rest day") || n === "rest") return "Off Day";
+    if (n.includes("off duty") || n.includes("off day") || n === "day off" || n.includes("rest day") || n === "rest") return "Off Duty";
     return null;
   };
   const [bulkRows, setBulkRows] = useState<BulkRow[]>([]);
@@ -377,7 +377,7 @@ export default function Timesheets() {
             }
           }
 
-          const noClockNeeded = autoStatus === "Sick" || autoStatus === "Absent" || autoStatus === "Annual Leave" || autoStatus === "Off Day";
+          const noClockNeeded = autoStatus === "Sick" || autoStatus === "Absent" || autoStatus === "Annual Leave" || autoStatus === "Off Duty";
 
           let error: string | undefined;
           if (!empRaw) error = "Missing employee name";
@@ -476,7 +476,7 @@ export default function Timesheets() {
         continue;
       }
 
-      const isNoHours = row.dayStatus === "Sick" || row.dayStatus === "Absent" || row.dayStatus === "Annual Leave" || row.dayStatus === "Off Day";
+      const isNoHours = row.dayStatus === "Sick" || row.dayStatus === "Absent" || row.dayStatus === "Annual Leave" || row.dayStatus === "Off Duty";
       const isHoliday = row.dayStatus === "Holiday";
       const hours = (row.ci && row.co && !isNoHours) ? calcHours(row.ci, row.co, row.brk) : { reg: 0, ot: 0 };
       const totalWorkedHours = Math.round((hours.reg + hours.ot) * 100) / 100;
@@ -2135,7 +2135,7 @@ export default function Timesheets() {
                   <span><strong>Zone / Location</strong> — optional</span>
                   <span><strong>Post / Post Name</strong> — optional</span>
                   <span><strong>Break / Break Minutes</strong> — optional</span>
-                  <span><strong>Notes / Remarks</strong> — optional <span className="text-green-700">(write "Report Sick", "Sick", "Absent", "Annual Leave", "Off Duty", or "Day Off" to skip clock times — these keywords also work in the Clock In/Out columns)</span></span>
+                  <span><strong>Notes / Remarks</strong> — optional <span className="text-green-700">(write "Report Sick", "Sick", "Absent", "Annual Leave", or "Off Duty" to skip clock times — these keywords also work in the Clock In/Out columns)</span></span>
                 </div>
               </div>
             </div>

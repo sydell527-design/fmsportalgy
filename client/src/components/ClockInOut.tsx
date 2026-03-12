@@ -76,7 +76,7 @@ function splitHours(totalHours: number, dayStatus: DayStatus, holidayType: Holid
   if (dayStatus === "Sick" || dayStatus === "Absent" || dayStatus === "Annual Leave") {
     return { reg: 0, ot: 0, ph: 0 };
   }
-  if (dayStatus === "Off Day") {
+  if (dayStatus === "Off Duty") {
     return { reg: 0, ot: totalHours, ph: 0 };
   }
   if (dayStatus === "Holiday") {
@@ -122,7 +122,7 @@ export function ClockInOut() {
 
   // ── Auto-detect day status and armed status from today's schedule ─────────
   const todaySchedule = mySchedules.find((s) => s.date === todayDate) ?? null;
-  const dayStatus: DayStatus     = todaySchedule ? "On Day" : "Off Day";
+  const dayStatus: DayStatus     = todaySchedule ? "On Day" : "Off Duty";
   const armedStatus: ArmedStatus =
     (todaySchedule?.armed as ArmedStatus | undefined) ??
     ((user as any)?.armed as ArmedStatus | undefined) ??
@@ -456,7 +456,7 @@ export function ClockInOut() {
                   </div>
                   <div className="space-y-0.5 flex-1">
                     <p className="font-semibold leading-tight">
-                      {dayStatus === "On Day" ? "Scheduled today — On Day" : "Not on schedule — Off Day"}
+                      {dayStatus === "On Day" ? "Scheduled today — On Day" : "Not on schedule — Off Duty"}
                     </p>
                     <p className="text-xs opacity-80">
                       {armedStatus === "Armed"

@@ -1227,7 +1227,7 @@ export default function SchedulePage() {
                                       </button>
                                     </div>
                                   ))}
-                                  {cellShifts.length === 0 && (
+                                  {cellShifts.length === 0 && empHasAnyShift && (
                                     <div className="flex items-center justify-center min-h-[52px] text-[10px] font-medium text-muted-foreground/60 tracking-wide group-hover:hidden">Off Duty</div>
                                   )}
                                   <button
@@ -1793,12 +1793,12 @@ export default function SchedulePage() {
                         </div>
                       ))}
 
-                      {/* Off Duty label for empty in-period days */}
-                      {isEmpty && (
+                      {/* Off Duty label — only shown when the employee has actual shifts in the period */}
+                      {isEmpty && empPeriodShifts.length > 0 && (
                         <div className={`text-[8px] font-medium text-center leading-tight mt-1 ${
                           isWkend ? "text-muted-foreground/40" : "text-muted-foreground/55"
                         }`}>
-                          {isWkend ? "Off" : <><span>Day</span><br /><span>Off</span></>}
+                          <span>Off</span><br /><span>Duty</span>
                         </div>
                       )}
                     </div>

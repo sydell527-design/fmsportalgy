@@ -67,7 +67,7 @@ export interface PayConfig {
 }
 
 // ── Day / Holiday Status constants (from FMS formula documentation) ────────
-export const DAY_STATUSES = ["On Day", "Off Day", "Sick", "Absent", "Holiday", "Annual Leave"] as const;
+export const DAY_STATUSES = ["On Day", "Off Duty", "Sick", "Absent", "Holiday", "Annual Leave"] as const;
 export type DayStatus = typeof DAY_STATUSES[number];
 
 export const HOLIDAY_TYPES = [
@@ -133,7 +133,7 @@ export const timesheets = pgTable("timesheets", {
   gOut: jsonb("g_out").$type<{ lat: number; lng: number } | null>(),
   zone: text("zone"),
   post: text("post"),
-  dayStatus: text("day_status"),                          // On Day / Off Day / Sick / Absent / Holiday / Annual Leave
+  dayStatus: text("day_status"),                          // On Day / Off Duty / Sick / Absent / Holiday / Annual Leave
   holidayType: text("holiday_type"),                      // Phagwah / Good Friday / Easter Monday / Labour Day / Christmas / Eid ul Azha / Holiday Double
   armed: text("armed"),                                   // Unarmed / Armed
   client: text("client"),                                 // Caricom / EU / UN / DMC / ARU / Head Office / Canteen
