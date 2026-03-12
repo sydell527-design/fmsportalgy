@@ -9,12 +9,12 @@ import {
 } from "date-fns";
 import {
   X, Plus, Search, ChevronDown, Save, Loader2,
-  Trash2, Upload, FileSpreadsheet, Download, FileText, Printer,
+  Trash2, Upload, FileSpreadsheet, Download, FileText, Printer, RefreshCw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { FMS_LOCATIONS, CLIENT_AGENCIES, type ArmedStatus, type CallSign } from "@shared/schema";
+import { FMS_LOCATIONS, CLIENT_AGENCIES, type ArmedStatus, type CallSign, type Schedule } from "@shared/schema";
 
 // ── Shift presets (from actual FMS schedule formats) ──────────────────────────
 interface ShiftPreset {
@@ -500,6 +500,7 @@ export function RosterBuilder({ open, onClose, employees, onSaved }: Props) {
   const [exportOpen,  setExportOpen]  = useState(false);
   const [reliefOpen,  setReliefOpen]  = useState(false);
   const [reserveOpen, setReserveOpen] = useState(false);
+  const [loadingExisting, setLoadingExisting] = useState(false);
   const fileInputRef  = useRef<HTMLInputElement>(null);
   const exportRef     = useRef<HTMLDivElement>(null);
 
@@ -730,6 +731,109 @@ export function RosterBuilder({ open, onClose, employees, onSaved }: Props) {
     const next = dir === 1 ? addMonths(anchor, 1) : subMonths(anchor, 1);
     setAnchor(next);
     applyPeriod(activePeriod, next);
+  }
+
+  // Convert shift start/end times back to a shift code for the grid
+  function timesToCode(start: string, end: string): { code: string; custom?: { start: string; end: string } } {
+    const preset = SHIFT_PRESETS.find((p) => p.start === start && p.end === end && p.code !== "Off");
+    if (preset) return { code: preset.code };
+    if (!start && !end) return { code: "Off" };
+    return { code: "custom", custom: { start, end } };
+  }
+
+  // Load existing schedules for the current period into the grid
+  async function handleLoadExisting() {
+    if (!dateFrom || !dateTo) return;
+    setLoadingExisting(true);
+    try {
+      const res = await apiRequest("GET", `/api/schedules/all`);
+      const allSchedules: Schedule[] = await res.json();
+
+      // Filter to the selected date range
+      const inRange = allSchedules.filter((s) => s.date >= dateFrom && s.date <= dateTo);
+      if (inRange.length === 0) {
+        toast({ title: "No existing schedules", description: `No schedules found for ${dateFrom} – ${dateTo}.`, variant: "destructive" });
+        return;
+      }
+
+      // Group by agency (client field)
+      const byAgency = new Map<string, Schedule[]>();
+      for (const s of inRange) {
+        const agency = s.client ?? "Unknown";
+        if (!byAgency.has(agency)) byAgency.set(agency, []);
+        byAgency.get(agency)!.push(s);
+      }
+
+      // Build an empMap from the employees prop for name/pos lookup
+      const empMap = new Map(employees.map((e) => [e.userId, e]));
+
+      // Build AgencyRoster[] from the grouped schedules
+      const loaded: AgencyRoster[] = [];
+      for (const [agency, schedList] of byAgency.entries()) {
+        const company = schedList[0]?.company ?? "";
+
+        // Group by eid within agency
+        const byEid = new Map<string, Schedule[]>();
+        for (const s of schedList) {
+          if (!byEid.has(s.eid)) byEid.set(s.eid, []);
+          byEid.get(s.eid)!.push(s);
+        }
+
+        const rows: EmpRow[] = [];
+        for (const [eid, empScheds] of byEid.entries()) {
+          const emp = empMap.get(eid);
+          const cells: Record<string, string> = {};
+          const customTimes: Record<string, { start: string; end: string }> = {};
+
+          for (const s of empScheds) {
+            const { code, custom } = timesToCode(s.shiftStart, s.shiftEnd);
+            cells[s.date] = code;
+            if (custom) customTimes[s.date] = custom;
+          }
+
+          rows.push({
+            eid,
+            name: emp?.name ?? eid,
+            pos:  emp?.pos  ?? "—",
+            callSign: eid,
+            location: schedList.find((s) => s.eid === eid)?.location ?? "",
+            cells,
+            customTimes,
+          });
+        }
+
+        // Merge with any existing open roster for this agency
+        loaded.push({ agency, company, rows, reliefRows: [], reserveRows: [] });
+      }
+
+      // Merge loaded data into agencyRosters, replacing rows for loaded agencies
+      setAgencyRosters((prev) => {
+        const merged = [...prev];
+        for (const lr of loaded) {
+          const idx = merged.findIndex((ar) => ar.agency === lr.agency);
+          if (idx >= 0) {
+            merged[idx] = { ...merged[idx], rows: lr.rows, company: lr.company };
+          } else {
+            merged.push(lr);
+          }
+        }
+        return merged;
+      });
+
+      // Auto-select first loaded agency if none active
+      if (!activeAgency && loaded.length > 0) {
+        setActiveAgency(loaded[0].agency);
+      }
+
+      const totalShiftsLoaded = loaded.reduce((sum, lr) =>
+        sum + lr.rows.reduce((s2, r) => s2 + Object.keys(r.cells).length, 0), 0
+      );
+      toast({ title: `Loaded ${totalShiftsLoaded} existing shifts`, description: `${loaded.length} agency roster${loaded.length > 1 ? "s" : ""} pulled from database. Edit and save to update.` });
+    } catch (err: any) {
+      toast({ title: "Load failed", description: err.message, variant: "destructive" });
+    } finally {
+      setLoadingExisting(false);
+    }
   }
 
   // Reset when opened
@@ -1149,6 +1253,21 @@ export function RosterBuilder({ open, onClose, employees, onSaved }: Props) {
             {callSignRegistry.length > 0
               ? `Call Signs (${callSignRegistry.length})`
               : "Import Call Signs"}
+          </Button>
+
+          {/* Load Existing button */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleLoadExisting}
+            disabled={loadingExisting || !dateFrom || !dateTo}
+            title="Pull existing schedules for the selected period into the grid for editing"
+            data-testid="button-load-existing"
+          >
+            {loadingExisting
+              ? <Loader2 className="w-4 h-4 animate-spin mr-1" />
+              : <RefreshCw className="w-4 h-4 mr-1" />}
+            Load Existing
           </Button>
 
           {totalShifts > 0 && (
