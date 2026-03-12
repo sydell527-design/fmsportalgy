@@ -32,6 +32,7 @@ export function useTimesheets(filters: TimesheetFilters = {}) {
       if (!res.ok) throw new Error("Failed to fetch timesheets");
       return api.timesheets.list.responses[200].parse(await res.json());
     },
+    refetchInterval: 60_000,
   });
 }
 

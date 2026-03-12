@@ -50,9 +50,15 @@ function computeElapsed(ci: string, date: string): string {
   const h = Math.floor(totalMin / 60);
   const m = totalMin % 60;
   const s = Math.floor((now.getTime() - (start.getTime() + totalMin * 60000)) / 1000);
-  if (h > 0) return `${h}h ${m}m ${s}s`;
-  if (m > 0) return `${m}m ${s}s`;
+  if (h > 0) return `${h}h ${String(m).padStart(2, "0")}m ${String(Math.max(0, s)).padStart(2, "0")}s`;
+  if (m > 0) return `${m}m ${String(Math.max(0, s)).padStart(2, "0")}s`;
   return `${Math.max(0, s)}s`;
+}
+function fmtDuration(totalMins: number): string {
+  const h = Math.floor(totalMins / 60);
+  const m = totalMins % 60;
+  if (h > 0) return `${h}h ${String(m).padStart(2, "0")}m`;
+  return `${m}m`;
 }
 
 // Real-time ticking elapsed counter — updates every second
@@ -123,7 +129,7 @@ function AdherencePanel({
 
   function statusInfo(r: AdherenceRow) {
     if (r.status === "on-time")  return { icon: <UserCheck className="w-3.5 h-3.5 text-green-600" />, label: "On Time",    bg: "border-green-200 bg-green-50" };
-    if (r.status === "late")     return { icon: <Timer className="w-3.5 h-3.5 text-purple-600" />,    label: `Late ${r.lateMins}m`, bg: "border-purple-200 bg-purple-50" };
+    if (r.status === "late")     return { icon: <Timer className="w-3.5 h-3.5 text-purple-600" />,    label: `Late ${fmtDuration(r.lateMins)}`, bg: "border-purple-200 bg-purple-50" };
     if (r.status === "not-in")   return { icon: <UserX className="w-3.5 h-3.5 text-red-500" />,       label: "Not In",     bg: "border-red-200 bg-red-50" };
     if (r.status === "absent")   return { icon: <XCircle className="w-3.5 h-3.5 text-orange-600" />,  label: r.ts?.dayStatus ?? "Absent", bg: "border-orange-200 bg-orange-50" };
     if (r.status === "done")     return { icon: <CheckCircle2 className="w-3.5 h-3.5 text-blue-500" />, label: `Done ${r.ts?.co ?? ""}`, bg: "border-blue-200 bg-blue-50" };
@@ -255,6 +261,7 @@ export default function Dashboard() {
   const { data: allSchedules, refetch: refetchSchedules } = useQuery<Schedule[]>({
     queryKey: ["/api/schedules/all"],
     enabled: isAdmin || isSupervisor,
+    refetchInterval: 60_000,
   });
 
   // ── Filters ─────────────────────────────────────────────────────────────────
