@@ -704,8 +704,14 @@ export function ClockInOut() {
                 data-testid={`action-${sub.toLowerCase()}`}
                 onClick={async () => {
                   try {
-                    const todayStr = format(new Date(), "yyyy-MM-dd");
-                    const reason   = actionNote.trim() || desc;
+                    const todayStr   = format(new Date(), "yyyy-MM-dd");
+                    const customNote = actionNote.trim();
+                    const reason =
+                      sub === "Sick Leave"
+                        ? `[Sick Leave] ${customNote || "Approved sick leave."}`.trim()
+                        : sub === "Sick"
+                        ? `[Report Sick] ${customNote || "Employee unwell."}`.trim()
+                        : customNote || desc;
                     const tsStatus = (sub === "Sick" || sub === "Sick Leave") ? "Sick" : "Absent";
 
                     await createRequest({
