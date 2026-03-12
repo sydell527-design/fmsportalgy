@@ -124,38 +124,46 @@ export function Layout({ children }: LayoutProps) {
           </button>
         </header>
 
-        {/* Mobile slide-down overflow menu */}
+        {/* Mobile slide-down overlay menu — covers full screen below header */}
         {mobileMenuOpen && (
-          <div className="md:hidden bg-card border-b border-border shadow-lg z-10 px-4 py-2 space-y-0.5">
-            {allowedNav.map((item) => {
-              const isActive = location === item.href;
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  onClick={() => setMobileMenuOpen(false)}
-                  className={`flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium transition-colors ${
-                    isActive
-                      ? "bg-primary text-primary-foreground"
-                      : "text-foreground hover:bg-muted"
-                  }`}
+          <>
+            {/* Backdrop — tap outside to close */}
+            <div
+              className="md:hidden fixed inset-0 top-14 bg-black/40 z-20"
+              onClick={() => setMobileMenuOpen(false)}
+            />
+            {/* Menu panel */}
+            <div className="md:hidden fixed top-14 left-0 right-0 bg-card border-b border-border shadow-xl z-30 px-4 py-2 space-y-0.5">
+              {allowedNav.map((item) => {
+                const isActive = location === item.href;
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    onClick={() => setMobileMenuOpen(false)}
+                    className={`flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium transition-colors ${
+                      isActive
+                        ? "bg-primary text-primary-foreground"
+                        : "text-foreground hover:bg-muted"
+                    }`}
+                  >
+                    <item.icon className="w-4 h-4 shrink-0" />
+                    {item.label}
+                  </Link>
+                );
+              })}
+              <div className="pt-1 pb-1 border-t border-border mt-1">
+                <button
+                  onClick={() => { logout(); setMobileMenuOpen(false); }}
+                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium text-destructive hover:bg-destructive/10 transition-colors"
+                  data-testid="button-mobile-logout"
                 >
-                  <item.icon className="w-4 h-4 shrink-0" />
-                  {item.label}
-                </Link>
-              );
-            })}
-            <div className="pt-1 pb-1 border-t border-border mt-1">
-              <button
-                onClick={() => { logout(); setMobileMenuOpen(false); }}
-                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium text-destructive hover:bg-destructive/10 transition-colors"
-                data-testid="button-mobile-logout"
-              >
-                <LogOut className="w-4 h-4 shrink-0" />
-                Sign Out
-              </button>
+                  <LogOut className="w-4 h-4 shrink-0" />
+                  Sign Out
+                </button>
+              </div>
             </div>
-          </div>
+          </>
         )}
 
         {/* Page Content */}
