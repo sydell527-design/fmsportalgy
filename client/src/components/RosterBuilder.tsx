@@ -10,6 +10,7 @@ import {
 import {
   X, Plus, Search, ChevronDown, Save, Loader2,
   Trash2, Upload, FileSpreadsheet, Download, FileText, Printer, RefreshCw,
+  Maximize2, Minimize2, ExternalLink,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -512,8 +513,30 @@ export function RosterBuilder({ open, onClose, employees, onSaved }: Props) {
   const [reliefOpen,  setReliefOpen]  = useState(false);
   const [reserveOpen, setReserveOpen] = useState(false);
   const [loadingExisting, setLoadingExisting] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const fileInputRef  = useRef<HTMLInputElement>(null);
   const exportRef     = useRef<HTMLDivElement>(null);
+
+  // Sync fullscreen state with browser events
+  useEffect(() => {
+    function onFsChange() {
+      setIsFullscreen(!!document.fullscreenElement);
+    }
+    document.addEventListener("fullscreenchange", onFsChange);
+    return () => document.removeEventListener("fullscreenchange", onFsChange);
+  }, []);
+
+  function toggleFullscreen() {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch(() => {});
+    } else {
+      document.exitFullscreen().catch(() => {});
+    }
+  }
+
+  function openInNewTab() {
+    window.open(window.location.origin + "/roster", "_blank");
+  }
 
   // Close export dropdown on outside click
   useEffect(() => {
@@ -1362,9 +1385,27 @@ export function RosterBuilder({ open, onClose, employees, onSaved }: Props) {
             )}
           </div>
 
-          <button onClick={onClose} className="p-2 rounded hover:bg-muted transition-colors" data-testid="button-roster-close">
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-1 border-l border-border/50 pl-2 ml-1">
+            <button
+              onClick={openInNewTab}
+              className="p-2 rounded hover:bg-muted transition-colors"
+              title="Open in new browser tab"
+              data-testid="button-roster-new-tab"
+            >
+              <ExternalLink className="w-4 h-4" />
+            </button>
+            <button
+              onClick={toggleFullscreen}
+              className="p-2 rounded hover:bg-muted transition-colors"
+              title={isFullscreen ? "Exit fullscreen (Esc)" : "Enter fullscreen"}
+              data-testid="button-roster-fullscreen"
+            >
+              {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+            </button>
+            <button onClick={onClose} className="p-2 rounded hover:bg-muted transition-colors" data-testid="button-roster-close">
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
       </div>
 
