@@ -118,6 +118,7 @@ export default function Dashboard() {
   }, []);
 
   const today = todayStr;
+  const yesterday = format(new Date(Date.now() - 86_400_000), "yyyy-MM-dd");
   const currentMonth = format(new Date(), "yyyy-MM");
 
   // ── Maps ─────────────────────────────────────────────────────────────────────
@@ -174,7 +175,7 @@ export default function Dashboard() {
 
   // ── Admin KPIs ───────────────────────────────────────────────────────────────
   const totalEmployees = (users ?? []).filter((u) => u.status === "active").length;
-  const clockedInToday = (timesheets ?? []).filter((t) => t.date === today && t.ci && !t.co).length;
+  const clockedInToday = (timesheets ?? []).filter((t) => (t.date === today || t.date === yesterday) && t.ci && !t.co).length;
   const pendingApprovals = (timesheets ?? []).filter((ts) => {
     if (ts.status === "pending_first_approval") {
       return (users ?? []).find((u) => u.userId === ts.eid)?.fa === user.pos;
@@ -204,10 +205,10 @@ export default function Dashboard() {
 
   // ── Live personnel ───────────────────────────────────────────────────────────
   const livePersonnel = useMemo(() => {
-    const active = (timesheets ?? []).filter((t) => t.date === today && t.ci && !t.co);
+    const active = (timesheets ?? []).filter((t) => (t.date === today || t.date === yesterday) && t.ci && !t.co);
     const zones = Array.from(new Set(active.map((t) => t.zone ?? "Unknown"))).sort();
     return { active, zones };
-  }, [timesheets, today]);
+  }, [timesheets, today, yesterday]);
   const [locFilter, setLocFilter] = useState("ALL");
   const [liveExpanded, setLiveExpanded] = useState(false);
   const [liveSearch, setLiveSearch] = useState("");
