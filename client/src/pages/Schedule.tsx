@@ -3,7 +3,7 @@ import { RosterBuilder } from "@/components/RosterBuilder";
 import { Layout } from "@/components/Layout";
 import { useAuth } from "@/hooks/use-auth";
 import { useUsers } from "@/hooks/use-users";
-import { useTeamSchedules, useSchedules, useDeleteSchedule, useDeleteAnySchedule, useClearSchedules } from "@/hooks/use-schedules";
+import { useTeamSchedules, useSchedules, useDeleteAnySchedule, useClearSchedules } from "@/hooks/use-schedules";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
@@ -715,6 +715,19 @@ export default function SchedulePage() {
   const [agencyFilter, setAgencyFilter] = useState<string>(CLIENT_AGENCIES[0]);
   const [clearConfirm, setClearConfirm] = useState(false);
 
+  // Multi-select for mass delete
+  const [selectedEids, setSelectedEids] = useState<Set<string>>(new Set());
+  const [massDeleteConfirm, setMassDeleteConfirm] = useState(false);
+
+  function toggleEidSelection(eid: string) {
+    setSelectedEids((prev) => {
+      const next = new Set(prev);
+      if (next.has(eid)) next.delete(eid); else next.add(eid);
+      return next;
+    });
+  }
+  function clearSelection() { setSelectedEids(new Set()); }
+
   const deleteAny   = useDeleteAnySchedule();
   const clearSched  = useClearSchedules();
 
@@ -731,10 +744,6 @@ export default function SchedulePage() {
   const { data: teamSchedules = [] } = useTeamSchedules(teamEids);
   const { data: mySchedules   = [] } = useSchedules(!isPrivileged ? (user?.userId ?? "") : "");
   const schedules = isPrivileged ? teamSchedules : mySchedules;
-
-  const { mutateAsync: deleteSchedule } = useDeleteSchedule(
-    editShift?.eid ?? user?.userId ?? ""
-  );
 
   function refreshSchedules() {
     qc.invalidateQueries({ queryKey: ["/api/schedules"] });
@@ -891,8 +900,7 @@ export default function SchedulePage() {
 
   async function handleDelete(s: Schedule) {
     try {
-      await deleteSchedule(s.id);
-      refreshSchedules();
+      await deleteAny.mutateAsync(s.id);
       toast({ title: "Shift deleted" });
     } catch (err: any) {
       toast({ title: "Delete failed", description: err.message, variant: "destructive" });
@@ -961,15 +969,32 @@ export default function SchedulePage() {
                 </button>
               </div>
 
-              <Button
-                variant="outline"
-                size="sm"
-                className="ml-auto text-destructive hover:bg-destructive/10 border-destructive/40"
-                onClick={() => setClearConfirm(true)}
-                data-testid="button-clear-all"
-              >
-                <Trash2 className="w-3.5 h-3.5 mr-1.5" /> Clear Period
-              </Button>
+              <div className="ml-auto flex items-center gap-2">
+                {selectedEids.size > 0 && (
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={() => setMassDeleteConfirm(true)}
+                    data-testid="button-mass-delete"
+                  >
+                    <Trash2 className="w-3.5 h-3.5 mr-1.5" /> Delete Selected ({selectedEids.size})
+                  </Button>
+                )}
+                {selectedEids.size > 0 && (
+                  <Button variant="ghost" size="sm" onClick={clearSelection} data-testid="button-clear-selection">
+                    Cancel
+                  </Button>
+                )}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-destructive hover:bg-destructive/10 border-destructive/40"
+                  onClick={() => setClearConfirm(true)}
+                  data-testid="button-clear-all"
+                >
+                  <Trash2 className="w-3.5 h-3.5 mr-1.5" /> Clear Period
+                </Button>
+              </div>
             </div>
 
             {/* Navigation + search */}
@@ -1037,6 +1062,39 @@ export default function SchedulePage() {
           </DialogContent>
         </Dialog>
 
+        {/* Mass Delete Confirmation Dialog */}
+        <Dialog open={massDeleteConfirm} onOpenChange={(open) => { if (!open) { setMassDeleteConfirm(false); clearSelection(); } }}>
+          <DialogContent className="max-w-sm">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-destructive">
+                <Trash2 className="w-4 h-4" /> Delete Employee Shifts
+              </DialogTitle>
+              <DialogDescription>
+                This will permanently delete all shifts in {label} for {selectedEids.size} selected employee{selectedEids.size !== 1 ? "s" : ""}. This cannot be undone.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="outline" onClick={() => { setMassDeleteConfirm(false); clearSelection(); }}>Cancel</Button>
+              <Button
+                variant="destructive"
+                disabled={clearSched.isPending}
+                onClick={async () => {
+                  const count = selectedEids.size;
+                  const eids = Array.from(selectedEids);
+                  await clearSched.mutateAsync({ eids, startDate: rangeStart, endDate: rangeEnd });
+                  setMassDeleteConfirm(false);
+                  clearSelection();
+                  toast({ title: "Shifts deleted", description: `Removed shifts for ${count} employee${count !== 1 ? "s" : ""} in ${label}.` });
+                }}
+                data-testid="button-confirm-mass-delete"
+              >
+                {clearSched.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : null}
+                Yes, Delete Shifts
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
         {/* ── Desktop: Agency Roster View (admin/supervisor only) ─────────── */}
         {isPrivileged && adminDesktopView === "agency" && (
         <div className="hidden lg:block space-y-3">
@@ -1070,7 +1128,7 @@ export default function SchedulePage() {
                 <table className="w-full border-collapse text-sm">
                   <thead>
                     <tr className="border-b border-border">
-                      <th className="text-left py-2 pr-3 pl-2 font-semibold sticky left-0 bg-background z-10 border-r border-border/40 min-w-[160px]">
+                      <th className="text-left py-2 pr-3 pl-2 font-semibold sticky left-0 bg-background z-10 border-r border-border/40 min-w-[185px]">
                         <div className="flex items-center gap-1.5 text-xs uppercase tracking-wide text-muted-foreground">
                           <Users className="w-3.5 h-3.5" /> Employee
                         </div>
@@ -1096,17 +1154,39 @@ export default function SchedulePage() {
                         </td>
                       </tr>
                     ) : (
-                      agencyEmployees.map((emp) => (
-                        <tr key={emp.userId} className="border-t border-border/40 hover:bg-muted/10 group">
-                          <td className="py-2 pr-3 pl-2 align-middle sticky left-0 bg-background group-hover:bg-muted/10 z-10 border-r border-border/40">
-                            <button
-                              className="text-left w-full hover:text-primary transition-colors"
-                              onClick={() => openBuilder(undefined, emp.userId)}
-                              data-testid={`button-agency-emp-row-${emp.userId}`}
-                            >
-                              <div className="font-medium text-sm truncate max-w-[145px]">{emp.name}</div>
-                              <div className="text-[11px] text-muted-foreground truncate max-w-[145px]">{emp.pos}</div>
-                            </button>
+                      agencyEmployees.map((emp) => {
+                        const isSelected = selectedEids.has(emp.userId);
+                        return (
+                        <tr key={emp.userId} className={`border-t border-border/40 hover:bg-muted/10 group ${isSelected ? "bg-destructive/5" : ""}`}>
+                          <td className={`py-2 pr-2 pl-2 align-middle sticky left-0 z-10 border-r border-border/40 ${isSelected ? "bg-destructive/5" : "bg-background group-hover:bg-muted/10"}`}>
+                            <div className="flex items-center gap-1.5">
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={() => toggleEidSelection(emp.userId)}
+                                className="w-3.5 h-3.5 accent-destructive shrink-0 cursor-pointer"
+                                data-testid={`checkbox-emp-${emp.userId}`}
+                              />
+                              <button
+                                className="text-left flex-1 min-w-0 hover:text-primary transition-colors"
+                                onClick={() => openBuilder(undefined, emp.userId)}
+                                data-testid={`button-agency-emp-row-${emp.userId}`}
+                              >
+                                <div className="font-medium text-sm truncate max-w-[120px]">{emp.name}</div>
+                                <div className="text-[11px] text-muted-foreground truncate max-w-[120px]">{emp.pos}</div>
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setSelectedEids(new Set([emp.userId]));
+                                  setMassDeleteConfirm(true);
+                                }}
+                                className="shrink-0 w-5 h-5 rounded hover:bg-destructive/10 hover:text-destructive flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all"
+                                title={`Delete all ${agencyFilter} shifts for ${emp.name} in this period`}
+                                data-testid={`button-delete-emp-row-${emp.userId}`}
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </button>
+                            </div>
                           </td>
                           {days.map((d, i) => {
                             const dateStr = format(d, "yyyy-MM-dd");
@@ -1161,7 +1241,8 @@ export default function SchedulePage() {
                             );
                           })}
                         </tr>
-                      ))
+                      );
+                      })
                     )}
                   </tbody>
                 </table>
@@ -1203,18 +1284,46 @@ export default function SchedulePage() {
                   </td>
                 </tr>
               ) : (
-                gridEmployees.map((emp) => (
-                  <tr key={emp.userId} className="border-t border-border/40 hover:bg-muted/10 group">
-                    <td className="py-2 pr-3 pl-1 align-top sticky left-0 bg-background group-hover:bg-muted/10 z-10 border-r border-border/40">
-                      <button
-                        className="text-left w-full hover:text-primary transition-colors"
-                        onClick={() => isPrivileged && openBuilder(undefined, emp.userId)}
-                        title="Open Schedule Builder for this employee"
-                        data-testid={`button-emp-row-${emp.userId}`}
-                      >
-                        <div className="font-medium text-sm truncate max-w-[130px]">{emp.name}</div>
-                        <div className="text-[11px] text-muted-foreground truncate max-w-[130px]">{emp.pos}</div>
-                      </button>
+                gridEmployees.map((emp) => {
+                  const isSelected = selectedEids.has(emp.userId);
+                  return (
+                  <tr key={emp.userId} className={`border-t border-border/40 hover:bg-muted/10 group ${isSelected ? "bg-destructive/5" : ""}`}>
+                    <td className={`py-2 pr-2 pl-1 align-top sticky left-0 z-10 border-r border-border/40 ${isSelected ? "bg-destructive/5" : "bg-background group-hover:bg-muted/10"}`}>
+                      <div className="flex items-start gap-1.5">
+                        {isPrivileged && (
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => toggleEidSelection(emp.userId)}
+                            className="w-3.5 h-3.5 mt-0.5 accent-destructive shrink-0 cursor-pointer"
+                            data-testid={`checkbox-emp-grid-${emp.userId}`}
+                          />
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <button
+                            className="text-left w-full hover:text-primary transition-colors"
+                            onClick={() => isPrivileged && openBuilder(undefined, emp.userId)}
+                            title="Open Schedule Builder for this employee"
+                            data-testid={`button-emp-row-${emp.userId}`}
+                          >
+                            <div className="font-medium text-sm truncate max-w-[110px]">{emp.name}</div>
+                            <div className="text-[11px] text-muted-foreground truncate max-w-[110px]">{emp.pos}</div>
+                          </button>
+                        </div>
+                        {isPrivileged && (
+                          <button
+                            onClick={() => {
+                              setSelectedEids(new Set([emp.userId]));
+                              setMassDeleteConfirm(true);
+                            }}
+                            className="shrink-0 w-5 h-5 rounded hover:bg-destructive/10 hover:text-destructive flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all mt-0.5"
+                            title={`Delete all shifts for ${emp.name} in this period`}
+                            data-testid={`button-delete-emp-grid-${emp.userId}`}
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        )}
+                      </div>
                     </td>
                     {days.map((d, i) => {
                       const dateStr    = format(d, "yyyy-MM-dd");
@@ -1262,7 +1371,8 @@ export default function SchedulePage() {
                       );
                     })}
                   </tr>
-                ))
+                  );
+                })
               )}
             </tbody>
           </table>

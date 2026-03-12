@@ -7,6 +7,11 @@ async function parseError(res: Response): Promise<string> {
   catch { return `${res.status} ${res.statusText}`; }
 }
 
+function invalidateAll(qc: ReturnType<typeof useQueryClient>) {
+  qc.invalidateQueries({ queryKey: ["/api/schedules"] });
+  qc.invalidateQueries({ queryKey: ["/api/schedules/team"] });
+}
+
 export function useSchedules(eid: string | undefined) {
   return useQuery<Schedule[]>({
     queryKey: ["/api/schedules", eid],
@@ -41,7 +46,7 @@ export function useCreateSchedule(eid: string) {
   return useMutation({
     mutationFn: (data: Omit<InsertSchedule, "eid">) =>
       apiRequest("POST", "/api/schedules", { ...data, eid }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["/api/schedules", eid] }),
+    onSuccess: () => invalidateAll(qc),
   });
 }
 
@@ -50,7 +55,7 @@ export function useUpdateSchedule(eid: string) {
   return useMutation({
     mutationFn: ({ id, ...updates }: { id: number } & Partial<InsertSchedule>) =>
       apiRequest("PUT", `/api/schedules/${id}`, updates),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["/api/schedules", eid] }),
+    onSuccess: () => invalidateAll(qc),
   });
 }
 
@@ -58,22 +63,18 @@ export function useDeleteSchedule(eid: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: number) => apiRequest("DELETE", `/api/schedules/${id}`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["/api/schedules", eid] }),
+    onSuccess: () => invalidateAll(qc),
   });
 }
 
-// Deletes any schedule by id and invalidates all schedule queries (for admin views)
 export function useDeleteAnySchedule() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: number) => apiRequest("DELETE", `/api/schedules/${id}`),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["/api/schedules"] });
-    },
+    onSuccess: () => invalidateAll(qc),
   });
 }
 
-// Bulk-clears schedules for a list of eids and optional date range
 export function useClearSchedules() {
   const qc = useQueryClient();
   return useMutation({
@@ -83,6 +84,6 @@ export function useClearSchedules() {
       if (endDate)   params.set("endDate",   endDate);
       return apiRequest("DELETE", `/api/schedules?${params}`);
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["/api/schedules"] }),
+    onSuccess: () => invalidateAll(qc),
   });
 }
