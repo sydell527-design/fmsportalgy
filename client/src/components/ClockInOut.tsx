@@ -471,16 +471,18 @@ export function ClockInOut() {
                     </p>
                   </div>
                 </div>
-                {/* Take Action — only when scheduled but not yet clocked in */}
-                {dayStatus === "On Day" && !hasClockedIn && (
-                  <button
-                    onClick={() => setActionOpen(true)}
-                    className="mt-2 w-full flex items-center justify-center gap-1.5 text-xs font-semibold text-green-800 underline underline-offset-2 hover:text-green-700 transition-colors"
-                    data-testid="button-take-action"
-                  >
-                    <Siren className="w-3 h-3" /> Can't make it today? Report here
-                  </button>
-                )}
+                {/* Take Action — always visible when not yet clocked in */}
+                <button
+                  onClick={() => setActionOpen(true)}
+                  className={`mt-2 w-full flex items-center justify-center gap-1.5 text-xs font-semibold underline underline-offset-2 transition-colors ${
+                    dayStatus === "On Day"
+                      ? "text-green-800 hover:text-green-700"
+                      : "text-amber-800 hover:text-amber-700"
+                  }`}
+                  data-testid="button-take-action"
+                >
+                  <Siren className="w-3 h-3" /> Can't make it today? Report here
+                </button>
               </div>
 
               {/* Enable GPS */}
