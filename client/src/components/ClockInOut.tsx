@@ -738,7 +738,7 @@ export function ClockInOut() {
                       sub,
                       date:   todayStr,
                       reason,
-                      status: "pending",
+                      status: "approved",
                     });
 
                     // Only auto-create a timesheet entry if none exists for today
