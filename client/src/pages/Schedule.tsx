@@ -1286,6 +1286,7 @@ export default function SchedulePage() {
               ) : (
                 gridEmployees.map((emp) => {
                   const isSelected = selectedEids.has(emp.userId);
+                  const empHasAnyShift = days.some((d) => (scheduleMap[`${emp.userId}::${format(d, "yyyy-MM-dd")}`] ?? []).length > 0);
                   return (
                   <tr key={emp.userId} className={`border-t border-border/40 hover:bg-muted/10 group ${isSelected ? "bg-destructive/5" : ""}`}>
                     <td className={`py-2 pr-2 pl-1 align-top sticky left-0 z-10 border-r border-border/40 ${isSelected ? "bg-destructive/5" : "bg-background group-hover:bg-muted/10"}`}>
@@ -1357,7 +1358,7 @@ export default function SchedulePage() {
                                 </div>
                               </div>
                             ))}
-                            {cellShifts.length === 0 && (
+                            {cellShifts.length === 0 && empHasAnyShift && (
                               <div className="text-center text-[9px] text-muted-foreground/40 italic py-1 group-hover:hidden">Off Duty</div>
                             )}
                             {isPrivileged && (
