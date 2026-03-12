@@ -1748,24 +1748,26 @@ export default function SchedulePage() {
                   const isToday   = ds === todayStr;
                   const dow       = d.getDay();
                   const isWkend   = dow === 0 || dow === 6;
-                  const dayShifts = empShiftByDate[ds] ?? [];
+                  // Only show shifts for the currently selected period
+                  const dayShifts = (inPeriod && inMonth) ? (empShiftByDate[ds] ?? []) : [];
+                  const isEmpty   = inPeriod && inMonth && dayShifts.length === 0;
 
                   return (
                     <div
                       key={i}
-                      className={`min-h-[68px] p-1 border-b border-r border-border/20 ${
-                        !inMonth    ? "bg-muted/10 opacity-30"
-                        : !inPeriod ? "bg-muted/5 opacity-50"
+                      className={`min-h-[78px] p-1 border-b border-r border-border/20 ${
+                        !inMonth    ? "bg-muted/10 opacity-20"
+                        : !inPeriod ? "bg-muted/5 opacity-40"
                         : isToday   ? "bg-primary/5"
-                        : isWkend   ? "bg-muted/20"
+                        : isWkend   ? "bg-muted/15"
                         : "bg-background"
                       }`}
                     >
                       {/* Day number */}
                       <div className={`h-5 flex items-center text-[11px] font-semibold leading-none mb-1 ${
-                        isToday   ? "text-primary"
-                        : !inMonth || !inPeriod ? "text-muted-foreground"
-                        : isWkend ? "text-muted-foreground/70"
+                        isToday     ? "text-primary"
+                        : !inMonth || !inPeriod ? "text-muted-foreground/40"
+                        : isWkend   ? "text-muted-foreground/60"
                         : "text-foreground"
                       }`}>
                         {isToday ? (
@@ -1775,24 +1777,30 @@ export default function SchedulePage() {
                         ) : format(d, "d")}
                       </div>
 
-                      {/* Shift chips — show agency + time */}
+                      {/* Shift chips — only for the selected period */}
                       {dayShifts.map((s) => (
                         <div
                           key={s.id}
-                          className={`w-full rounded px-0.5 py-0.5 mb-0.5 leading-tight ${
+                          className={`w-full rounded px-1 py-0.5 mb-0.5 leading-tight ${
                             s.armed === "Armed"
                               ? "bg-red-100 border border-red-200 text-red-900"
                               : "bg-green-100 border border-green-200 text-green-900"
                           }`}
                           data-testid={`emp-shift-${s.id}`}
                         >
-                          <div className="text-[8px] font-bold tabular-nums">{fmt12(s.shiftStart)}</div>
-                          <div className="text-[7px] opacity-70 tabular-nums">{fmt12(s.shiftEnd)}</div>
-                          {s.company && (
-                            <div className="text-[6px] font-semibold opacity-80 truncate mt-0.5 uppercase tracking-wide">{s.company}</div>
-                          )}
+                          <div className="text-[9px] font-bold tabular-nums">{fmt12(s.shiftStart)}</div>
+                          <div className="text-[8px] opacity-70 tabular-nums">{fmt12(s.shiftEnd)}</div>
                         </div>
                       ))}
+
+                      {/* Off Duty label for empty in-period days */}
+                      {isEmpty && (
+                        <div className={`text-[8px] font-medium text-center leading-tight mt-1 ${
+                          isWkend ? "text-muted-foreground/40" : "text-muted-foreground/55"
+                        }`}>
+                          {isWkend ? "Off" : <><span>Day</span><br /><span>Off</span></>}
+                        </div>
+                      )}
                     </div>
                   );
                 })}
