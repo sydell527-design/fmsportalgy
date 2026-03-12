@@ -582,9 +582,14 @@ export default function Timesheets() {
   const isShiftInProgress = (ts: Timesheet) =>
     ts.status === "pending_employee" && !!ts.ci && !ts.co;
 
-  // Employee can only review/sign AFTER clock-out
+  // Absence entries (Sick / Absent / Annual Leave) have no clock times — still signable
+  const isAbsenceRecord = (ts: Timesheet | null) =>
+    ["Sick", "Absent", "Annual Leave"].includes(ts?.dayStatus ?? "");
+
+  // Employee can review/sign after clock-out OR immediately for absence entries
   const canEmployeeReview = (ts: Timesheet) =>
-    ts.eid === user.userId && ts.status === "pending_employee" && !!ts.co;
+    ts.eid === user.userId && ts.status === "pending_employee" &&
+    (!!ts.co || isAbsenceRecord(ts));
 
   // Legacy alias for own in-progress check
   const isInProgress = (ts: Timesheet) =>
@@ -651,19 +656,20 @@ export default function Timesheets() {
       toast({ title: "Signature required", variant: "destructive" }); return;
     }
     const sigObj = { name: reviewForm.sigName.trim(), time: format(new Date(), "yyyy-MM-dd HH:mm"), ip: "web" };
-    const hours = reviewHours ?? { reg: reviewModal.reg, ot: reviewModal.ot };
+    const absence = isAbsenceRecord(reviewModal);
+    const hours = absence ? { reg: reviewModal.reg, ot: reviewModal.ot } : (reviewHours ?? { reg: reviewModal.reg, ot: reviewModal.ot });
     try {
       await updateTimesheet({
         id: reviewModal.id,
-        ci: reviewForm.ci,
-        co: reviewForm.co,
-        brk: Number(reviewForm.brk) || 0,
+        ci: absence ? (reviewModal.ci ?? null) : reviewForm.ci,
+        co: absence ? (reviewModal.co ?? null) : reviewForm.co,
+        brk: absence ? 0 : (Number(reviewForm.brk) || 0),
         notes: reviewForm.notes,
         reg: hours.reg,
         ot: hours.ot,
         eSig: sigObj,
         status: "pending_first_approval",
-        edited: reviewForm.ci !== reviewModal.ci || reviewForm.co !== reviewModal.co,
+        edited: !absence && (reviewForm.ci !== reviewModal.ci || reviewForm.co !== reviewModal.co),
       });
       toast({ title: "Timesheet signed and submitted for approval" });
       setReviewModal(null);
@@ -1354,32 +1360,46 @@ export default function Timesheets() {
                 {reviewModal.zone && <> · Zone: <strong className="text-foreground">{reviewModal.zone}</strong></>}
               </div>
 
-              <p className="text-xs text-muted-foreground">
-                Review your shift details below. You may correct the times or add a note before signing. Once submitted, this record is locked.
-              </p>
+              {isAbsenceRecord(reviewModal) ? (
+                <>
+                  <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                    <p className="font-semibold">{reviewModal.dayStatus} — no clock times recorded</p>
+                    <p className="text-xs mt-0.5 opacity-80">{reviewModal.notes}</p>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    By signing below you confirm this absence record is accurate and submit it for management approval.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="text-xs text-muted-foreground">
+                    Review your shift details below. You may correct the times or add a note before signing. Once submitted, this record is locked.
+                  </p>
 
-              {/* Editable times */}
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <Label>Clock In</Label>
-                  <Input type="time" value={reviewForm.ci} onChange={(e) => setReviewForm({ ...reviewForm, ci: e.target.value })} data-testid="input-review-ci" />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Clock Out</Label>
-                  <Input type="time" value={reviewForm.co} onChange={(e) => setReviewForm({ ...reviewForm, co: e.target.value })} data-testid="input-review-co" />
-                </div>
-              </div>
-              <div className="space-y-1.5">
-                <Label>Break (minutes)</Label>
-                <Input type="number" min={0} max={120} value={reviewForm.brk} onChange={(e) => setReviewForm({ ...reviewForm, brk: e.target.value })} data-testid="input-review-brk" />
-              </div>
+                  {/* Editable times */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <Label>Clock In</Label>
+                      <Input type="time" value={reviewForm.ci} onChange={(e) => setReviewForm({ ...reviewForm, ci: e.target.value })} data-testid="input-review-ci" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>Clock Out</Label>
+                      <Input type="time" value={reviewForm.co} onChange={(e) => setReviewForm({ ...reviewForm, co: e.target.value })} data-testid="input-review-co" />
+                    </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Break (minutes)</Label>
+                    <Input type="number" min={0} max={120} value={reviewForm.brk} onChange={(e) => setReviewForm({ ...reviewForm, brk: e.target.value })} data-testid="input-review-brk" />
+                  </div>
 
-              {/* Calculated hours preview */}
-              {reviewHours && (
-                <div className="rounded-md border border-border bg-muted/30 px-4 py-3 flex gap-6 text-sm">
-                  <div><p className="text-xs text-muted-foreground">Regular</p><p className="font-bold text-lg">{reviewHours.reg}h</p></div>
-                  {reviewHours.ot > 0 && <div><p className="text-xs text-amber-600">Overtime</p><p className="font-bold text-lg text-amber-600">{reviewHours.ot}h</p></div>}
-                </div>
+                  {/* Calculated hours preview */}
+                  {reviewHours && (
+                    <div className="rounded-md border border-border bg-muted/30 px-4 py-3 flex gap-6 text-sm">
+                      <div><p className="text-xs text-muted-foreground">Regular</p><p className="font-bold text-lg">{reviewHours.reg}h</p></div>
+                      {reviewHours.ot > 0 && <div><p className="text-xs text-amber-600">Overtime</p><p className="font-bold text-lg text-amber-600">{reviewHours.ot}h</p></div>}
+                    </div>
+                  )}
+                </>
               )}
 
               {/* Notes */}
@@ -1402,7 +1422,7 @@ export default function Timesheets() {
 
               <div className="flex gap-2 justify-end">
                 <Button variant="outline" onClick={() => setReviewModal(null)}>Cancel</Button>
-                <Button onClick={submitReview} disabled={!reviewForm.sigName.trim() || !reviewForm.ci || !reviewForm.co} data-testid="button-confirm-review">
+                <Button onClick={submitReview} disabled={!reviewForm.sigName.trim() || (!isAbsenceRecord(reviewModal) && (!reviewForm.ci || !reviewForm.co))} data-testid="button-confirm-review">
                   <PenLine className="w-4 h-4 mr-1.5" /> Sign & Submit
                 </Button>
               </div>
