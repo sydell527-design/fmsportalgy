@@ -637,6 +637,87 @@ export default function Dashboard() {
             </div>
           )}
         </div>
+
+        {/* ── End Shift Dialog (supervisor view) ──────────────────────────── */}
+        <Dialog open={!!endShiftTarget} onOpenChange={(o) => { if (!o) setEndShiftTarget(null); }}>
+          <DialogContent className="max-w-sm">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <LogOut className="w-4 h-4 text-destructive" /> End Shift
+              </DialogTitle>
+              <DialogDescription>
+                Manually clock out <strong>{endShiftTarget ? (userMap[endShiftTarget.eid]?.name ?? endShiftTarget.eid) : ""}</strong> who
+                clocked in at <strong>{endShiftTarget?.ci}</strong> and forgot to clock out.
+                Hours will be calculated automatically.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-1">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label className="text-xs">Clock-out Time</Label>
+                  <Input
+                    type="time"
+                    value={endShiftCo}
+                    onChange={(e) => setEndShiftCo(e.target.value)}
+                    data-testid="input-end-shift-co-sup"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Break (mins)</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    max={120}
+                    value={endShiftBrk}
+                    onChange={(e) => setEndShiftBrk(e.target.value)}
+                    data-testid="input-end-shift-brk-sup"
+                  />
+                </div>
+              </div>
+              {endShiftTarget && endShiftCo && (() => {
+                const [ch, cm] = (endShiftTarget.ci ?? "00:00").split(":").map(Number);
+                const [oh, om] = endShiftCo.split(":").map(Number);
+                let totalMins = oh * 60 + om - (ch * 60 + cm);
+                if (totalMins < 0) totalMins += 24 * 60;
+                const workMins = Math.max(0, totalMins - (parseInt(endShiftBrk, 10) || 0));
+                const totalH = workMins / 60;
+                const reg = Math.min(8, totalH);
+                const ot  = Math.max(0, totalH - 8);
+                return (
+                  <div className="rounded-lg bg-muted/40 px-3 py-2 text-xs text-muted-foreground flex gap-4">
+                    <span>Total: <strong className="text-foreground">{totalH.toFixed(2)}h</strong></span>
+                    <span>Reg: <strong className="text-foreground">{reg.toFixed(2)}h</strong></span>
+                    {ot > 0 && <span>OT: <strong className="text-amber-600">{ot.toFixed(2)}h</strong></span>}
+                  </div>
+                );
+              })()}
+              <div className="space-y-1">
+                <Label className="text-xs">Note</Label>
+                <Textarea
+                  rows={2}
+                  value={endShiftNote}
+                  onChange={(e) => setEndShiftNote(e.target.value)}
+                  className="text-xs resize-none"
+                  placeholder="Reason for manual clock-out…"
+                  data-testid="input-end-shift-note-sup"
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 pt-1">
+              <Button variant="outline" size="sm" onClick={() => setEndShiftTarget(null)}>Cancel</Button>
+              <Button
+                size="sm"
+                variant="destructive"
+                disabled={!endShiftCo || endShiftBusy}
+                onClick={handleEndShift}
+                data-testid="button-confirm-end-shift-sup"
+              >
+                {endShiftBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" /> : <LogOut className="w-3.5 h-3.5 mr-1.5" />}
+                End Shift
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
       </Layout>
     );
   }
