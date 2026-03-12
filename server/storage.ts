@@ -66,6 +66,7 @@ export interface IStorage {
   getSchedulesByEid(eid: string): Promise<Schedule[]>;
   getSchedulesByEids(eids: string[]): Promise<Schedule[]>;
   createSchedule(s: InsertSchedule): Promise<Schedule>;
+  bulkUpsertSchedules(rows: InsertSchedule[]): Promise<Schedule[]>;
   updateSchedule(id: number, updates: Partial<InsertSchedule>): Promise<Schedule>;
   deleteSchedule(id: number): Promise<void>;
   clearSchedules(eids: string[], startDate?: string, endDate?: string): Promise<number>;
@@ -255,6 +256,21 @@ export class DatabaseStorage implements IStorage {
   async createSchedule(s: InsertSchedule) {
     const [r] = await db.insert(schedules).values(s).returning();
     return r;
+  }
+  async bulkUpsertSchedules(rows: InsertSchedule[]) {
+    if (!rows.length) return [];
+    // Delete any existing schedule records that match the same (eid, date, client)
+    // so re-saving the roster doesn't create duplicates.
+    for (const row of rows) {
+      await db.delete(schedules).where(
+        and(
+          eq(schedules.eid,    row.eid),
+          eq(schedules.date,   row.date),
+          row.client ? eq(schedules.client, row.client) : sql`${schedules.client} IS NULL`
+        )
+      );
+    }
+    return db.insert(schedules).values(rows).returning();
   }
   async updateSchedule(id: number, updates: Partial<InsertSchedule>) {
     const [r] = await db.update(schedules).set(updates).where(eq(schedules.id, id)).returning();

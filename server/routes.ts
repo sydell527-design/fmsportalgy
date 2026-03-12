@@ -248,7 +248,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   app.post("/api/schedules/bulk", async (req, res) => {
     try {
       const rows = z.array(insertScheduleSchema).parse(req.body);
-      const created = await Promise.all(rows.map((r) => storage.createSchedule(r)));
+      const created = await storage.bulkUpsertSchedules(rows);
       res.status(201).json(created);
     } catch (err) {
       if (err instanceof z.ZodError) return res.status(400).json({ message: err.errors[0].message });
