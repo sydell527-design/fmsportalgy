@@ -390,24 +390,33 @@ function SectionGrid({
   onFillRow: (eid: string, code: string) => void;
   onClearRow: (eid: string) => void;
 }) {
+  // Frozen column pixel widths — keep in sync across th and td
+  // ID=64 | Location=130 | Employee=148 | Fill=104  → total=446px
+  // Leaves ~900px+ for date columns on a 1366px screen → ~60px/day for 15 days ✓
+  const C = { id: 64, loc: 130, emp: 148, fill: 104 };
+  const L = { id: 0, loc: C.id, emp: C.id + C.loc, fill: C.id + C.loc + C.emp };
+
+  const thBase = "font-medium text-muted-foreground text-[10px] uppercase tracking-wide whitespace-nowrap border-b border-r bg-background z-10";
+  const tdSticky = "align-middle border-r bg-background group-hover:bg-muted/30 z-10";
+
   return (
-    <table className="border-collapse text-sm w-full">
+    <table className="border-collapse text-sm">
       <thead>
         <tr>
-          <th className="text-left py-2 px-2 font-medium text-muted-foreground text-xs uppercase tracking-wide w-20 sticky left-0 bg-background z-10 border-b border-r">Call Sign</th>
-          <th className="text-left py-2 px-2 font-medium text-muted-foreground text-xs uppercase tracking-wide w-32 sticky left-20 bg-background z-10 border-b border-r">Location</th>
-          <th className="text-left py-2 px-3 font-medium text-muted-foreground text-xs uppercase tracking-wide w-40 sticky left-52 bg-background z-10 border-b border-r">Employee</th>
-          <th className="py-2 px-2 font-medium text-muted-foreground text-xs uppercase tracking-wide w-32 min-w-[128px] max-w-[128px] sticky left-[368px] bg-background z-10 border-b border-r">Fill Row</th>
+          <th style={{ width: C.id, minWidth: C.id, left: L.id }} className={`${thBase} text-left py-2 px-2 sticky`}>ID</th>
+          <th style={{ width: C.loc, minWidth: C.loc, left: L.loc }} className={`${thBase} text-left py-2 px-2 sticky`}>Location</th>
+          <th style={{ width: C.emp, minWidth: C.emp, left: L.emp }} className={`${thBase} text-left py-2 px-2 sticky`}>Employee</th>
+          <th style={{ width: C.fill, minWidth: C.fill, left: L.fill }} className={`${thBase} text-center py-2 px-1 sticky`}>Fill Row</th>
           {days.map((d, i) => {
             const ds = format(d, "yyyy-MM-dd");
             const isToday = ds === todayFmt;
             const dow = d.getDay();
             const isWeekend = dow === 0 || dow === 6;
             return (
-              <th key={i} className={`text-center py-1.5 px-1 min-w-[64px] border-b ${isToday ? "bg-primary/10" : isWeekend ? "bg-muted/40" : ""}`}>
-                <div className={`text-[9px] uppercase ${isToday ? "text-primary font-bold" : "text-muted-foreground"}`}>{DAY_ABBR[dow]}</div>
-                <div className={`text-xs font-bold ${isToday ? "text-primary" : isWeekend ? "text-muted-foreground" : "text-foreground"}`}>{format(d, "d")}</div>
-                <div className="text-[8px] text-muted-foreground">{format(d, "MMM")}</div>
+              <th key={i} style={{ minWidth: 56 }} className={`text-center py-1.5 border-b ${isToday ? "bg-primary/10" : isWeekend ? "bg-muted/40" : ""}`}>
+                <div className={`text-[9px] uppercase leading-tight ${isToday ? "text-primary font-bold" : "text-muted-foreground"}`}>{DAY_ABBR[dow]}</div>
+                <div className={`text-xs font-bold leading-tight ${isToday ? "text-primary" : isWeekend ? "text-muted-foreground" : "text-foreground"}`}>{format(d, "d")}</div>
+                <div className="text-[8px] text-muted-foreground leading-tight">{format(d, "MMM")}</div>
               </th>
             );
           })}
@@ -416,7 +425,7 @@ function SectionGrid({
       <tbody>
         {rows.map((row) => (
           <tr key={row.eid} className="border-t border-border/40 hover:bg-muted/30 group">
-            <td className="py-1 px-1 align-middle sticky left-0 bg-background group-hover:bg-muted/30 z-10 border-r w-20">
+            <td style={{ width: C.id, minWidth: C.id, left: L.id }} className={`${tdSticky} py-1 px-1 sticky`}>
               <CallSignCombo
                 value={row.callSign}
                 registry={callSignRegistry}
@@ -424,7 +433,7 @@ function SectionGrid({
                 onLocationFill={(loc) => onUpdateField(row.eid, "location", loc)}
               />
             </td>
-            <td className="py-1 px-1 align-middle sticky left-20 bg-background group-hover:bg-muted/30 z-10 border-r w-32">
+            <td style={{ width: C.loc, minWidth: C.loc, left: L.loc }} className={`${tdSticky} py-1 px-1 sticky`}>
               <select
                 value={row.location}
                 onChange={(e) => onUpdateField(row.eid, "location", e.target.value)}
@@ -435,20 +444,20 @@ function SectionGrid({
                 {FMS_LOCATIONS.map((l) => <option key={l} value={l}>{l}</option>)}
               </select>
             </td>
-            <td className="py-1.5 px-3 align-middle sticky left-52 bg-background group-hover:bg-muted/30 z-10 border-r w-40">
-              <div className="font-medium text-sm truncate max-w-[140px]">{row.name}</div>
-              <div className="text-[10px] text-muted-foreground truncate max-w-[140px]">{row.pos}</div>
+            <td style={{ width: C.emp, minWidth: C.emp, left: L.emp }} className={`${tdSticky} py-1 px-2 sticky`}>
+              <div className="font-medium text-sm leading-tight truncate" style={{ maxWidth: C.emp - 16 }}>{row.name}</div>
+              <div className="text-[10px] text-muted-foreground leading-tight truncate" style={{ maxWidth: C.emp - 16 }}>{row.pos}</div>
             </td>
-            <td className="py-1 px-2 align-middle sticky left-[368px] bg-background group-hover:bg-muted/30 z-10 border-r w-32 min-w-[128px] max-w-[128px]">
-              <div className="flex flex-col gap-1 w-full">
+            <td style={{ width: C.fill, minWidth: C.fill, left: L.fill }} className={`${tdSticky} py-1 px-1.5 sticky`}>
+              <div className="flex flex-col gap-0.5 w-full">
                 <select
-                  className="w-full text-[10px] border rounded px-1 py-0.5 bg-background h-6 truncate"
+                  className="w-full text-[10px] border rounded px-1 py-0.5 bg-background h-6"
                   onChange={(e) => { if (e.target.value) { onFillRow(row.eid, e.target.value); e.target.value = ""; }}}
                   data-testid={`select-fill-row-${row.eid}`}
                 >
-                  <option value="">Fill…</option>
+                  <option value="">Fill row…</option>
                   <optgroup label="All Days">{SHIFT_PRESETS.map((p) => <option key={p.code} value={p.code}>{p.label}</option>)}</optgroup>
-                  <optgroup label="Weekdays Only (W)">{SHIFT_PRESETS.filter((p) => p.code !== "Off").map((p) => <option key={`${p.code}|W`} value={`${p.code}|W`}>{p.label} W</option>)}</optgroup>
+                  <optgroup label="Weekdays Only">{SHIFT_PRESETS.filter((p) => p.code !== "Off").map((p) => <option key={`${p.code}|W`} value={`${p.code}|W`}>{p.label} (wkd)</option>)}</optgroup>
                 </select>
                 <button
                   onClick={() => onClearRow(row.eid)}
@@ -466,13 +475,11 @@ function SectionGrid({
               const isToday = ds === todayFmt;
               return (
                 <td key={ci} className={`p-0.5 align-middle ${isToday ? "bg-primary/5" : isWeekend ? "bg-muted/20" : ""}`}>
-                  <div className="relative">
-                    <CellButton
-                      code={row.cells[ds] ?? ""}
-                      customTime={row.customTimes[ds]}
-                      onUpdate={(code, ct) => onUpdateCell(row.eid, ds, code, ct)}
-                    />
-                  </div>
+                  <CellButton
+                    code={row.cells[ds] ?? ""}
+                    customTime={row.customTimes[ds]}
+                    onUpdate={(code, ct) => onUpdateCell(row.eid, ds, code, ct)}
+                  />
                 </td>
               );
             })}
