@@ -411,7 +411,7 @@ async function seedDatabase() {
   if (existingGeo.length === 0) {
     const geoSeed = [
       { name:"HEAD OFFICE", lat:6.813348605011895, lng:-58.14785407612874, radius:150, description:"FMS Head Office, Georgetown", active:true },
-      { name:"CARICOM", lat:6.820398733945807, lng:-58.11684933928277, radius:200, description:"CARICOM Secretariat", active:true },
+      { name:"CARICOM", lat:6.820304251566827, lng:-58.11685547637608, radius:200, description:"CARICOM Secretariat", active:true },
       { name:"EU", lat:6.8080, lng:-58.1600, radius:200, description:"European Union Office", active:true },
       { name:"UN", lat:6.8100, lng:-58.1550, radius:200, description:"UN House Guyana", active:true },
       { name:"DMC", lat:6.8050, lng:-58.1620, radius:200, description:"Diamond/Eccles area", active:true },
@@ -461,7 +461,7 @@ async function seedDatabase() {
   // Seed geofences
   const geoSeed = [
     { name:"HEAD OFFICE", lat:6.813348605011895, lng:-58.14785407612874, radius:150, description:"FMS Head Office, Georgetown", active:true },
-    { name:"CARICOM", lat:6.820398733945807, lng:-58.11684933928277, radius:200, description:"CARICOM Secretariat", active:true },
+    { name:"CARICOM", lat:6.820304251566827, lng:-58.11685547637608, radius:200, description:"CARICOM Secretariat", active:true },
     { name:"EU", lat:6.8080, lng:-58.1600, radius:200, description:"European Union Office", active:true },
     { name:"UN", lat:6.8100, lng:-58.1550, radius:200, description:"UN House Guyana", active:true },
     { name:"DMC", lat:6.8050, lng:-58.1620, radius:200, description:"Diamond/Eccles area", active:true },
