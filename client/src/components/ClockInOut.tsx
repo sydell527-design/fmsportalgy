@@ -145,10 +145,7 @@ export function ClockInOut() {
   const todaysTs = todaysTsList.find((t) => t.ci && !t.co) ?? null;
   const hasClockedIn = !!todaysTs;
 
-  const assignedZoneNames = user?.geo ?? [];
-  const availableZones = (allGeofences ?? []).filter(
-    (g) => g.active && assignedZoneNames.includes(g.name)
-  );
+  const availableZones = (allGeofences ?? []).filter((g) => g.active);
 
   const selectedFence = availableZones.find((g) => g.name === selectedZone);
   const mobility: string = (user as any)?.mobility ?? "fixed";
@@ -402,7 +399,7 @@ export function ClockInOut() {
                   <MapPin className="w-3.5 h-3.5" /> Work Location
                 </p>
                 {availableZones.length === 0 ? (
-                  <p className="text-sm text-muted-foreground italic">No locations assigned to your profile.</p>
+                  <p className="text-sm text-muted-foreground italic">No active work locations found.</p>
                 ) : (
                   <select className={selectCls} value={selectedZone} onChange={(e) => handleZoneChange(e.target.value)} data-testid="select-work-zone">
                     <option value="">— Select your work location —</option>
