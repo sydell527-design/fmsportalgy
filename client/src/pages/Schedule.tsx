@@ -1428,9 +1428,6 @@ export default function SchedulePage() {
                         <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-primary text-primary-foreground text-[10px] font-bold">{format(d, "d")}</span>
                       ) : <span className={!inMonth || !inPeriod ? "text-muted-foreground" : "text-foreground"}>{format(d, "d")}</span>}
                     </div>
-                    {inMonth && inPeriod && dayShifts.length === 0 && (
-                      <span className="text-[9px] text-muted-foreground/60 italic">Off Duty</span>
-                    )}
                     {dayShifts.map((s) => (
                       <div key={s.id} className={`rounded p-1 mb-0.5 text-[10px] leading-tight ${s.armed === "Armed" ? "bg-red-100 border border-red-200 text-red-900" : "bg-green-100 border border-green-200 text-green-900"}`} data-testid={`emp-shift-desktop-${s.id}`}>
                         <div className="font-bold">{fmt12(s.shiftStart)}–{fmt12(s.shiftEnd)}</div>
@@ -1747,7 +1744,6 @@ export default function SchedulePage() {
                   const dow       = d.getDay();
                   const isWkend   = dow === 0 || dow === 6;
                   const dayShifts = empShiftByDate[ds] ?? [];
-                  const hasShift  = dayShifts.length > 0;
 
                   return (
                     <div
@@ -1773,11 +1769,6 @@ export default function SchedulePage() {
                           </span>
                         ) : format(d, "d")}
                       </div>
-
-                      {/* Off Duty indicator */}
-                      {inMonth && inPeriod && !hasShift && (
-                        <div className="text-[8px] text-muted-foreground/50 italic text-center mt-1">Off</div>
-                      )}
 
                       {/* Shift chips — show agency + time */}
                       {dayShifts.map((s) => (
