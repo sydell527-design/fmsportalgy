@@ -957,70 +957,73 @@ export default function Timesheets() {
 
       {/* ── Tab bar (Full Access & Supervisors only) ──────────────────────── */}
       {hasTeamView && (
-        <div className="flex items-center border-b border-border mb-5">
-          <button
-            onClick={() => setTsTab("mine")}
-            className={`px-5 py-2.5 text-sm font-medium border-b-2 transition-colors ${
-              tsTab === "mine"
-                ? "border-primary text-primary"
-                : "border-transparent text-muted-foreground hover:text-foreground"
-            }`}
-            data-testid="tab-my-timesheet"
-          >
-            My Timesheet
-            {myTs.length > 0 && (
-              <span className="ml-2 text-xs bg-muted text-muted-foreground rounded-full px-1.5 py-0.5">{myTs.length}</span>
-            )}
-          </button>
-          <button
-            onClick={() => setTsTab("general")}
-            className={`px-5 py-2.5 text-sm font-medium border-b-2 transition-colors ${
-              tsTab === "general"
-                ? "border-primary text-primary"
-                : "border-transparent text-muted-foreground hover:text-foreground"
-            }`}
-            data-testid="tab-general-timesheet"
-          >
-            General Timesheet
-            {teamTs.length > 0 && (
-              <span className="ml-2 text-xs bg-muted text-muted-foreground rounded-full px-1.5 py-0.5">{teamTs.length}</span>
-            )}
-          </button>
-
-          {/* Admin-only toolbar — shown when on General tab */}
+        <div className="mb-5">
+          {/* Tabs row */}
+          <div className="flex items-center border-b border-border">
+            <button
+              onClick={() => setTsTab("mine")}
+              className={`px-4 sm:px-5 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+                tsTab === "mine"
+                  ? "border-primary text-primary"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
+              }`}
+              data-testid="tab-my-timesheet"
+            >
+              My Timesheet
+              {myTs.length > 0 && (
+                <span className="ml-1.5 text-xs bg-muted text-muted-foreground rounded-full px-1.5 py-0.5">{myTs.length}</span>
+              )}
+            </button>
+            <button
+              onClick={() => setTsTab("general")}
+              className={`px-4 sm:px-5 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+                tsTab === "general"
+                  ? "border-primary text-primary"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
+              }`}
+              data-testid="tab-general-timesheet"
+            >
+              General
+              {teamTs.length > 0 && (
+                <span className="ml-1.5 text-xs bg-muted text-muted-foreground rounded-full px-1.5 py-0.5">{teamTs.length}</span>
+              )}
+            </button>
+            {/* Admin toolbar — inline on desktop, hidden on mobile (moves below) */}
+            {isFullAccess && tsTab === "general" && (() => {
+              const signableCount = teamTs.filter((ts) => canAdminSign(ts)).length;
+              return (
+                <div className="ml-auto pb-1 hidden sm:flex items-center gap-2">
+                  {signableCount > 0 && (
+                    <Button size="sm" variant="default" onClick={() => { setSignAllName(user.name); setSignAllOpen(true); }} data-testid="button-sign-all">
+                      <PenSquare className="w-3.5 h-3.5 mr-1.5" />Sign All
+                      <span className="ml-1.5 bg-white/20 text-white text-xs rounded-full px-1.5 py-0">{signableCount}</span>
+                    </Button>
+                  )}
+                  <Button size="sm" variant="outline" onClick={() => { setBulkRows([]); setBulkFileName(""); setBulkOpen(true); }} data-testid="button-bulk-upload">
+                    <Upload className="w-3.5 h-3.5 mr-1.5" />Bulk Upload
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => setPpOpen(true)} data-testid="button-people-pay-download">
+                    <FileSpreadsheet className="w-3.5 h-3.5 mr-1.5" />People Pay
+                  </Button>
+                </div>
+              );
+            })()}
+          </div>
+          {/* Admin toolbar — second row on mobile */}
           {isFullAccess && tsTab === "general" && (() => {
             const signableCount = teamTs.filter((ts) => canAdminSign(ts)).length;
             return (
-              <div className="ml-auto pb-1 flex items-center gap-2">
+              <div className="sm:hidden flex flex-wrap items-center gap-2 pt-2.5">
                 {signableCount > 0 && (
-                  <Button
-                    size="sm"
-                    variant="default"
-                    onClick={() => { setSignAllName(user.name); setSignAllOpen(true); }}
-                    data-testid="button-sign-all"
-                  >
-                    <PenSquare className="w-3.5 h-3.5 mr-1.5" />
-                    Sign All
-                    <span className="ml-1.5 bg-white/20 text-white text-xs rounded-full px-1.5 py-0">{signableCount}</span>
+                  <Button size="sm" variant="default" onClick={() => { setSignAllName(user.name); setSignAllOpen(true); }} data-testid="button-sign-all-mobile">
+                    <PenSquare className="w-3.5 h-3.5 mr-1.5" />Sign All ({signableCount})
                   </Button>
                 )}
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => { setBulkRows([]); setBulkFileName(""); setBulkOpen(true); }}
-                  data-testid="button-bulk-upload"
-                >
-                  <Upload className="w-3.5 h-3.5 mr-1.5" />
-                  Bulk Upload
+                <Button size="sm" variant="outline" onClick={() => { setBulkRows([]); setBulkFileName(""); setBulkOpen(true); }} data-testid="button-bulk-upload-mobile">
+                  <Upload className="w-3.5 h-3.5 mr-1.5" />Bulk Upload
                 </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => setPpOpen(true)}
-                  data-testid="button-people-pay-download"
-                >
-                  <FileSpreadsheet className="w-3.5 h-3.5 mr-1.5" />
-                  People Pay
+                <Button size="sm" variant="outline" onClick={() => setPpOpen(true)} data-testid="button-people-pay-download-mobile">
+                  <FileSpreadsheet className="w-3.5 h-3.5 mr-1.5" />People Pay
                 </Button>
               </div>
             );
@@ -1230,14 +1233,16 @@ export default function Timesheets() {
 
             return (
               <Card key={ts.id} className="overflow-hidden" data-testid={`ts-card-${ts.id}`}>
-                <div className="p-4 flex flex-col sm:flex-row sm:items-center gap-4">
+                <div className="p-4 flex items-start gap-3 sm:flex-row">
                   {/* Avatar */}
-                  <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-sm shrink-0">
+                  <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-sm shrink-0 mt-0.5">
                     {empAv(ts.eid)}
                   </div>
 
-                  {/* Main info */}
+                  {/* Info + Actions (fills remaining width) */}
                   <div className="flex-1 min-w-0">
+                  {/* Main info */}
+                  <div className="min-w-0 mb-2">
                     <div className="flex flex-wrap items-center gap-2 mb-1">
                       {/* Show employee name on General tab only — on My Timesheet it's always the current user */}
                       {(isFullAccess || isSupervisor) && tsTab === "general" && (
@@ -1375,6 +1380,7 @@ export default function Timesheets() {
                       {expanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                     </Button>
                   </div>
+                  </div>{/* closes info+actions wrapper */}
                 </div>
 
                 {/* Expanded: signatures & staged approval chain */}

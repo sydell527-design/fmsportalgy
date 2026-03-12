@@ -175,6 +175,8 @@ export default function Dashboard() {
 
   // ── Expand state (agency cards) ──────────────────────────────────────────────
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  // ── Mobile dashboard tab (admin) ─────────────────────────────────────────────
+  const [mobileDashTab, setMobileDashTab] = useState<"roster" | "ops">("ops");
 
   // ── Live refresh tick ────────────────────────────────────────────────────────
   const [, setTick] = useState(0);
@@ -393,16 +395,16 @@ export default function Dashboard() {
                 {myPending.map((ts) => {
                   const absence = isAbsenceRecord(ts);
                   return (
-                    <div key={ts.id} className="flex items-center justify-between py-2 border-b last:border-0">
-                      <div>
+                    <div key={ts.id} className="flex items-center justify-between gap-2 py-2 border-b last:border-0">
+                      <div className="min-w-0">
                         <span className="font-medium text-sm">{ts.date}</span>
                         {absence ? (
-                          <span className="text-amber-600 text-xs ml-3 font-medium">{ts.dayStatus}</span>
+                          <span className="text-amber-600 text-xs ml-2 font-medium">{ts.dayStatus}</span>
                         ) : (
-                          <span className="text-muted-foreground text-xs ml-3">{ts.ci} → {ts.co}</span>
+                          <span className="text-muted-foreground text-xs ml-2 whitespace-nowrap">{ts.ci} → {ts.co ?? "—"}</span>
                         )}
                       </div>
-                      <Badge variant="outline" className="text-xs text-blue-600 border-blue-200 bg-blue-50">Sign Required</Badge>
+                      <Badge variant="outline" className="text-xs text-blue-600 border-blue-200 bg-blue-50 shrink-0">Sign Required</Badge>
                     </div>
                   );
                 })}
@@ -455,42 +457,62 @@ export default function Dashboard() {
         </div>
 
         {/* ── FILTER BAR ──────────────────────────────────────────────────── */}
-        <div className="bg-card border-b px-6 py-3 flex flex-wrap items-center gap-3">
-          <Filter className="w-4 h-4 text-muted-foreground shrink-0" />
-          <div className="flex items-center gap-1.5">
-            <Label className="text-xs text-muted-foreground whitespace-nowrap">From</Label>
-            <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)}
-              className="border rounded px-2 py-1 text-xs h-7 bg-background" data-testid="filter-date-from" />
+        <div className="bg-card border-b px-4 py-2.5 overflow-x-auto">
+          <div className="flex items-center gap-2.5 min-w-max">
+            <Filter className="w-4 h-4 text-muted-foreground shrink-0" />
+            <div className="flex items-center gap-1.5">
+              <Label className="text-xs text-muted-foreground whitespace-nowrap">From</Label>
+              <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)}
+                className="border rounded px-2 py-1 text-xs h-7 bg-background" data-testid="filter-date-from" />
+            </div>
+            <div className="flex items-center gap-1.5">
+              <Label className="text-xs text-muted-foreground whitespace-nowrap">To</Label>
+              <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)}
+                className="border rounded px-2 py-1 text-xs h-7 bg-background" data-testid="filter-date-to" />
+            </div>
+            <select value={agencyFilter} onChange={(e) => setAgencyFilter(e.target.value)}
+              className="border rounded px-2 py-1 text-xs h-7 bg-background" data-testid="filter-agency">
+              <option value="ALL">All Agencies</option>
+              {allAgencies.map((a) => <option key={a} value={a}>{a}</option>)}
+            </select>
+            <div className="relative">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
+              <input value={search} onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search employee…" className="border rounded pl-6 pr-2 py-1 text-xs h-7 bg-background w-36"
+                data-testid="filter-search" />
+            </div>
+            <Button variant="ghost" size="sm" className="h-7 text-xs whitespace-nowrap"
+              onClick={() => { setDateFrom(format(startOfMonth(new Date()), "yyyy-MM-dd")); setDateTo(format(endOfMonth(new Date()), "yyyy-MM-dd")); setAgencyFilter("ALL"); setSearch(""); }}
+              data-testid="button-reset-filters">
+              <RefreshCw className="w-3 h-3 mr-1" /> Reset
+            </Button>
+            <span className="text-xs text-muted-foreground whitespace-nowrap">{filteredSchedules.length} shift{filteredSchedules.length !== 1 ? "s" : ""}</span>
           </div>
-          <div className="flex items-center gap-1.5">
-            <Label className="text-xs text-muted-foreground whitespace-nowrap">To</Label>
-            <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)}
-              className="border rounded px-2 py-1 text-xs h-7 bg-background" data-testid="filter-date-to" />
-          </div>
-          <select value={agencyFilter} onChange={(e) => setAgencyFilter(e.target.value)}
-            className="border rounded px-2 py-1 text-xs h-7 bg-background" data-testid="filter-agency">
-            <option value="ALL">All Agencies</option>
-            {allAgencies.map((a) => <option key={a} value={a}>{a}</option>)}
-          </select>
-          <div className="relative">
-            <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
-            <input value={search} onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search employee…" className="border rounded pl-6 pr-2 py-1 text-xs h-7 bg-background w-40"
-              data-testid="filter-search" />
-          </div>
-          <Button variant="ghost" size="sm" className="h-7 text-xs"
-            onClick={() => { setDateFrom(format(startOfMonth(new Date()), "yyyy-MM-dd")); setDateTo(format(endOfMonth(new Date()), "yyyy-MM-dd")); setAgencyFilter("ALL"); setSearch(""); }}
-            data-testid="button-reset-filters">
-            <RefreshCw className="w-3 h-3 mr-1" /> Reset
-          </Button>
-          <div className="ml-auto text-xs text-muted-foreground">{filteredSchedules.length} shift{filteredSchedules.length !== 1 ? "s" : ""} in view</div>
         </div>
 
-        {/* ── MAIN BODY (two columns) ──────────────────────────────────────── */}
-        <div className="flex gap-0 overflow-hidden" style={{ height: "calc(100vh - 14.5rem)" }}>
+        {/* ── MOBILE TAB SWITCHER ──────────────────────────────────────────── */}
+        <div className="md:hidden flex border-b bg-card sticky top-0 z-10">
+          <button
+            onClick={() => setMobileDashTab("ops")}
+            className={`flex-1 py-3 text-sm font-semibold border-b-2 transition-colors ${mobileDashTab === "ops" ? "border-primary text-primary" : "border-transparent text-muted-foreground"}`}
+            data-testid="tab-mobile-ops"
+          >
+            Operations
+          </button>
+          <button
+            onClick={() => setMobileDashTab("roster")}
+            className={`flex-1 py-3 text-sm font-semibold border-b-2 transition-colors ${mobileDashTab === "roster" ? "border-primary text-primary" : "border-transparent text-muted-foreground"}`}
+            data-testid="tab-mobile-roster"
+          >
+            Roster
+          </button>
+        </div>
+
+        {/* ── MAIN BODY (two columns on desktop, tabs on mobile) ───────────── */}
+        <div className="flex flex-col md:flex-row gap-0 md:overflow-hidden md:h-[calc(100vh-14.5rem)]">
 
           {/* ── LEFT: Roster Management ─────────────────────────────────────── */}
-          <div className="w-[42%] border-r flex flex-col bg-background">
+          <div className={`${mobileDashTab === "roster" ? "flex" : "hidden"} md:flex flex-col w-full md:w-[42%] border-b md:border-b-0 md:border-r bg-background overflow-y-auto md:overflow-hidden`} style={{ minHeight: "50vh" }} data-testid="panel-roster">
             {/* Sub-header */}
             <div className="flex items-center gap-2 px-4 py-3 border-b bg-muted/20">
               <Building2 className="w-4 h-4 text-primary" />
@@ -643,7 +665,7 @@ export default function Dashboard() {
           </div>
 
           {/* ── RIGHT: Operations Panel ─────────────────────────────────────── */}
-          <div className="flex-1 flex flex-col overflow-hidden">
+          <div className={`${mobileDashTab === "ops" ? "flex" : "hidden"} md:flex flex-1 flex-col overflow-hidden`} data-testid="panel-ops">
 
             {/* ── End Shift Dialog ──────────────────────────────────────────── */}
             <Dialog open={!!endShiftTarget} onOpenChange={(o) => { if (!o) setEndShiftTarget(null); }}>
@@ -727,7 +749,7 @@ export default function Dashboard() {
             </Dialog>
 
             {/* ── Live Personnel Board ──────────────────────────────────────── */}
-            <div className="flex flex-col" style={{ flex: "0 0 auto", maxHeight: "50%" }}>
+            <div className="flex flex-col md:max-h-[50%] shrink-0">
               <div className="flex items-center gap-2 px-4 py-3 border-b bg-muted/20">
                 <span className="relative flex h-2 w-2">
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-500 opacity-75" />
