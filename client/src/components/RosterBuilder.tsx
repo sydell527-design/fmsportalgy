@@ -474,7 +474,10 @@ function SectionGrid({
               const dow = d.getDay();
               const isWeekend = dow === 0 || dow === 6;
               const isToday = ds === todayFmt;
-              const rowHasAnyShift = Object.values(row.cells).some((c) => c && c !== "Off");
+              const rowHasAnyShift = days.some((pd) => {
+                const pds = format(pd, "yyyy-MM-dd");
+                return row.cells[pds] && row.cells[pds] !== "Off";
+              });
               return (
                 <td key={ci} className={`p-0.5 align-middle ${isToday ? "bg-primary/5" : isWeekend ? "bg-muted/20" : ""}`}>
                   <CellButton
