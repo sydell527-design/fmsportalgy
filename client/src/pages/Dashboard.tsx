@@ -118,6 +118,50 @@ function AdherencePanel({
   isSupervisor: boolean;
   showElapsed?: boolean;
 }) {
+  const [agencyFilter, setAgencyFilter] = useState("ALL");
+  const [postFilter, setPostFilter] = useState("ALL");
+
+  // Derive unique agencies from rows (client > zone > "Unassigned")
+  const agencies = useMemo(() => {
+    const set = new Set<string>();
+    rows.forEach((r) => {
+      const a = r.sched.client ?? r.ts?.client ?? r.ts?.zone ?? "Unassigned";
+      set.add(a);
+    });
+    return Array.from(set).sort();
+  }, [rows]);
+
+  // Derive unique posts for selected agency
+  const posts = useMemo(() => {
+    if (agencyFilter === "ALL") return [];
+    const set = new Set<string>();
+    rows
+      .filter((r) => (r.sched.client ?? r.ts?.client ?? r.ts?.zone ?? "Unassigned") === agencyFilter)
+      .forEach((r) => {
+        const p = r.ts?.post ?? r.sched.location ?? null;
+        if (p) set.add(p);
+      });
+    return Array.from(set).sort();
+  }, [rows, agencyFilter]);
+
+  // Reset post filter when agency changes
+  const handleAgencyFilter = (a: string) => {
+    setAgencyFilter(a);
+    setPostFilter("ALL");
+  };
+
+  // Apply agency + post filter on top of the already-status-filtered rows
+  const displayRows = useMemo(() => {
+    let r = rows;
+    if (agencyFilter !== "ALL") {
+      r = r.filter((row) => (row.sched.client ?? row.ts?.client ?? row.ts?.zone ?? "Unassigned") === agencyFilter);
+    }
+    if (postFilter !== "ALL") {
+      r = r.filter((row) => (row.ts?.post ?? row.sched.location) === postFilter);
+    }
+    return r;
+  }, [rows, agencyFilter, postFilter]);
+
   const chips = [
     { key: "all",          label: "All",          count: summary.total,        color: "bg-muted text-muted-foreground border-border" },
     { key: "not-in",       label: "Not In",       count: summary.notIn,        color: "bg-red-50 text-red-700 border-red-200" },
@@ -166,7 +210,7 @@ function AdherencePanel({
         ))}
       </div>
 
-      {/* Filter chips */}
+      {/* Status filter chips */}
       <div className="flex gap-1.5 px-4 py-2 overflow-x-auto border-b shrink-0">
         {chips.map(({ key, label, count, color }) => (
           <button
@@ -184,14 +228,84 @@ function AdherencePanel({
         ))}
       </div>
 
+      {/* Agency filter */}
+      {agencies.length > 1 && (
+        <div className="flex gap-1.5 px-4 py-2 overflow-x-auto border-b shrink-0 bg-muted/5">
+          <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground font-medium shrink-0 mr-1">
+            <Building2 className="w-3 h-3" /> Agency:
+          </div>
+          <button
+            onClick={() => handleAgencyFilter("ALL")}
+            className={`px-2.5 py-1 rounded-md text-[11px] font-medium whitespace-nowrap border transition-colors ${
+              agencyFilter === "ALL"
+                ? "bg-primary text-primary-foreground border-primary"
+                : "bg-background text-muted-foreground border-border hover:border-primary/40"
+            }`}
+            data-testid="filter-agency-all"
+          >
+            All Agencies
+          </button>
+          {agencies.map((a) => {
+            const agCount = rows.filter((r) => (r.sched.client ?? r.ts?.client ?? r.ts?.zone ?? "Unassigned") === a).length;
+            return (
+              <button
+                key={a}
+                onClick={() => handleAgencyFilter(a)}
+                className={`px-2.5 py-1 rounded-md text-[11px] font-medium whitespace-nowrap border transition-colors ${
+                  agencyFilter === a
+                    ? "bg-primary text-primary-foreground border-primary"
+                    : "bg-background text-muted-foreground border-border hover:border-primary/40"
+                }`}
+                data-testid={`filter-agency-${a}`}
+              >
+                {a} <span className="ml-1 opacity-60">{agCount}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Post sub-filter (visible when an agency is selected and has posts) */}
+      {agencyFilter !== "ALL" && posts.length > 0 && (
+        <div className="flex gap-1.5 px-4 py-1.5 overflow-x-auto border-b shrink-0 bg-muted/10">
+          <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground font-medium shrink-0 mr-1">
+            <MapPin className="w-3 h-3" /> Post:
+          </div>
+          <button
+            onClick={() => setPostFilter("ALL")}
+            className={`px-2 py-0.5 rounded text-[11px] font-medium whitespace-nowrap border transition-colors ${
+              postFilter === "ALL"
+                ? "bg-primary text-primary-foreground border-primary"
+                : "bg-background text-muted-foreground border-border hover:border-primary/40"
+            }`}
+          >
+            All Posts
+          </button>
+          {posts.map((p) => (
+            <button
+              key={p}
+              onClick={() => setPostFilter(p)}
+              className={`px-2 py-0.5 rounded text-[11px] font-medium whitespace-nowrap border transition-colors ${
+                postFilter === p
+                  ? "bg-primary text-primary-foreground border-primary"
+                  : "bg-background text-muted-foreground border-border hover:border-primary/40"
+              }`}
+              data-testid={`filter-post-${p}`}
+            >
+              {p}
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* Rows */}
       <div className="divide-y overflow-y-auto max-h-[60vh] md:max-h-none">
-        {rows.length === 0 ? (
+        {displayRows.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-8 text-muted-foreground gap-2">
             <CheckCircle2 className="w-6 h-6 opacity-20" />
             <p className="text-xs">No records match this filter</p>
           </div>
-        ) : rows.map(({ sched, emp, ts, status, lateMins }) => {
+        ) : displayRows.map(({ sched, emp, ts, status, lateMins }) => {
           const si = statusInfo({ sched, emp, ts, status, lateMins });
           const av = emp?.av ?? sched.eid.slice(0, 2).toUpperCase();
           return (
