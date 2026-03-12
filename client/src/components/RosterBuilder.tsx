@@ -397,14 +397,14 @@ function SectionGrid({
           <th className="text-left py-2 px-2 font-medium text-muted-foreground text-xs uppercase tracking-wide w-20 sticky left-0 bg-background z-10 border-b border-r">Call Sign</th>
           <th className="text-left py-2 px-2 font-medium text-muted-foreground text-xs uppercase tracking-wide w-32 sticky left-20 bg-background z-10 border-b border-r">Location</th>
           <th className="text-left py-2 px-3 font-medium text-muted-foreground text-xs uppercase tracking-wide w-40 sticky left-52 bg-background z-10 border-b border-r">Employee</th>
-          <th className="py-2 px-1 font-medium text-muted-foreground text-xs uppercase tracking-wide w-24 sticky left-[368px] bg-background z-10 border-b border-r">Fill Row</th>
+          <th className="py-2 px-2 font-medium text-muted-foreground text-xs uppercase tracking-wide w-32 min-w-[128px] max-w-[128px] sticky left-[368px] bg-background z-10 border-b border-r">Fill Row</th>
           {days.map((d, i) => {
             const ds = format(d, "yyyy-MM-dd");
             const isToday = ds === todayFmt;
             const dow = d.getDay();
             const isWeekend = dow === 0 || dow === 6;
             return (
-              <th key={i} className={`text-center py-1.5 px-0.5 min-w-[56px] border-b ${isToday ? "bg-primary/10" : isWeekend ? "bg-muted/40" : ""}`}>
+              <th key={i} className={`text-center py-1.5 px-1 min-w-[64px] border-b ${isToday ? "bg-primary/10" : isWeekend ? "bg-muted/40" : ""}`}>
                 <div className={`text-[9px] uppercase ${isToday ? "text-primary font-bold" : "text-muted-foreground"}`}>{DAY_ABBR[dow]}</div>
                 <div className={`text-xs font-bold ${isToday ? "text-primary" : isWeekend ? "text-muted-foreground" : "text-foreground"}`}>{format(d, "d")}</div>
                 <div className="text-[8px] text-muted-foreground">{format(d, "MMM")}</div>
@@ -439,7 +439,7 @@ function SectionGrid({
               <div className="font-medium text-sm truncate max-w-[140px]">{row.name}</div>
               <div className="text-[10px] text-muted-foreground truncate max-w-[140px]">{row.pos}</div>
             </td>
-            <td className="py-1 px-1 align-middle sticky left-[368px] bg-background group-hover:bg-muted/30 z-10 border-r w-24 min-w-[96px] max-w-[96px]">
+            <td className="py-1 px-2 align-middle sticky left-[368px] bg-background group-hover:bg-muted/30 z-10 border-r w-32 min-w-[128px] max-w-[128px]">
               <div className="flex flex-col gap-1 w-full">
                 <select
                   className="w-full text-[10px] border rounded px-1 py-0.5 bg-background h-6 truncate"
@@ -1694,7 +1694,7 @@ function CellButton({ code, customTime, onUpdate }: {
         ref={ref}
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className={`w-full h-10 min-w-[52px] rounded border text-[11px] font-semibold transition-all hover:opacity-80 hover:shadow-sm ${cellStyle}`}
+        className={`w-full h-10 min-w-[60px] rounded border text-[11px] font-semibold transition-all hover:opacity-80 hover:shadow-sm ${cellStyle}`}
       >
         {isEmpty ? <Plus className="w-2.5 h-2.5 mx-auto opacity-20" /> : cellLabel}
       </button>
