@@ -1227,7 +1227,7 @@ export default function SchedulePage() {
                                     </div>
                                   ))}
                                   {cellShifts.length === 0 && (
-                                    <div className="text-center text-[10px] text-muted-foreground/30 py-1">–</div>
+                                    <div className="text-center text-[9px] text-muted-foreground/40 italic py-1 group-hover:hidden">Off Duty</div>
                                   )}
                                   <button
                                     onClick={() => openBuilder(d, emp.userId)}
@@ -1357,6 +1357,9 @@ export default function SchedulePage() {
                                 </div>
                               </div>
                             ))}
+                            {cellShifts.length === 0 && (
+                              <div className="text-center text-[9px] text-muted-foreground/40 italic py-1 group-hover:hidden">Off Duty</div>
+                            )}
                             {isPrivileged && (
                               <button
                                 onClick={() => openBuilder(d, emp.userId)}
