@@ -474,10 +474,11 @@ function SectionGrid({
               const dow = d.getDay();
               const isWeekend = dow === 0 || dow === 6;
               const isToday = ds === todayFmt;
+              const rowHasAnyShift = Object.values(row.cells).some((c) => c && c !== "Off");
               return (
                 <td key={ci} className={`p-0.5 align-middle ${isToday ? "bg-primary/5" : isWeekend ? "bg-muted/20" : ""}`}>
                   <CellButton
-                    code={row.cells[ds] ?? ""}
+                    code={!row.cells[ds] && rowHasAnyShift ? "Off" : (row.cells[ds] ?? "")}
                     customTime={row.customTimes[ds]}
                     onUpdate={(code, ct) => onUpdateCell(row.eid, ds, code, ct)}
                   />
