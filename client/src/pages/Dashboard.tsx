@@ -41,12 +41,26 @@ function statusLabel(s: string) {
   };
   return m[s] ?? s;
 }
-function elapsed(ci: string) {
+function computeElapsed(ci: string, date: string): string {
   const now = new Date();
-  const start = parse(`${format(now, "yyyy-MM-dd")} ${ci}`, "yyyy-MM-dd HH:mm", new Date());
-  const m = Math.max(0, differenceInMinutes(now, start));
-  const h = Math.floor(m / 60);
-  return h > 0 ? `${h}h ${m % 60}m` : `${m}m`;
+  const start = parse(`${date} ${ci}`, "yyyy-MM-dd HH:mm", new Date());
+  const totalMin = Math.max(0, differenceInMinutes(now, start));
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  const s = Math.floor((now.getTime() - (start.getTime() + totalMin * 60000)) / 1000);
+  if (h > 0) return `${h}h ${m}m ${s}s`;
+  if (m > 0) return `${m}m ${s}s`;
+  return `${Math.max(0, s)}s`;
+}
+
+// Real-time ticking elapsed counter — updates every second
+function LiveElapsed({ ci, date, className }: { ci: string; date: string; className?: string }) {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const timer = setInterval(() => setTick((t) => t + 1), 1000);
+    return () => clearInterval(timer);
+  }, []);
+  return <span className={className}>{computeElapsed(ci, date)}</span>;
 }
 function fmtDate(d: string) { return format(new Date(d + "T00:00"), "d MMM yy"); }
 
@@ -578,7 +592,7 @@ export default function Dashboard() {
                 <Badge variant="secondary" className="text-xs">{livePersonnel.active.length} on duty</Badge>
                 <div className="ml-auto flex items-center gap-2">
                   <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
-                    <Radio className="w-3 h-3" /> Every 60s
+                    <Radio className="w-3 h-3" /> Live timers
                   </span>
                   <button
                     onClick={() => setLiveExpanded(true)}
@@ -645,7 +659,7 @@ export default function Dashboard() {
                           </div>
                           <div className="text-right shrink-0">
                             <p className="text-xs font-mono font-semibold text-green-600">{ts.ci}</p>
-                            <p className="text-[10px] text-muted-foreground">{elapsed(ts.ci ?? "00:00")}</p>
+                            <LiveElapsed ci={ts.ci ?? "00:00"} date={ts.date} className="text-[10px] text-muted-foreground font-mono" />
                           </div>
                         </div>
                       );
@@ -757,7 +771,7 @@ export default function Dashboard() {
                               </div>
                               <div className="text-right">
                                 <p className="text-[10px] text-muted-foreground">Elapsed</p>
-                                <p className="text-sm font-semibold">{elapsed(ts.ci ?? "00:00")}</p>
+                                <LiveElapsed ci={ts.ci ?? "00:00"} date={ts.date} className="text-sm font-semibold font-mono" />
                               </div>
                             </div>
                           </div>

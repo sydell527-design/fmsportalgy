@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useTimesheets, useUpdateTimesheet } from "@/hooks/use-timesheets";
 import { useUsers } from "@/hooks/use-users";
 import { useAuth } from "@/hooks/use-auth";
@@ -27,15 +27,25 @@ function calcHours(ci: string, co: string, brkMins: number) {
   return { reg, ot };
 }
 
-function elapsed(ci: string): string {
+function computeElapsed(ci: string, date: string): string {
   const now = new Date();
-  const today = format(now, "yyyy-MM-dd");
-  const start = parse(`${today} ${ci}`, "yyyy-MM-dd HH:mm", new Date());
-  const mins = differenceInMinutes(now, start);
-  if (mins < 60) return `${mins}m`;
-  const h = Math.floor(mins / 60);
-  const m = mins % 60;
-  return `${h}h ${m}m`;
+  const start = parse(`${date} ${ci}`, "yyyy-MM-dd HH:mm", new Date());
+  const totalMin = Math.max(0, differenceInMinutes(now, start));
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  const s = Math.floor((now.getTime() - (start.getTime() + totalMin * 60000)) / 1000);
+  if (h > 0) return `${h}h ${m}m ${s}s`;
+  if (m > 0) return `${m}m ${s}s`;
+  return `${Math.max(0, s)}s`;
+}
+
+function LiveElapsed({ ci, date }: { ci: string; date: string }) {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const timer = setInterval(() => setTick((t) => t + 1), 1000);
+    return () => clearInterval(timer);
+  }, []);
+  return <>{computeElapsed(ci, date)}</>;
 }
 
 export function ActiveOfficers() {
@@ -172,8 +182,8 @@ export function ActiveOfficers() {
                       {ts.zone && <> · <MapPin className="inline w-3 h-3" /> {ts.zone}</>}
                       {ts.post && <> · Post <strong>{ts.post}</strong></>}
                     </p>
-                    <p className="text-xs text-green-600 font-medium mt-1 flex items-center gap-1">
-                      <Clock className="w-3 h-3" /> On duty for {elapsed(ts.ci!)}
+                    <p className="text-xs text-green-600 font-medium mt-1 flex items-center gap-1 font-mono">
+                      <Clock className="w-3 h-3 shrink-0" /> On duty for <LiveElapsed ci={ts.ci!} date={ts.date} />
                     </p>
                   </div>
                   <Badge className="bg-green-100 text-green-700 border-green-200 text-xs shrink-0">Active</Badge>
