@@ -416,7 +416,7 @@ async function seedDatabase() {
       { name:"UN", lat:6.8100, lng:-58.1550, radius:200, description:"UN House Guyana", active:true },
       { name:"DMC", lat:6.8050, lng:-58.1620, radius:200, description:"Diamond/Eccles area", active:true },
       { name:"ARU", lat:6.8120, lng:-58.1480, radius:200, description:"Arouca site", active:true },
-      { name:"CANTEEN", lat:6.8135, lng:-58.1478, radius:80, description:"Onsite Canteen", active:true },
+      { name:"CANTEEN", lat:6.813512295307431, lng:-58.147828217112774, radius:80, description:"Onsite Canteen", active:true },
     ];
     for (const g of geoSeed) await storage.createGeofence(g);
   }
@@ -466,7 +466,7 @@ async function seedDatabase() {
     { name:"UN", lat:6.8100, lng:-58.1550, radius:200, description:"UN House Guyana", active:true },
     { name:"DMC", lat:6.8050, lng:-58.1620, radius:200, description:"Diamond/Eccles area", active:true },
     { name:"ARU", lat:6.8120, lng:-58.1480, radius:200, description:"Arouca site", active:true },
-    { name:"CANTEEN", lat:6.8135, lng:-58.1478, radius:80, description:"Onsite Canteen", active:true },
+    { name:"CANTEEN", lat:6.813512295307431, lng:-58.147828217112774, radius:80, description:"Onsite Canteen", active:true },
   ];
   for (const g of geoSeed) await storage.createGeofence(g);
 }
