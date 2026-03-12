@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { useCreateTimesheet, useTimesheets, useUpdateTimesheet } from "@/hooks/use-timesheets";
 import { useGeofences } from "@/hooks/use-geofences";
@@ -10,6 +11,7 @@ import { useToast } from "@/hooks/use-toast";
 import { MapPin, Clock, LogIn, LogOut, CheckCircle2, Navigation, AlertTriangle, PenLine, ShieldCheck, Car, Wifi, Shield, ShieldOff, Siren, HeartPulse, UserX } from "lucide-react";
 import { useLocation } from "wouter";
 import { format } from "date-fns";
+import { api } from "@shared/routes";
 import {
   DAY_STATUSES, HOLIDAY_TYPES, ARMED_STATUSES, CLIENT_AGENCIES,
   PH_HOLIDAYS,
@@ -95,6 +97,7 @@ function splitHours(totalHours: number, dayStatus: DayStatus, holidayType: Holid
 // ── Component ────────────────────────────────────────────────────────────────
 export function ClockInOut() {
   const { user } = useAuth();
+  const queryClient = useQueryClient();
   const todayDate = format(new Date(), "yyyy-MM-dd");
   const { data: timesheets } = useTimesheets({ startDate: todayDate, endDate: todayDate, eid: user?.userId });
   const { data: allGeofences } = useGeofences();
@@ -257,6 +260,8 @@ export function ClockInOut() {
         edited: false, hist: [],
       } as any);
 
+      await queryClient.refetchQueries({ queryKey: [api.timesheets.list.path] });
+
       toast({
         title: "Clocked in!",
         description: `${selectedZone}${selectedPost ? ` · ${selectedPost}` : ""} · ${armedStatus}${autoOut ? ` · Expected out: ${autoOut}` : ""}`,
@@ -328,6 +333,16 @@ export function ClockInOut() {
         ph  > 0 ? `${ph.toFixed(1)}h PH` : null,
         mealCount > 0 ? `${mealCount} meal` : null,
       ].filter(Boolean).join(" · ");
+
+      await queryClient.refetchQueries({ queryKey: [api.timesheets.list.path] });
+
+      setSelectedZone("");
+      setSelectedPost("");
+      setGpsCoords(null);
+      setGpsAccuracy(null);
+      setGpsStatus("idle");
+      setLocationEnabled(false);
+      setDistanceFromZone(null);
 
       toast({ title: "Clocked out!", description: summary || `${totalHours.toFixed(1)}h total` });
     } catch (err: any) {
