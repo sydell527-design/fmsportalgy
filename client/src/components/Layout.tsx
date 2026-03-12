@@ -165,33 +165,11 @@ export function Layout({ children }: LayoutProps) {
         )}
 
         {/* Page Content */}
-        <div className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8 bg-background pb-20 md:pb-6">
+        <div className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8 bg-background pb-6">
           <div className="max-w-6xl mx-auto">
             {children}
           </div>
         </div>
-
-        {/* ── Mobile Bottom Navigation Bar ─────────────────────────────── */}
-        <nav className="md:hidden fixed bottom-0 left-0 right-0 z-20 bg-card border-t border-border flex">
-          {bottomNavItems.map((item) => {
-            const isActive = location === item.href;
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={`flex-1 flex flex-col items-center justify-center py-2 gap-0.5 text-[10px] font-medium transition-colors ${
-                  isActive
-                    ? "text-primary"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-                data-testid={`bottom-nav-${item.label.toLowerCase()}`}
-              >
-                <item.icon className={`w-5 h-5 ${isActive ? "text-primary" : ""}`} />
-                <span className="leading-tight">{item.label}</span>
-              </Link>
-            );
-          })}
-        </nav>
       </main>
     </div>
   );

@@ -916,14 +916,16 @@ export default function Timesheets() {
         if (rows.length === 0) return null;
         return (
           <div className="mb-5">
-            <div className="flex items-center gap-2 mb-3">
-              <Users className="w-4 h-4 text-muted-foreground" />
-              <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Today's Attendance — {format(todayDate, "EEEE, MMMM d")}</h2>
-              <div className="flex items-center gap-2 ml-auto text-xs text-muted-foreground">
-                <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-green-400 inline-block" /> Clocked in</span>
-                <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-purple-400 inline-block" /> Late</span>
-                <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-yellow-400 inline-block" /> Not in</span>
-                <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-red-400 inline-block" /> Absent/Sick</span>
+            <div className="flex flex-col gap-1.5 mb-3">
+              <div className="flex items-center gap-2">
+                <Users className="w-4 h-4 text-muted-foreground shrink-0" />
+                <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Today's Attendance — {format(todayDate, "EEEE, MMMM d")}</h2>
+              </div>
+              <div className="flex items-center gap-3 flex-wrap text-xs text-muted-foreground pl-6">
+                <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-green-400 inline-block shrink-0" /> Clocked in</span>
+                <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-purple-400 inline-block shrink-0" /> Late</span>
+                <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-yellow-400 inline-block shrink-0" /> Not in</span>
+                <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-red-400 inline-block shrink-0" /> Absent/Sick</span>
               </div>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">

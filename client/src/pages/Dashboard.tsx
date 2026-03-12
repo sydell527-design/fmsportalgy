@@ -19,6 +19,7 @@ import {
   Trash2, Shield, ShieldOff, Radio, Search, ChevronDown,
   ChevronRight, LayoutDashboard, RefreshCw, Filter,
   Maximize2, Minimize2, MapPin, Briefcase, LogOut, Loader2,
+  UserCheck, UserX, ClipboardList, Timer, ChevronUp,
 } from "lucide-react";
 import { format, differenceInMinutes, parse, startOfMonth, endOfMonth } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
@@ -83,6 +84,149 @@ function KpiCard({ label, value, icon: Icon, color = "text-foreground", sub }: {
   );
 }
 
+// ── Adherence Panel Component ──────────────────────────────────────────────────
+type AdherenceRow = {
+  sched: Schedule;
+  emp: { name: string; pos: string; av: string; status: string } | undefined;
+  ts: Timesheet | undefined;
+  status: "on-time" | "late" | "not-in" | "absent" | "done";
+  lateMins: number;
+};
+
+function AdherencePanel({
+  rows,
+  summary,
+  adherenceFilter,
+  setAdherenceFilter,
+  openEndShift,
+  isAdmin,
+  isSupervisor,
+}: {
+  rows: AdherenceRow[];
+  summary: { total: number; onTime: number; late: number; notIn: number; absent: number; done: number };
+  adherenceFilter: string;
+  setAdherenceFilter: (v: any) => void;
+  openEndShift: (ts: Timesheet) => void;
+  isAdmin: boolean;
+  isSupervisor: boolean;
+}) {
+  const chips = [
+    { key: "all",      label: "All",      count: summary.total,   color: "bg-muted text-muted-foreground border-border" },
+    { key: "not-in",   label: "Not In",   count: summary.notIn,   color: "bg-red-50 text-red-700 border-red-200" },
+    { key: "late",     label: "Late",     count: summary.late,    color: "bg-purple-50 text-purple-700 border-purple-200" },
+    { key: "absent",   label: "Absent",   count: summary.absent,  color: "bg-orange-50 text-orange-700 border-orange-200" },
+    { key: "on-time",  label: "On Time",  count: summary.onTime,  color: "bg-green-50 text-green-700 border-green-200" },
+    { key: "done",     label: "Done",     count: summary.done,    color: "bg-blue-50 text-blue-700 border-blue-200" },
+  ];
+
+  function statusInfo(r: AdherenceRow) {
+    if (r.status === "on-time")  return { icon: <UserCheck className="w-3.5 h-3.5 text-green-600" />, label: "On Time",    bg: "border-green-200 bg-green-50" };
+    if (r.status === "late")     return { icon: <Timer className="w-3.5 h-3.5 text-purple-600" />,    label: `Late ${r.lateMins}m`, bg: "border-purple-200 bg-purple-50" };
+    if (r.status === "not-in")   return { icon: <UserX className="w-3.5 h-3.5 text-red-500" />,       label: "Not In",     bg: "border-red-200 bg-red-50" };
+    if (r.status === "absent")   return { icon: <XCircle className="w-3.5 h-3.5 text-orange-600" />,  label: r.ts?.dayStatus ?? "Absent", bg: "border-orange-200 bg-orange-50" };
+    if (r.status === "done")     return { icon: <CheckCircle2 className="w-3.5 h-3.5 text-blue-500" />, label: `Done ${r.ts?.co ?? ""}`, bg: "border-blue-200 bg-blue-50" };
+    return { icon: null, label: r.status, bg: "" };
+  }
+
+  if (summary.total === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-12 text-muted-foreground gap-2">
+        <ClipboardList className="w-8 h-8 opacity-20" />
+        <p className="text-sm">No shifts scheduled for today</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col">
+      {/* Summary strip */}
+      <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 px-4 py-3 border-b bg-muted/10">
+        {[
+          { label: "Scheduled", value: summary.total, color: "text-foreground" },
+          { label: "On Time",   value: summary.onTime, color: "text-green-600" },
+          { label: "Late",      value: summary.late,   color: "text-purple-600" },
+          { label: "Not In",    value: summary.notIn,  color: "text-red-600" },
+          { label: "Absent",    value: summary.absent, color: "text-orange-600" },
+          { label: "Done",      value: summary.done,   color: "text-blue-600" },
+        ].map(({ label, value, color }) => (
+          <div key={label} className="text-center">
+            <p className={`text-lg font-bold leading-tight ${color}`}>{value}</p>
+            <p className="text-[10px] text-muted-foreground leading-tight">{label}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Filter chips */}
+      <div className="flex gap-1.5 px-4 py-2 overflow-x-auto border-b shrink-0">
+        {chips.map(({ key, label, count, color }) => (
+          <button
+            key={key}
+            onClick={() => setAdherenceFilter(key)}
+            className={`px-2.5 py-1 rounded-md text-xs font-medium whitespace-nowrap border transition-colors ${
+              adherenceFilter === key
+                ? "bg-primary text-primary-foreground border-primary"
+                : color
+            }`}
+            data-testid={`filter-adherence-${key}`}
+          >
+            {label} {count > 0 && <span className="ml-1 font-bold">{count}</span>}
+          </button>
+        ))}
+      </div>
+
+      {/* Rows */}
+      <div className="divide-y overflow-y-auto max-h-[60vh] md:max-h-none">
+        {rows.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-8 text-muted-foreground gap-2">
+            <CheckCircle2 className="w-6 h-6 opacity-20" />
+            <p className="text-xs">No records match this filter</p>
+          </div>
+        ) : rows.map(({ sched, emp, ts, status, lateMins }) => {
+          const si = statusInfo({ sched, emp, ts, status, lateMins });
+          const av = emp?.av ?? sched.eid.slice(0, 2).toUpperCase();
+          return (
+            <div key={sched.eid} className={`flex items-center gap-3 px-4 py-3 ${si.bg} border-l-4`} data-testid={`adherence-row-${sched.eid}`}>
+              {/* Avatar */}
+              <div className="w-9 h-9 rounded-full bg-white/80 border flex items-center justify-center text-xs font-bold text-foreground shrink-0">
+                {av}
+              </div>
+              {/* Info */}
+              <div className="flex-1 min-w-0">
+                <p className="font-semibold text-sm truncate">{emp?.name ?? sched.eid}</p>
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground mt-0.5">
+                  <span className="flex items-center gap-0.5">
+                    <Clock className="w-3 h-3" />
+                    Scheduled {sched.shiftStart}–{sched.shiftEnd}
+                  </span>
+                  {ts?.ci && <span>Clocked in: <strong className="text-foreground">{ts.ci}</strong></span>}
+                  {sched.client && <span className="flex items-center gap-0.5"><Briefcase className="w-3 h-3" />{sched.client}</span>}
+                </div>
+              </div>
+              {/* Status badge */}
+              <div className="flex items-center gap-1.5 shrink-0">
+                <span className="flex items-center gap-1 text-xs font-medium">
+                  {si.icon} {si.label}
+                </span>
+                {(isAdmin || isSupervisor) && ts?.ci && !ts?.co && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 px-2 text-xs border-destructive/30 text-destructive hover:bg-destructive/10"
+                    onClick={() => openEndShift(ts!)}
+                    data-testid={`button-adherence-end-${sched.eid}`}
+                  >
+                    <LogOut className="w-3 h-3 mr-1" /> End
+                  </Button>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ── Main Dashboard ─────────────────────────────────────────────────────────────
 export default function Dashboard() {
   const { user } = useAuth();
@@ -99,10 +243,10 @@ export default function Dashboard() {
     ((user.pos ?? "").toLowerCase().includes("supervisor") ||
       (users ?? []).some((u) => u.userId !== user.userId && (u.fa === user.pos || u.sa === user.pos)));
 
-  // ── Admin schedule data ──────────────────────────────────────────────────────
+  // ── Admin/Supervisor schedule data ──────────────────────────────────────────
   const { data: allSchedules, refetch: refetchSchedules } = useQuery<Schedule[]>({
     queryKey: ["/api/schedules/all"],
-    enabled: isAdmin,
+    enabled: isAdmin || isSupervisor,
   });
 
   // ── Filters ─────────────────────────────────────────────────────────────────
@@ -176,7 +320,7 @@ export default function Dashboard() {
   // ── Expand state (agency cards) ──────────────────────────────────────────────
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   // ── Mobile dashboard tab (admin) ─────────────────────────────────────────────
-  const [mobileDashTab, setMobileDashTab] = useState<"roster" | "ops">("ops");
+  const [mobileDashTab, setMobileDashTab] = useState<"roster" | "ops" | "adherence">("ops");
 
   // ── Live refresh tick ────────────────────────────────────────────────────────
   const [, setTick] = useState(0);
@@ -285,6 +429,65 @@ export default function Dashboard() {
   const [locFilter, setLocFilter] = useState("ALL");
   const [liveExpanded, setLiveExpanded] = useState(false);
   const [liveSearch, setLiveSearch] = useState("");
+
+  // ── Schedule Adherence (today) ───────────────────────────────────────────────
+  const todayAdherence = useMemo(() => {
+    if (!allSchedules) return [];
+    const GRACE = 15;
+    const seen = new Set<string>();
+    return (allSchedules ?? [])
+      .filter((s) => s.date === today)
+      .filter((s) => { if (seen.has(s.eid)) return false; seen.add(s.eid); return true; })
+      .map((sched) => {
+        const ts = (timesheets ?? []).find((t) => t.eid === sched.eid && (t.date === today || t.date === yesterday));
+        const emp = userMap[sched.eid];
+        const [sh, sm] = sched.shiftStart.split(":").map(Number);
+        const schedMins = sh * 60 + sm;
+        let status: "on-time" | "late" | "not-in" | "absent" | "done";
+        let lateMins = 0;
+        const ABSENCE = ["Sick", "Absent", "Annual Leave"];
+        if (ts?.dayStatus && ABSENCE.includes(ts.dayStatus)) {
+          status = "absent";
+        } else if (ts?.co) {
+          status = "done";
+        } else if (ts?.ci) {
+          const [ch, cm] = ts.ci.split(":").map(Number);
+          lateMins = Math.max(0, ch * 60 + cm - schedMins - GRACE);
+          status = lateMins > 0 ? "late" : "on-time";
+        } else {
+          status = "not-in";
+        }
+        return { sched, emp, ts, status, lateMins };
+      })
+      .sort((a, b) => {
+        const ord: Record<string, number> = { absent: 0, "not-in": 1, late: 2, done: 3, "on-time": 4 };
+        return (ord[a.status] ?? 9) - (ord[b.status] ?? 9);
+      });
+  }, [allSchedules, timesheets, today, yesterday, userMap]);
+
+  const adherenceSummary = useMemo(() => ({
+    total: todayAdherence.length,
+    onTime: todayAdherence.filter((r) => r.status === "on-time").length,
+    late: todayAdherence.filter((r) => r.status === "late").length,
+    notIn: todayAdherence.filter((r) => r.status === "not-in").length,
+    absent: todayAdherence.filter((r) => r.status === "absent").length,
+    done: todayAdherence.filter((r) => r.status === "done").length,
+  }), [todayAdherence]);
+
+  // Supervisor sees only their direct reports; admin sees all
+  const myAdherence = useMemo(() => {
+    if (isAdmin) return todayAdherence;
+    return todayAdherence.filter((row) => {
+      const emp = (users ?? []).find((u) => u.userId === row.sched.eid);
+      return emp?.fa === user.pos || emp?.sa === user.pos;
+    });
+  }, [isAdmin, todayAdherence, users, user.pos]);
+
+  const [adherenceFilter, setAdherenceFilter] = useState<"all" | "not-in" | "late" | "absent" | "on-time" | "done">("all");
+  const filteredAdherence = useMemo(() =>
+    adherenceFilter === "all" ? myAdherence : myAdherence.filter((r) => r.status === adherenceFilter),
+    [myAdherence, adherenceFilter],
+  );
   const liveDisplayed = useMemo(() => {
     let rows = locFilter === "ALL"
       ? livePersonnel.active
@@ -411,6 +614,28 @@ export default function Dashboard() {
               </div>
             </div>
           )}
+
+          {/* ── Adherence card for supervisor ──────────────────────────── */}
+          {isSupervisor && myAdherence.length > 0 && (
+            <div className="bg-card border rounded-xl overflow-hidden shadow-sm">
+              <div className="flex items-center gap-2 px-5 py-3 border-b bg-muted/20">
+                <ClipboardList className="w-4 h-4 text-primary" />
+                <h3 className="font-semibold text-sm">Today's Schedule Adherence</h3>
+                <Badge variant="secondary" className="text-xs">{myAdherence.length} scheduled</Badge>
+                {adherenceSummary.notIn > 0 && <Badge variant="destructive" className="text-xs">{adherenceSummary.notIn} not in</Badge>}
+                {adherenceSummary.late > 0 && <Badge className="text-xs bg-purple-100 text-purple-700 border border-purple-200 hover:bg-purple-100">{adherenceSummary.late} late</Badge>}
+              </div>
+              <AdherencePanel
+                rows={filteredAdherence}
+                summary={{ ...adherenceSummary, total: myAdherence.length }}
+                adherenceFilter={adherenceFilter}
+                setAdherenceFilter={setAdherenceFilter}
+                openEndShift={openEndShift}
+                isAdmin={false}
+                isSupervisor={true}
+              />
+            </div>
+          )}
         </div>
       </Layout>
     );
@@ -494,18 +719,39 @@ export default function Dashboard() {
         <div className="md:hidden flex border-b bg-card sticky top-0 z-10">
           <button
             onClick={() => setMobileDashTab("ops")}
-            className={`flex-1 py-3 text-sm font-semibold border-b-2 transition-colors ${mobileDashTab === "ops" ? "border-primary text-primary" : "border-transparent text-muted-foreground"}`}
+            className={`flex-1 py-3 text-xs font-semibold border-b-2 transition-colors ${mobileDashTab === "ops" ? "border-primary text-primary" : "border-transparent text-muted-foreground"}`}
             data-testid="tab-mobile-ops"
           >
             Operations
           </button>
           <button
             onClick={() => setMobileDashTab("roster")}
-            className={`flex-1 py-3 text-sm font-semibold border-b-2 transition-colors ${mobileDashTab === "roster" ? "border-primary text-primary" : "border-transparent text-muted-foreground"}`}
+            className={`flex-1 py-3 text-xs font-semibold border-b-2 transition-colors ${mobileDashTab === "roster" ? "border-primary text-primary" : "border-transparent text-muted-foreground"}`}
             data-testid="tab-mobile-roster"
           >
             Roster
           </button>
+          <button
+            onClick={() => setMobileDashTab("adherence")}
+            className={`flex-1 py-3 text-xs font-semibold border-b-2 transition-colors ${mobileDashTab === "adherence" ? "border-primary text-primary" : "border-transparent text-muted-foreground"}`}
+            data-testid="tab-mobile-adherence"
+          >
+            Adherence
+          </button>
+        </div>
+
+        {/* ── ADHERENCE PANEL (mobile tab OR desktop full-width section) ─────── */}
+        {/* Mobile: shows as its own tab */}
+        <div className={`${mobileDashTab === "adherence" ? "block" : "hidden"} md:hidden`} data-testid="panel-adherence-mobile">
+          <AdherencePanel
+            rows={filteredAdherence}
+            summary={adherenceSummary}
+            adherenceFilter={adherenceFilter}
+            setAdherenceFilter={setAdherenceFilter}
+            openEndShift={openEndShift}
+            isAdmin={isAdmin}
+            isSupervisor={isSupervisor}
+          />
         </div>
 
         {/* ── MAIN BODY (two columns on desktop, tabs on mobile) ───────────── */}
@@ -1036,6 +1282,26 @@ export default function Dashboard() {
               </div>
             </div>
           </div>
+        </div>
+
+        {/* ── ADHERENCE SECTION (desktop — always visible below two-panel area) ── */}
+        <div className="hidden md:block border-t" data-testid="panel-adherence-desktop">
+          <div className="flex items-center gap-2 px-4 py-3 border-b bg-muted/20">
+            <ClipboardList className="w-4 h-4 text-primary" />
+            <span className="font-semibold text-sm">Schedule Adherence — Today</span>
+            <Badge variant="secondary" className="text-xs">{adherenceSummary.total} scheduled</Badge>
+            {adherenceSummary.notIn > 0 && <Badge variant="destructive" className="text-xs">{adherenceSummary.notIn} not in</Badge>}
+            {adherenceSummary.late > 0 && <Badge className="text-xs bg-purple-100 text-purple-700 border border-purple-200 hover:bg-purple-100">{adherenceSummary.late} late</Badge>}
+          </div>
+          <AdherencePanel
+            rows={filteredAdherence}
+            summary={adherenceSummary}
+            adherenceFilter={adherenceFilter}
+            setAdherenceFilter={setAdherenceFilter}
+            openEndShift={openEndShift}
+            isAdmin={isAdmin}
+            isSupervisor={isSupervisor}
+          />
         </div>
       </div>
 
