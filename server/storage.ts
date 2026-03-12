@@ -1,6 +1,6 @@
 import { db } from "./db";
 import {
-  users, timesheets, requests, geofences, employeeChildren, employeeLoans, schedules, callSigns, companySettings, payslips, periodDeductions,
+  users, timesheets, requests, geofences, employeeChildren, employeeLoans, schedules, callSigns, companySettings, payslips, periodDeductions, passwordResetRequests,
   type User, type InsertUser,
   type Timesheet, type InsertTimesheet,
   type Request, type InsertRequest,
@@ -12,6 +12,7 @@ import {
   type CompanySettings,
   type Payslip, type InsertPayslip,
   type PeriodDeduction, type InsertPeriodDeduction,
+  type PasswordResetRequest,
 } from "@shared/schema";
 import { eq, and, gte, lte, desc, inArray, sql } from "drizzle-orm";
 
@@ -85,6 +86,10 @@ export interface IStorage {
 
   getPeriodDeductionsByPeriod(period: string): Promise<PeriodDeduction[]>;
   upsertPeriodDeduction(data: InsertPeriodDeduction): Promise<PeriodDeduction>;
+
+  getPasswordResetRequests(): Promise<PasswordResetRequest[]>;
+  createPasswordResetRequest(userId: string): Promise<PasswordResetRequest | null>;
+  resolvePasswordResetRequest(id: number, newPassword: string, resetBy: string): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -361,6 +366,38 @@ export class DatabaseStorage implements IStorage {
       const [row] = await db.insert(periodDeductions).values(data).returning();
       return row;
     }
+  }
+
+  async getPasswordResetRequests(): Promise<PasswordResetRequest[]> {
+    return db.select().from(passwordResetRequests)
+      .where(eq(passwordResetRequests.status, "pending"))
+      .orderBy(desc(passwordResetRequests.id));
+  }
+
+  async createPasswordResetRequest(userId: string): Promise<PasswordResetRequest | null> {
+    const user = await this.getUserByUsername(userId);
+    if (!user) return null;
+    const existing = await db.select().from(passwordResetRequests)
+      .where(and(eq(passwordResetRequests.userId, userId), eq(passwordResetRequests.status, "pending")));
+    if (existing.length > 0) return existing[0];
+    const [row] = await db.insert(passwordResetRequests).values({
+      userId,
+      name: user.name,
+      requestedAt: new Date().toISOString(),
+      status: "pending",
+    }).returning();
+    return row;
+  }
+
+  async resolvePasswordResetRequest(id: number, newPassword: string, resetBy: string): Promise<void> {
+    const [req] = await db.select().from(passwordResetRequests).where(eq(passwordResetRequests.id, id));
+    if (!req) return;
+    await db.update(users)
+      .set({ password: newPassword, fpc: true })
+      .where(eq(users.username, req.userId));
+    await db.update(passwordResetRequests)
+      .set({ status: "completed", resolvedAt: new Date().toISOString(), resetBy })
+      .where(eq(passwordResetRequests.id, id));
   }
 }
 

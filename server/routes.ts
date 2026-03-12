@@ -458,6 +458,33 @@ async function seedDatabase() {
   ];
   for (const req of reqseed) await storage.createRequest(req as any);
 
+  // ── PASSWORD RESET REQUESTS ────────────────────────────────────────────────
+  app.post("/api/password-reset-requests", async (req, res) => {
+    try {
+      const { userId } = req.body;
+      if (!userId) return res.status(400).json({ message: "Employee ID is required" });
+      const result = await storage.createPasswordResetRequest(String(userId).trim());
+      if (!result) return res.status(404).json({ message: "Employee ID not found. Please contact your admin directly." });
+      res.status(201).json({ message: "Password reset requested successfully" });
+    } catch { res.status(500).json({ message: "Server error" }); }
+  });
+
+  app.get("/api/password-reset-requests", async (_req, res) => {
+    try {
+      res.json(await storage.getPasswordResetRequests());
+    } catch { res.status(500).json({ message: "Server error" }); }
+  });
+
+  app.patch("/api/password-reset-requests/:id/resolve", async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const { newPassword, resetBy } = req.body;
+      if (!newPassword || String(newPassword).length < 4) return res.status(400).json({ message: "New password must be at least 4 characters" });
+      await storage.resolvePasswordResetRequest(id, String(newPassword), String(resetBy ?? "admin"));
+      res.json({ message: "Password reset successfully" });
+    } catch { res.status(500).json({ message: "Server error" }); }
+  });
+
   // Seed geofences
   const geoSeed = [
     { name:"HEAD OFFICE", lat:6.813348605011895, lng:-58.14785407612874, radius:150, description:"FMS Head Office, Georgetown", active:true },

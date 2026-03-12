@@ -311,6 +311,17 @@ export const payslips = pgTable("payslips", {
   index("pay_eid_seen_idx").on(t.eid, t.seen),
 ]);
 
+// ── Password Reset Requests ────────────────────────────────────────────────
+export const passwordResetRequests = pgTable("password_reset_requests", {
+  id: serial("id").primaryKey(),
+  userId: text("user_id").notNull(),
+  name: text("name").notNull(),
+  requestedAt: text("requested_at").notNull(),
+  status: text("status").notNull().default("pending"), // pending | completed
+  resolvedAt: text("resolved_at"),
+  resetBy: text("reset_by"),
+});
+
 // ── Insert schemas ─────────────────────────────────────────────────────────
 export const insertEmployeeChildSchema = createInsertSchema(employeeChildren).omit({ id: true });
 export const insertEmployeeLoanSchema = createInsertSchema(employeeLoans).omit({ id: true });
@@ -353,3 +364,7 @@ export type CompanySettings = typeof companySettings.$inferSelect;
 export type Payslip = typeof payslips.$inferSelect;
 export const insertPayslipSchema = createInsertSchema(payslips).omit({ id: true });
 export type InsertPayslip = z.infer<typeof insertPayslipSchema>;
+
+export type PasswordResetRequest = typeof passwordResetRequests.$inferSelect;
+export const insertPasswordResetRequestSchema = createInsertSchema(passwordResetRequests).omit({ id: true });
+export type InsertPasswordResetRequest = z.infer<typeof insertPasswordResetRequestSchema>;

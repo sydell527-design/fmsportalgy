@@ -19,7 +19,7 @@ import {
   Trash2, Shield, ShieldOff, Radio, Search, ChevronDown,
   ChevronRight, LayoutDashboard, RefreshCw, Filter,
   Maximize2, Minimize2, MapPin, Briefcase, LogOut, Loader2,
-  UserCheck, UserX, ClipboardList, Timer, ChevronUp,
+  UserCheck, UserX, ClipboardList, Timer, ChevronUp, KeyRound, X,
 } from "lucide-react";
 import { format, differenceInMinutes, parse, startOfMonth, endOfMonth } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
@@ -387,6 +387,37 @@ export default function Dashboard() {
     refetchInterval: 10_000,
     refetchOnWindowFocus: true,
   });
+
+  // ── Password reset requests (admin only) ─────────────────────────────────────
+  const { data: pwResetRequests = [], refetch: refetchPwReset } = useQuery<Array<{
+    id: number; userId: string; name: string; requestedAt: string; status: string;
+  }>>({
+    queryKey: ["/api/password-reset-requests"],
+    enabled: isAdmin,
+    refetchInterval: 15_000,
+  });
+  const [pwResetOpen, setPwResetOpen] = useState(false);
+  const [pwResetPasswords, setPwResetPasswords] = useState<Record<number, string>>({});
+  const [pwResetBusy, setPwResetBusy] = useState<number | null>(null);
+
+  const handlePwReset = async (id: number) => {
+    const newPassword = pwResetPasswords[id]?.trim();
+    if (!newPassword || newPassword.length < 4) {
+      toast({ title: "Password too short", description: "Must be at least 4 characters.", variant: "destructive" });
+      return;
+    }
+    setPwResetBusy(id);
+    try {
+      await apiRequest("PATCH", `/api/password-reset-requests/${id}/resolve`, { newPassword, resetBy: user.userId });
+      toast({ title: "Password reset", description: "Employee's password has been updated and they will be prompted to change it on next login." });
+      setPwResetPasswords((prev) => { const n = { ...prev }; delete n[id]; return n; });
+      refetchPwReset();
+    } catch {
+      toast({ title: "Reset failed", description: "Please try again.", variant: "destructive" });
+    } finally {
+      setPwResetBusy(null);
+    }
+  };
 
   // ── Filters ─────────────────────────────────────────────────────────────────
   const todayStr = format(new Date(), "yyyy-MM-dd");
@@ -941,6 +972,23 @@ export default function Dashboard() {
           </div>
         </div>
 
+        {/* ── PASSWORD RESET NOTIFICATION BANNER ───────────────────────────── */}
+        {pwResetRequests.length > 0 && (
+          <div className="bg-amber-50 border-b border-amber-200 px-4 py-3 flex items-center gap-3">
+            <KeyRound className="w-4 h-4 text-amber-600 shrink-0" />
+            <p className="text-sm font-medium text-amber-800 flex-1">
+              {pwResetRequests.length} password reset request{pwResetRequests.length > 1 ? "s" : ""} pending admin action
+            </p>
+            <button
+              onClick={() => setPwResetOpen(true)}
+              data-testid="button-open-pw-reset"
+              className="text-xs font-semibold text-amber-700 bg-amber-100 hover:bg-amber-200 border border-amber-300 px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap"
+            >
+              Review & Reset
+            </button>
+          </div>
+        )}
+
         {/* ── MOBILE TAB SWITCHER ──────────────────────────────────────────── */}
         <div className="md:hidden flex border-b bg-card sticky top-0 z-10">
           <button
@@ -1431,6 +1479,92 @@ export default function Dashboard() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* ── PASSWORD RESET MANAGEMENT MODAL ─────────────────────────────────── */}
+      {pwResetOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setPwResetOpen(false)} />
+          <div className="relative w-full max-w-lg bg-card rounded-2xl border border-border shadow-2xl animate-in fade-in zoom-in-95 duration-200 overflow-hidden">
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b bg-muted/30">
+              <div className="flex items-center gap-2.5">
+                <KeyRound className="w-5 h-5 text-primary" />
+                <h2 className="font-bold text-foreground">Password Reset Requests</h2>
+                <span className="text-xs bg-amber-100 text-amber-700 border border-amber-200 font-semibold px-2 py-0.5 rounded-full">
+                  {pwResetRequests.length} pending
+                </span>
+              </div>
+              <button
+                onClick={() => setPwResetOpen(false)}
+                data-testid="button-close-pw-reset"
+                className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-muted transition-colors text-muted-foreground"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="p-6 max-h-[60vh] overflow-y-auto space-y-4">
+              {pwResetRequests.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-8">No pending requests</p>
+              ) : (
+                pwResetRequests.map((req) => (
+                  <div key={req.id} className="border rounded-xl p-4 bg-background space-y-3" data-testid={`pw-reset-request-${req.id}`}>
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <p className="font-semibold text-sm text-foreground">{req.name}</p>
+                        <p className="text-xs text-muted-foreground">ID: {req.userId}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          Requested: {new Date(req.requestedAt).toLocaleString()}
+                        </p>
+                      </div>
+                      <span className="text-[10px] bg-amber-100 text-amber-700 border border-amber-200 font-semibold px-2 py-0.5 rounded-full shrink-0">
+                        Pending
+                      </span>
+                    </div>
+                    <div className="flex gap-2">
+                      <div className="relative flex-1">
+                        <KeyRound className="absolute left-3 top-2.5 w-3.5 h-3.5 text-muted-foreground" />
+                        <input
+                          type="text"
+                          placeholder="Enter new temporary password"
+                          data-testid={`input-new-password-${req.id}`}
+                          value={pwResetPasswords[req.id] ?? ""}
+                          onChange={(e) => setPwResetPasswords((prev) => ({ ...prev, [req.id]: e.target.value }))}
+                          className="w-full pl-8 pr-3 py-2 text-sm border rounded-lg bg-background focus:outline-none focus:ring-2 focus:ring-primary/30 transition-all"
+                        />
+                      </div>
+                      <button
+                        onClick={() => handlePwReset(req.id)}
+                        disabled={pwResetBusy === req.id || !(pwResetPasswords[req.id]?.trim())}
+                        data-testid={`button-reset-pw-${req.id}`}
+                        className="px-4 py-2 text-sm font-semibold bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-1.5 whitespace-nowrap"
+                      >
+                        {pwResetBusy === req.id
+                          ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Resetting...</>
+                          : <><CheckCircle2 className="w-3.5 h-3.5" /> Reset</>}
+                      </button>
+                    </div>
+                    <p className="text-[10px] text-muted-foreground">
+                      After reset, the employee will be required to change their password on next login.
+                    </p>
+                  </div>
+                ))
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 py-4 border-t bg-muted/20 flex justify-end">
+              <button
+                onClick={() => setPwResetOpen(false)}
+                className="px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </Layout>
   );
 }
