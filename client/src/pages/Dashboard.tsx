@@ -585,17 +585,23 @@ export default function Dashboard() {
 
   const [liveExpanded, setLiveExpanded] = useState(false);
 
-  // ── Schedule Adherence (today) ───────────────────────────────────────────────
+  const [adherenceDate, setAdherenceDate] = useState(today);
+  const adherencePrevDay = useMemo(
+    () => format(new Date(new Date(adherenceDate + "T12:00:00").getTime() - 86_400_000), "yyyy-MM-dd"),
+    [adherenceDate],
+  );
+
+  // ── Schedule Adherence ───────────────────────────────────────────────────────
   const todayAdherence = useMemo(() => {
     const GRACE = 15;
     const seen = new Set<string>();
 
     // 1. Schedule-based rows
     const schedRows: AdherenceRow[] = (allSchedules ?? [])
-      .filter((s) => s.date === today)
+      .filter((s) => s.date === adherenceDate)
       .filter((s) => { if (seen.has(s.eid)) return false; seen.add(s.eid); return true; })
       .map((sched) => {
-        const ts = (timesheets ?? []).find((t) => t.eid === sched.eid && (t.date === today || t.date === yesterday));
+        const ts = (timesheets ?? []).find((t) => t.eid === sched.eid && (t.date === adherenceDate || t.date === adherencePrevDay));
         const emp = userMap[sched.eid];
         const [sh, sm] = sched.shiftStart.split(":").map(Number);
         const schedMins = sh * 60 + sm;
@@ -614,10 +620,10 @@ export default function Dashboard() {
         return { sched, emp, ts, status, lateMins };
       });
 
-    // 2. Unscheduled clock-ins — active timesheets for today with no matching schedule
+    // 2. Unscheduled clock-ins — active timesheets for selected date with no matching schedule
     // Exclude "00:00" ci which is used for off-days/holidays (not real clock-ins)
     const unscheduledRows: AdherenceRow[] = (timesheets ?? [])
-      .filter((t) => t.date === today && t.ci && t.ci !== "00:00" && !t.co && !seen.has(t.eid))
+      .filter((t) => t.date === adherenceDate && t.ci && t.ci !== "00:00" && !t.co && !seen.has(t.eid))
       .map((ts) => {
         seen.add(ts.eid);
         const emp = userMap[ts.eid];
@@ -641,7 +647,7 @@ export default function Dashboard() {
       const ord: Record<string, number> = { absent: 0, "not-in": 1, late: 2, unscheduled: 3, done: 4, "on-time": 5 };
       return (ord[a.status] ?? 9) - (ord[b.status] ?? 9);
     });
-  }, [allSchedules, timesheets, today, yesterday, userMap]);
+  }, [allSchedules, timesheets, adherenceDate, adherencePrevDay, userMap]);
 
   const adherenceSummary = useMemo(() => ({
     total: todayAdherence.length,
@@ -792,7 +798,7 @@ export default function Dashboard() {
             <div className="bg-card border rounded-xl overflow-hidden shadow-sm">
               <div className="flex items-center gap-2 px-5 py-3 border-b bg-muted/20">
                 <ClipboardList className="w-4 h-4 text-primary" />
-                <h3 className="font-semibold text-sm">Today's Schedule Adherence</h3>
+                <h3 className="font-semibold text-sm">Schedule Adherence — {adherenceDate === today ? "Today" : format(new Date(adherenceDate + "T12:00:00"), "MMM d, yyyy")}</h3>
                 <Badge variant="secondary" className="text-xs">{myAdherence.length} scheduled</Badge>
                 {myAdherenceSummary.notIn > 0 && <Badge variant="destructive" className="text-xs">{myAdherenceSummary.notIn} not in</Badge>}
                 {myAdherenceSummary.late > 0 && <Badge className="text-xs bg-purple-100 text-purple-700 border border-purple-200 hover:bg-purple-100">{myAdherenceSummary.late} late</Badge>}
@@ -1263,16 +1269,24 @@ export default function Dashboard() {
 
             {/* ── Schedule Adherence Panel (replaces Live Personnel) ──────── */}
             <div className="flex flex-col md:max-h-[50%] shrink-0 overflow-hidden">
-              <div className="flex items-center gap-2 px-4 py-3 border-b bg-muted/20 shrink-0">
-                <ClipboardList className="w-4 h-4 text-primary" />
-                <span className="font-semibold text-sm">Schedule Adherence — Today</span>
+              <div className="flex items-center gap-2 px-4 py-3 border-b bg-muted/20 shrink-0 flex-wrap">
+                <ClipboardList className="w-4 h-4 text-primary shrink-0" />
+                <span className="font-semibold text-sm whitespace-nowrap">Schedule Adherence</span>
+                <input
+                  type="date"
+                  value={adherenceDate}
+                  max={today}
+                  onChange={(e) => { setAdherenceDate(e.target.value); setAdherenceFilter("all"); }}
+                  data-testid="input-adherence-date"
+                  className="text-xs border rounded px-2 py-0.5 bg-background focus:outline-none focus:ring-1 focus:ring-primary/40"
+                />
                 <Badge variant="secondary" className="text-xs">{adherenceSummary.total} scheduled</Badge>
                 {adherenceSummary.notIn > 0 && <Badge variant="destructive" className="text-xs">{adherenceSummary.notIn} not in</Badge>}
                 {adherenceSummary.late > 0 && <Badge className="text-xs bg-purple-100 text-purple-700 border border-purple-200 hover:bg-purple-100">{adherenceSummary.late} late</Badge>}
                 <div className="ml-auto flex items-center gap-1.5">
-                  <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
-                    <Radio className="w-3 h-3" /> Live timers
-                  </span>
+                  {adherenceDate === today && <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                    <Radio className="w-3 h-3" /> Live
+                  </span>}
                   <button
                     onClick={() => setLiveExpanded(true)}
                     className="p-1 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
@@ -1301,16 +1315,24 @@ export default function Dashboard() {
             <Dialog open={liveExpanded} onOpenChange={setLiveExpanded}>
               <DialogContent className="max-w-none w-screen h-screen m-0 rounded-none p-0 flex flex-col" data-testid="dialog-adherence-fullscreen">
                 {/* Header */}
-                <div className="flex items-center gap-3 px-6 py-4 border-b bg-muted/20 shrink-0">
-                  <ClipboardList className="w-5 h-5 text-primary" />
-                  <DialogTitle className="text-base font-semibold">Schedule Adherence — Today</DialogTitle>
+                <div className="flex items-center gap-3 px-6 py-4 border-b bg-muted/20 shrink-0 flex-wrap">
+                  <ClipboardList className="w-5 h-5 text-primary shrink-0" />
+                  <DialogTitle className="text-base font-semibold whitespace-nowrap">Schedule Adherence</DialogTitle>
+                  <input
+                    type="date"
+                    value={adherenceDate}
+                    max={today}
+                    onChange={(e) => { setAdherenceDate(e.target.value); setAdherenceFilter("all"); }}
+                    data-testid="input-adherence-date-fullscreen"
+                    className="text-xs border rounded px-2 py-0.5 bg-background focus:outline-none focus:ring-1 focus:ring-primary/40"
+                  />
                   <Badge variant="secondary">{adherenceSummary.total} scheduled</Badge>
                   {adherenceSummary.notIn > 0 && <Badge variant="destructive">{adherenceSummary.notIn} not in</Badge>}
                   {adherenceSummary.late > 0 && <Badge className="bg-purple-100 text-purple-700 border border-purple-200 hover:bg-purple-100">{adherenceSummary.late} late</Badge>}
                   <div className="ml-auto flex items-center gap-3">
-                    <span className="text-xs text-muted-foreground flex items-center gap-1">
-                      <Radio className="w-3 h-3" /> Live timers
-                    </span>
+                    {adherenceDate === today && <span className="text-xs text-muted-foreground flex items-center gap-1">
+                      <Radio className="w-3 h-3" /> Live
+                    </span>}
                     <button
                       onClick={() => setLiveExpanded(false)}
                       className="p-1.5 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
