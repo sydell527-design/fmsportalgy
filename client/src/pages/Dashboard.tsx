@@ -121,6 +121,20 @@ function AdherencePanel({
   const [agencyFilter, setAgencyFilter] = useState("ALL");
   const [postFilter, setPostFilter] = useState("ALL");
 
+  // How many minutes overdue is a "not-in" employee right now?
+  const nowMins = useMemo(() => {
+    const n = new Date();
+    return n.getHours() * 60 + n.getMinutes();
+  }, []);
+
+  // On-site = on-time + late + done + unscheduled (any confirmed presence)
+  const onSite = summary.onTime + summary.late + summary.done + summary.unscheduled;
+  const adherencePct = summary.total > 0 ? Math.round((onSite / summary.total) * 100) : 0;
+  const greenPct  = summary.total > 0 ? (summary.onTime  / summary.total) * 100 : 0;
+  const latePct   = summary.total > 0 ? (summary.late    / summary.total) * 100 : 0;
+  const donePct   = summary.total > 0 ? (summary.done    / summary.total) * 100 : 0;
+  const unschedPct= summary.total > 0 ? (summary.unscheduled / summary.total) * 100 : 0;
+
   // Derive unique agencies from rows (client > zone > "Unassigned")
   const agencies = useMemo(() => {
     const set = new Set<string>();
@@ -144,82 +158,104 @@ function AdherencePanel({
     return Array.from(set).sort();
   }, [rows, agencyFilter]);
 
-  // Reset post filter when agency changes
-  const handleAgencyFilter = (a: string) => {
-    setAgencyFilter(a);
-    setPostFilter("ALL");
-  };
+  const handleAgencyFilter = (a: string) => { setAgencyFilter(a); setPostFilter("ALL"); };
 
   // Apply agency + post filter on top of the already-status-filtered rows
   const displayRows = useMemo(() => {
     let r = rows;
-    if (agencyFilter !== "ALL") {
-      r = r.filter((row) => (row.sched.client ?? row.ts?.client ?? row.ts?.zone ?? "Unassigned") === agencyFilter);
-    }
-    if (postFilter !== "ALL") {
-      r = r.filter((row) => (row.ts?.post ?? row.sched.location) === postFilter);
-    }
+    if (agencyFilter !== "ALL") r = r.filter((row) => (row.sched.client ?? row.ts?.client ?? row.ts?.zone ?? "Unassigned") === agencyFilter);
+    if (postFilter !== "ALL")   r = r.filter((row) => (row.ts?.post ?? row.sched.location) === postFilter);
     return r;
   }, [rows, agencyFilter, postFilter]);
 
   const chips = [
-    { key: "all",          label: "All",          count: summary.total,        color: "bg-muted text-muted-foreground border-border" },
-    { key: "not-in",       label: "Not In",       count: summary.notIn,        color: "bg-red-50 text-red-700 border-red-200" },
-    { key: "late",         label: "Late",         count: summary.late,         color: "bg-purple-50 text-purple-700 border-purple-200" },
-    { key: "absent",       label: "Absent",       count: summary.absent,       color: "bg-orange-50 text-orange-700 border-orange-200" },
-    { key: "on-time",      label: "On Time",      count: summary.onTime,       color: "bg-green-50 text-green-700 border-green-200" },
-    { key: "done",         label: "Done",         count: summary.done,         color: "bg-blue-50 text-blue-700 border-blue-200" },
-    { key: "unscheduled",  label: "Unscheduled",  count: summary.unscheduled,  color: "bg-teal-50 text-teal-700 border-teal-200" },
+    { key: "all",         label: "All",         count: summary.total,        color: "bg-muted text-muted-foreground border-border" },
+    { key: "not-in",      label: "Not In",      count: summary.notIn,        color: "bg-red-50 text-red-700 border-red-200 dark:bg-red-950/30 dark:text-red-300 dark:border-red-800" },
+    { key: "late",        label: "Late",        count: summary.late,         color: "bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-950/30 dark:text-purple-300 dark:border-purple-800" },
+    { key: "absent",      label: "Absent",      count: summary.absent,       color: "bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-950/30 dark:text-orange-300 dark:border-orange-800" },
+    { key: "on-time",     label: "On Time",     count: summary.onTime,       color: "bg-green-50 text-green-700 border-green-200 dark:bg-green-950/30 dark:text-green-300 dark:border-green-800" },
+    { key: "done",        label: "Done",        count: summary.done,         color: "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/30 dark:text-blue-300 dark:border-blue-800" },
+    { key: "unscheduled", label: "Unscheduled", count: summary.unscheduled,  color: "bg-teal-50 text-teal-700 border-teal-200 dark:bg-teal-950/30 dark:text-teal-300 dark:border-teal-800" },
   ].filter((c) => c.key === "all" || c.count > 0);
 
   function statusInfo(r: AdherenceRow) {
-    if (r.status === "on-time")      return { icon: <UserCheck className="w-3.5 h-3.5 text-green-600" />,  label: "On Time",    bg: "border-green-200 bg-green-50" };
-    if (r.status === "late")         return { icon: <Timer className="w-3.5 h-3.5 text-purple-600" />,      label: `Late ${fmtDuration(r.lateMins)}`, bg: "border-purple-200 bg-purple-50" };
-    if (r.status === "not-in")       return { icon: <UserX className="w-3.5 h-3.5 text-red-500" />,         label: "Not In",     bg: "border-red-200 bg-red-50" };
-    if (r.status === "absent")       return { icon: <XCircle className="w-3.5 h-3.5 text-orange-600" />,    label: r.ts?.dayStatus ?? "Absent", bg: "border-orange-200 bg-orange-50" };
-    if (r.status === "done")         return { icon: <CheckCircle2 className="w-3.5 h-3.5 text-blue-500" />, label: `Done ${r.ts?.co ?? ""}`, bg: "border-blue-200 bg-blue-50" };
-    if (r.status === "unscheduled")  return { icon: <Radio className="w-3.5 h-3.5 text-teal-600" />,        label: "Unscheduled", bg: "border-teal-200 bg-teal-50" };
-    return { icon: null, label: r.status, bg: "" };
+    if (r.status === "on-time")     return { icon: <UserCheck className="w-3.5 h-3.5" />, label: "On Time",                    pill: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200",   borderL: "border-l-green-500",  rowBg: "bg-green-50/60 dark:bg-green-950/20" };
+    if (r.status === "late")        return { icon: <Timer className="w-3.5 h-3.5" />,     label: `Late +${fmtDuration(r.lateMins)}`, pill: "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200", borderL: "border-l-purple-500", rowBg: "bg-purple-50/60 dark:bg-purple-950/20" };
+    if (r.status === "not-in")      return { icon: <UserX className="w-3.5 h-3.5" />,     label: "Not In",                     pill: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200",           borderL: "border-l-red-500",    rowBg: "bg-red-50/60 dark:bg-red-950/20" };
+    if (r.status === "absent")      return { icon: <XCircle className="w-3.5 h-3.5" />,   label: r.ts?.dayStatus ?? "Absent",  pill: "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200", borderL: "border-l-orange-500", rowBg: "bg-orange-50/60 dark:bg-orange-950/20" };
+    if (r.status === "done")        return { icon: <CheckCircle2 className="w-3.5 h-3.5" />, label: `Done ${r.ts?.co ?? ""}`, pill: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200",         borderL: "border-l-blue-500",   rowBg: "bg-blue-50/40 dark:bg-blue-950/10" };
+    if (r.status === "unscheduled") return { icon: <Radio className="w-3.5 h-3.5" />,     label: "Unscheduled",                pill: "bg-teal-100 text-teal-800 dark:bg-teal-900 dark:text-teal-200",         borderL: "border-l-teal-500",   rowBg: "bg-teal-50/40 dark:bg-teal-950/10" };
+    return { icon: null, label: r.status, pill: "", borderL: "border-l-border", rowBg: "" };
   }
 
   if (summary.total === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-12 text-muted-foreground gap-2">
         <ClipboardList className="w-8 h-8 opacity-20" />
-        <p className="text-sm">No shifts scheduled for today</p>
+        <p className="text-sm">No shifts scheduled</p>
       </div>
     );
   }
 
   return (
     <div className="flex flex-col">
-      {/* Summary strip */}
-      <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 px-4 py-3 border-b bg-muted/10">
-        {[
-          { label: "Scheduled", value: summary.total, color: "text-foreground" },
-          { label: "On Time",   value: summary.onTime, color: "text-green-600" },
-          { label: "Late",      value: summary.late,   color: "text-purple-600" },
-          { label: "Not In",    value: summary.notIn,  color: "text-red-600" },
-          { label: "Absent",    value: summary.absent, color: "text-orange-600" },
-          { label: "Done",      value: summary.done,   color: "text-blue-600" },
-        ].map(({ label, value, color }) => (
-          <div key={label} className="text-center">
-            <p className={`text-lg font-bold leading-tight ${color}`}>{value}</p>
-            <p className="text-[10px] text-muted-foreground leading-tight">{label}</p>
+
+      {/* ── Team Health Bar ─────────────────────────────────────────────────── */}
+      <div className="px-4 pt-3 pb-2 border-b bg-muted/5 space-y-2">
+        {/* Alert banner when people are missing */}
+        {summary.notIn > 0 && (
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800">
+            <span className="relative flex h-2 w-2 shrink-0">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
+            </span>
+            <span className="text-xs font-semibold text-red-700 dark:text-red-300">
+              {summary.notIn} officer{summary.notIn !== 1 ? "s" : ""} not on post
+              {summary.absent > 0 ? ` · ${summary.absent} reported absent` : ""}
+            </span>
           </div>
-        ))}
+        )}
+
+        {/* Progress bar */}
+        <div>
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-xs font-semibold text-foreground">{onSite} / {summary.total} on site</span>
+            <span className={`text-xs font-bold ${adherencePct >= 90 ? "text-green-600" : adherencePct >= 70 ? "text-yellow-600" : "text-red-600"}`}>
+              {adherencePct}% adherence
+            </span>
+          </div>
+          <div className="h-3 w-full rounded-full bg-red-100 dark:bg-red-950/30 overflow-hidden flex">
+            <div className="h-full bg-green-500 transition-all duration-700 ease-out" style={{ width: `${greenPct}%` }} title={`${summary.onTime} on time`} />
+            <div className="h-full bg-purple-500 transition-all duration-700 ease-out" style={{ width: `${latePct}%` }} title={`${summary.late} late`} />
+            <div className="h-full bg-blue-400 transition-all duration-700 ease-out" style={{ width: `${donePct}%` }} title={`${summary.done} done`} />
+            <div className="h-full bg-teal-400 transition-all duration-700 ease-out" style={{ width: `${unschedPct}%` }} title={`${summary.unscheduled} unscheduled`} />
+          </div>
+          <div className="flex gap-3 mt-1.5 flex-wrap">
+            {[
+              { color: "bg-green-500",  label: "On Time", val: summary.onTime },
+              { color: "bg-purple-500", label: "Late",    val: summary.late },
+              { color: "bg-orange-400", label: "Absent",  val: summary.absent },
+              { color: "bg-red-200 border border-red-300", label: "Not In", val: summary.notIn },
+              { color: "bg-blue-400",   label: "Done",    val: summary.done },
+              { color: "bg-teal-400",   label: "Unsch.",  val: summary.unscheduled },
+            ].filter(x => x.val > 0).map(({ color, label, val }) => (
+              <span key={label} className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                <span className={`w-2 h-2 rounded-sm ${color} shrink-0`} />
+                {val} {label}
+              </span>
+            ))}
+          </div>
+        </div>
       </div>
 
-      {/* Status filter chips */}
+      {/* ── Status filter chips ──────────────────────────────────────────────── */}
       <div className="flex gap-1.5 px-4 py-2 overflow-x-auto border-b shrink-0">
         {chips.map(({ key, label, count, color }) => (
           <button
             key={key}
             onClick={() => setAdherenceFilter(key)}
             className={`px-2.5 py-1 rounded-md text-xs font-medium whitespace-nowrap border transition-colors ${
-              adherenceFilter === key
-                ? "bg-primary text-primary-foreground border-primary"
-                : color
+              adherenceFilter === key ? "bg-primary text-primary-foreground border-primary" : color
             }`}
             data-testid={`filter-adherence-${key}`}
           >
@@ -228,36 +264,23 @@ function AdherencePanel({
         ))}
       </div>
 
-      {/* Agency filter — always visible when there are rows */}
+      {/* ── Agency filter ────────────────────────────────────────────────────── */}
       {agencies.length > 0 && (
         <div className="flex gap-1.5 px-4 py-2 overflow-x-auto border-b shrink-0 bg-muted/5">
           <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground font-semibold shrink-0 mr-1 uppercase tracking-wide">
             <Building2 className="w-3 h-3" /> Agency
           </div>
-          <button
-            onClick={() => handleAgencyFilter("ALL")}
-            className={`px-2.5 py-1 rounded-md text-[11px] font-medium whitespace-nowrap border transition-colors ${
-              agencyFilter === "ALL"
-                ? "bg-primary text-primary-foreground border-primary"
-                : "bg-background text-muted-foreground border-border hover:border-primary/40"
-            }`}
-            data-testid="filter-agency-all"
-          >
+          <button onClick={() => handleAgencyFilter("ALL")}
+            className={`px-2.5 py-1 rounded-md text-[11px] font-medium whitespace-nowrap border transition-colors ${agencyFilter === "ALL" ? "bg-primary text-primary-foreground border-primary" : "bg-background text-muted-foreground border-border hover:border-primary/40"}`}
+            data-testid="filter-agency-all">
             All <span className="ml-0.5 opacity-70">{rows.length}</span>
           </button>
           {agencies.map((a) => {
             const agCount = rows.filter((r) => (r.sched.client ?? r.ts?.client ?? r.ts?.zone ?? "Unassigned") === a).length;
             return (
-              <button
-                key={a}
-                onClick={() => handleAgencyFilter(a)}
-                className={`px-2.5 py-1 rounded-md text-[11px] font-medium whitespace-nowrap border transition-colors ${
-                  agencyFilter === a
-                    ? "bg-primary text-primary-foreground border-primary"
-                    : "bg-background text-foreground border-border hover:bg-primary/10 hover:border-primary/50"
-                }`}
-                data-testid={`filter-agency-${a}`}
-              >
+              <button key={a} onClick={() => handleAgencyFilter(a)}
+                className={`px-2.5 py-1 rounded-md text-[11px] font-medium whitespace-nowrap border transition-colors ${agencyFilter === a ? "bg-primary text-primary-foreground border-primary" : "bg-background text-foreground border-border hover:bg-primary/10 hover:border-primary/50"}`}
+                data-testid={`filter-agency-${a}`}>
                 {a} <span className="ml-1 font-bold">{agCount}</span>
               </button>
             );
@@ -265,40 +288,27 @@ function AdherencePanel({
         </div>
       )}
 
-      {/* Post sub-filter (visible when an agency is selected and has posts) */}
+      {/* ── Post sub-filter ──────────────────────────────────────────────────── */}
       {agencyFilter !== "ALL" && posts.length > 0 && (
         <div className="flex gap-1.5 px-4 py-1.5 overflow-x-auto border-b shrink-0 bg-muted/10">
           <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground font-medium shrink-0 mr-1">
             <MapPin className="w-3 h-3" /> Post:
           </div>
-          <button
-            onClick={() => setPostFilter("ALL")}
-            className={`px-2 py-0.5 rounded text-[11px] font-medium whitespace-nowrap border transition-colors ${
-              postFilter === "ALL"
-                ? "bg-primary text-primary-foreground border-primary"
-                : "bg-background text-muted-foreground border-border hover:border-primary/40"
-            }`}
-          >
+          <button onClick={() => setPostFilter("ALL")}
+            className={`px-2 py-0.5 rounded text-[11px] font-medium whitespace-nowrap border transition-colors ${postFilter === "ALL" ? "bg-primary text-primary-foreground border-primary" : "bg-background text-muted-foreground border-border hover:border-primary/40"}`}>
             All Posts
           </button>
           {posts.map((p) => (
-            <button
-              key={p}
-              onClick={() => setPostFilter(p)}
-              className={`px-2 py-0.5 rounded text-[11px] font-medium whitespace-nowrap border transition-colors ${
-                postFilter === p
-                  ? "bg-primary text-primary-foreground border-primary"
-                  : "bg-background text-muted-foreground border-border hover:border-primary/40"
-              }`}
-              data-testid={`filter-post-${p}`}
-            >
+            <button key={p} onClick={() => setPostFilter(p)}
+              className={`px-2 py-0.5 rounded text-[11px] font-medium whitespace-nowrap border transition-colors ${postFilter === p ? "bg-primary text-primary-foreground border-primary" : "bg-background text-muted-foreground border-border hover:border-primary/40"}`}
+              data-testid={`filter-post-${p}`}>
               {p}
             </button>
           ))}
         </div>
       )}
 
-      {/* Rows */}
+      {/* ── Employee rows ────────────────────────────────────────────────────── */}
       <div className="divide-y overflow-y-auto max-h-[60vh] md:max-h-none">
         {displayRows.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-8 text-muted-foreground gap-2">
@@ -308,50 +318,79 @@ function AdherencePanel({
         ) : displayRows.map(({ sched, emp, ts, status, lateMins }) => {
           const si = statusInfo({ sched, emp, ts, status, lateMins });
           const av = emp?.av ?? sched.eid.slice(0, 2).toUpperCase();
+
+          // How many minutes overdue for "not-in" employees?
+          const [sh, sm] = sched.shiftStart ? sched.shiftStart.split(":").map(Number) : [0, 0];
+          const schedMins = sh * 60 + sm;
+          const overdueMins = status === "not-in" ? Math.max(0, nowMins - schedMins - 15) : 0;
+
           return (
-            <div key={sched.eid} className={`flex items-center gap-3 px-4 py-3 ${si.bg} border-l-4`} data-testid={`adherence-row-${sched.eid}`}>
-              {/* Avatar */}
-              <div className="w-9 h-9 rounded-full bg-white/80 border flex items-center justify-center text-xs font-bold text-foreground shrink-0">
-                {av}
+            <div key={sched.eid} className={`flex items-center gap-3 px-4 py-3 border-l-4 ${si.borderL} ${si.rowBg} transition-colors`} data-testid={`adherence-row-${sched.eid}`}>
+
+              {/* Avatar with pulsing ring for overdue not-in */}
+              <div className="relative shrink-0">
+                <div className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold ${
+                  status === "not-in" ? "bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-200" :
+                  status === "late"   ? "bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-200" :
+                  status === "on-time"? "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-200" :
+                  status === "absent" ? "bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-200" :
+                  status === "done"   ? "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-200" :
+                  "bg-teal-100 text-teal-700 dark:bg-teal-900 dark:text-teal-200"
+                }`}>
+                  {av}
+                </div>
+                {status === "not-in" && overdueMins > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 flex h-3 w-3">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
+                  </span>
+                )}
               </div>
+
               {/* Info */}
               <div className="flex-1 min-w-0">
-                <p className="font-semibold text-sm truncate">{emp?.name ?? sched.eid}</p>
-                <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground mt-0.5">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <p className="font-semibold text-sm">{emp?.name ?? sched.eid}</p>
+                  <span className={`inline-flex items-center gap-1 text-[11px] font-medium px-1.5 py-0.5 rounded-full ${si.pill}`}>
+                    {si.icon} {si.label}
+                  </span>
+                  {status === "not-in" && overdueMins > 30 && (
+                    <span className="text-[11px] font-semibold text-red-600 dark:text-red-400 animate-pulse">
+                      {fmtDuration(overdueMins)} overdue
+                    </span>
+                  )}
+                </div>
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground mt-0.5">
                   {sched.id !== -1 ? (
                     <span className="flex items-center gap-0.5">
                       <Clock className="w-3 h-3" />
-                      Scheduled {sched.shiftStart}–{sched.shiftEnd}
+                      {sched.shiftStart}–{sched.shiftEnd}
                     </span>
                   ) : (
                     <span className="flex items-center gap-0.5 text-teal-600">
-                      <Radio className="w-3 h-3" />
-                      No schedule — clocked in
+                      <Radio className="w-3 h-3" /> Unscheduled clock-in
                     </span>
                   )}
-                  {ts?.ci && <span>In: <strong className="text-foreground">{ts.ci}</strong></span>}
+                  {ts?.ci && status !== "absent" && (
+                    <span className="flex items-center gap-0.5">
+                      <LogOut className="w-3 h-3 rotate-180" /> In: <strong className="text-foreground">{ts.ci}</strong>
+                    </span>
+                  )}
                   {sched.client && <span className="flex items-center gap-0.5"><Briefcase className="w-3 h-3" />{sched.client}</span>}
+                  {emp?.pos && <span className="opacity-60">{emp.pos}</span>}
                 </div>
               </div>
-              {/* Status + elapsed + end button */}
-              <div className="flex items-center gap-2 shrink-0">
+
+              {/* Right side: elapsed / end button */}
+              <div className="flex flex-col items-end gap-1.5 shrink-0">
                 {showElapsed && ts?.ci && !ts?.co && (
-                  <div className="text-right">
-                    <p className="text-xs font-mono font-semibold text-green-600">{ts.ci}</p>
-                    <LiveElapsed ci={ts.ci} date={sched.date} className="text-[10px] font-mono text-muted-foreground" />
-                  </div>
+                  <LiveElapsed ci={ts.ci} date={sched.date} className="text-[10px] font-mono text-muted-foreground tabular-nums" />
                 )}
-                <span className="flex items-center gap-1 text-xs font-medium">
-                  {si.icon} {si.label}
-                </span>
                 {(isAdmin || isSupervisor) && ts?.ci && !ts?.co && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-7 px-2 text-xs border-destructive/30 text-destructive hover:bg-destructive/10"
+                  <Button size="sm" variant="outline"
+                    className="h-6 px-2 text-[11px] border-destructive/30 text-destructive hover:bg-destructive/10"
                     onClick={() => openEndShift(ts!)}
-                    data-testid={`button-adherence-end-${sched.eid}`}
-                  >
+                    data-testid={`button-adherence-end-${sched.eid}`}>
                     <LogOut className="w-3 h-3 mr-1" /> End
                   </Button>
                 )}
