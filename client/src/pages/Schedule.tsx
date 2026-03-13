@@ -680,6 +680,11 @@ export default function SchedulePage() {
   const isSupervisor = (user?.pos ?? "").toLowerCase().includes("supervisor");
   const isPrivileged = user?.role === "admin" || user?.role === "manager" || isSupervisor;
 
+  // Supervisors default to viewing their own schedule; they can switch to Team view
+  const [supervisorView, setSupervisorView] = useState<"my-schedule" | "team">("my-schedule");
+  const showPersonalView = !isPrivileged || (isSupervisor && supervisorView === "my-schedule");
+  const showTeamView     = isPrivileged && (!isSupervisor || supervisorView === "team");
+
   // View mode + anchor (desktop)
   const [viewMode, setViewMode] = useState<ViewMode>("fortnight");
   const [anchor,   setAnchor]   = useState<Date>(() => todayAnchor("fortnight"));
@@ -742,8 +747,13 @@ export default function SchedulePage() {
     : [user?.userId ?? ""];
 
   const { data: teamSchedules = [] } = useTeamSchedules(teamEids);
-  const { data: mySchedules   = [] } = useSchedules(!isPrivileged ? (user?.userId ?? "") : "");
+  // Always fetch supervisor's own schedule so personal view works regardless of role
+  const { data: mySchedules   = [] } = useSchedules(
+    isSupervisor || !isPrivileged ? (user?.userId ?? "") : ""
+  );
   const schedules = isPrivileged ? teamSchedules : mySchedules;
+  // Personal calendar always uses the logged-in user's own schedule
+  const empSchedules = isSupervisor ? mySchedules : schedules;
 
   function refreshSchedules() {
     qc.invalidateQueries({ queryKey: ["/api/schedules"] });
@@ -843,20 +853,20 @@ export default function SchedulePage() {
     };
   }, [empCalAnchor, empPeriod]);
 
-  // Shift lookup by date (all of the employee's loaded schedules)
+  // Shift lookup by date (the logged-in user's own schedules)
   const empShiftByDate = useMemo(() => {
     const m: Record<string, Schedule[]> = {};
-    for (const s of schedules) {
+    for (const s of empSchedules) {
       if (!m[s.date]) m[s.date] = [];
       m[s.date].push(s);
     }
     return m;
-  }, [schedules]);
+  }, [empSchedules]);
 
   // Shifts falling inside the selected period
   const empPeriodShifts = useMemo(
-    () => schedules.filter((s) => s.date >= empPeriodBounds.start && s.date <= empPeriodBounds.end),
-    [schedules, empPeriodBounds]
+    () => empSchedules.filter((s) => s.date >= empPeriodBounds.start && s.date <= empPeriodBounds.end),
+    [empSchedules, empPeriodBounds]
   );
 
   const empTotalHours = empPeriodShifts.reduce((acc, s) => {
@@ -928,25 +938,46 @@ export default function SchedulePage() {
           <div>
             <h1 className="text-2xl font-bold">Schedule</h1>
             <p className="text-sm text-muted-foreground">
-              {isPrivileged
-                ? "Plan team shifts — search an employee and schedule across any date range"
-                : "Your upcoming shifts"}
+              {showPersonalView
+                ? "Your upcoming shifts"
+                : "Plan team shifts — search an employee and schedule across any date range"}
             </p>
           </div>
-          {isPrivileged && (
-            <div className="flex gap-2">
-              <Button onClick={() => setRosterOpen(true)} data-testid="button-roster-builder">
-                <Plus className="w-4 h-4 mr-2" /> Roster Builder
-              </Button>
-              <Button variant="outline" onClick={() => openBuilder()} data-testid="button-add-schedule" size="sm">
-                Single Shift
-              </Button>
-            </div>
-          )}
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* Supervisor view toggle */}
+            {isSupervisor && (
+              <div className="flex items-center rounded-lg border border-border overflow-hidden">
+                <button
+                  onClick={() => setSupervisorView("my-schedule")}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors ${supervisorView === "my-schedule" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted"}`}
+                  data-testid="button-sup-my-schedule"
+                >
+                  <User className="w-3.5 h-3.5" /> My Schedule
+                </button>
+                <button
+                  onClick={() => setSupervisorView("team")}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border-l border-border transition-colors ${supervisorView === "team" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted"}`}
+                  data-testid="button-sup-team"
+                >
+                  <Users className="w-3.5 h-3.5" /> Team
+                </button>
+              </div>
+            )}
+            {showTeamView && (
+              <div className="flex gap-2">
+                <Button onClick={() => setRosterOpen(true)} data-testid="button-roster-builder">
+                  <Plus className="w-4 h-4 mr-2" /> Roster Builder
+                </Button>
+                <Button variant="outline" onClick={() => openBuilder()} data-testid="button-add-schedule" size="sm">
+                  Single Shift
+                </Button>
+              </div>
+            )}
+          </div>
         </div>
 
-        {/* ── Controls row (admins/supervisors only) ───────────────────────── */}
-        {isPrivileged && (
+        {/* ── Controls row (team view only) ───────────────────────────────── */}
+        {showTeamView && (
           <div className="flex flex-col gap-3">
             {/* Top row: view-mode tabs + Agency/Employee toggle + Clear */}
             <div className="flex items-center gap-2 flex-wrap">
@@ -1096,8 +1127,8 @@ export default function SchedulePage() {
           </DialogContent>
         </Dialog>
 
-        {/* ── Desktop: Agency Roster View (admin/supervisor only) ─────────── */}
-        {isPrivileged && adminDesktopView === "agency" && (
+        {/* ── Desktop: Agency Roster View (team view only) ─────────────────── */}
+        {showTeamView && adminDesktopView === "agency" && (
         <div className="hidden lg:block space-y-3">
           {/* Agency dropdown */}
           <div className="flex items-center gap-3">
@@ -1253,8 +1284,8 @@ export default function SchedulePage() {
         </div>
         )}
 
-        {/* ── Desktop: Employee Grid View (admin/supervisor only) ──────────── */}
-        {isPrivileged && adminDesktopView === "employee" && (
+        {/* ── Desktop: Employee Grid View (team view only) ──────────────────── */}
+        {showTeamView && adminDesktopView === "employee" && (
         <div className="hidden lg:block overflow-x-auto">
           <table className="w-full border-collapse text-sm">
             <thead>
@@ -1384,8 +1415,8 @@ export default function SchedulePage() {
         </div>
         )}
 
-        {/* ── Desktop: Employee personal schedule (non-admin) ─────────────── */}
-        {!isPrivileged && (
+        {/* ── Desktop: Personal schedule (employee + supervisor in my-schedule view) ── */}
+        {showPersonalView && (
         <div className="hidden lg:flex gap-6">
 
           {/* Left: Calendar */}
@@ -1500,8 +1531,8 @@ export default function SchedulePage() {
         {/* ── Mobile views (admin: roster grid | employee: personal calendar) ── */}
         <div className="lg:hidden -mx-4">
 
-        {/* ═══════════════════ ADMIN / PRIVILEGED: roster grid ══════════════ */}
-        {isPrivileged && (<>
+        {/* ═══════════════════ TEAM VIEW: roster grid ═══════════════════════ */}
+        {showTeamView && (<>
 
           {/* Period banner */}
           <div className="bg-primary text-primary-foreground text-center py-1.5 px-4">
@@ -1672,8 +1703,8 @@ export default function SchedulePage() {
           </div>
         </>)}
 
-        {/* ═══════════════ EMPLOYEE: clean personal calendar ══════════════════ */}
-        {!isPrivileged && (
+        {/* ═══════════════ PERSONAL CALENDAR (employee + supervisor "My Schedule") ═ */}
+        {showPersonalView && (
             <>
               {/* Month navigation header */}
               <div className="flex items-center bg-primary text-primary-foreground select-none">
@@ -1845,8 +1876,8 @@ export default function SchedulePage() {
 
         </div>
 
-        {/* ── Summary card (admins/supervisors only) ────────────────────────── */}
-        {isPrivileged && visibleSchedules.length > 0 && (
+        {/* ── Summary card (team view only) ─────────────────────────────────── */}
+        {showTeamView && visibleSchedules.length > 0 && (
           <Card className="p-4">
             <h3 className="text-sm font-semibold mb-2 flex items-center gap-1.5">
               <CalendarDays className="w-4 h-4 text-primary" />
