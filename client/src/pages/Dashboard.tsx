@@ -653,8 +653,10 @@ export default function Dashboard() {
           status = "done";
         } else if (ts?.ci) {
           const [ch, cm] = ts.ci.split(":").map(Number);
-          lateMins = Math.max(0, ch * 60 + cm - schedMins - GRACE);
-          status = lateMins > 0 ? "late" : "on-time";
+          const actualMins = ch * 60 + cm - schedMins;
+          // Grace only determines on-time vs late; display shows the real lateness
+          status = actualMins - GRACE > 0 ? "late" : "on-time";
+          lateMins = status === "late" ? Math.max(0, actualMins) : 0;
         }
         return { sched, emp, ts, status, lateMins };
       });
