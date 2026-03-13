@@ -681,9 +681,17 @@ export default function Dashboard() {
   }), [myAdherence]);
 
   const [adherenceFilter, setAdherenceFilter] = useState<"all" | "not-in" | "late" | "absent" | "on-time" | "done" | "unscheduled">("all");
+
+  // For the supervisor personal card — only direct reports
   const filteredAdherence = useMemo(() =>
     adherenceFilter === "all" ? myAdherence : myAdherence.filter((r) => r.status === adherenceFilter),
     [myAdherence, adherenceFilter],
+  );
+
+  // For the main right-panel & fullscreen — all employees (admins + supervisors both see everyone)
+  const allFilteredAdherence = useMemo(() =>
+    adherenceFilter === "all" ? todayAdherence : todayAdherence.filter((r) => r.status === adherenceFilter),
+    [todayAdherence, adherenceFilter],
   );
   // ── Approval actions ─────────────────────────────────────────────────────────
   const submitApproval = async () => {
@@ -1017,7 +1025,7 @@ export default function Dashboard() {
         {/* Mobile: shows as its own tab */}
         <div className={`${mobileDashTab === "adherence" ? "block" : "hidden"} md:hidden`} data-testid="panel-adherence-mobile">
           <AdherencePanel
-            rows={filteredAdherence}
+            rows={allFilteredAdherence}
             summary={adherenceSummary}
             adherenceFilter={adherenceFilter}
             setAdherenceFilter={setAdherenceFilter}
@@ -1299,7 +1307,7 @@ export default function Dashboard() {
               </div>
               <div className="flex-1 overflow-y-auto">
                 <AdherencePanel
-                  rows={filteredAdherence}
+                  rows={allFilteredAdherence}
                   summary={adherenceSummary}
                   adherenceFilter={adherenceFilter}
                   setAdherenceFilter={setAdherenceFilter}
@@ -1346,7 +1354,7 @@ export default function Dashboard() {
                 {/* Adherence content — full screen */}
                 <div className="flex-1 overflow-y-auto">
                   <AdherencePanel
-                    rows={filteredAdherence}
+                    rows={allFilteredAdherence}
                     summary={adherenceSummary}
                     adherenceFilter={adherenceFilter}
                     setAdherenceFilter={setAdherenceFilter}
