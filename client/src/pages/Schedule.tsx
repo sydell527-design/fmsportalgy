@@ -741,9 +741,17 @@ export default function SchedulePage() {
     [allUsers]
   );
 
+  // Supervisors only see / manage employees whose 1st approver (fa) is the supervisor's position
+  const supervisorDirectReports = useMemo(
+    () => activeEmployees.filter((u) => u.fa === user?.pos),
+    [activeEmployees, user?.pos]
+  );
+
   // Fetch schedules
   const teamEids = isPrivileged
-    ? activeEmployees.map((u) => u.userId)
+    ? (isSupervisor
+        ? supervisorDirectReports.map((u) => u.userId)
+        : activeEmployees.map((u) => u.userId))
     : [user?.userId ?? ""];
 
   const { data: teamSchedules = [] } = useTeamSchedules(teamEids);
@@ -891,15 +899,23 @@ export default function SchedulePage() {
     return m;
   }, [schedules]);
 
+  // The employee list available for scheduling actions — supervisors limited to direct reports
+  const managedEmployees = isSupervisor ? supervisorDirectReports : activeEmployees;
+
   // Grid employee rows (filtered by search)
+  // Supervisors: only their direct reports (fa === supervisor.pos); admins: all
   const gridEmployees = useMemo(() => {
-    let base = isPrivileged ? activeEmployees : activeEmployees.filter((u) => u.userId === user?.userId);
+    let base = !isPrivileged
+      ? activeEmployees.filter((u) => u.userId === user?.userId)
+      : isSupervisor
+        ? supervisorDirectReports
+        : activeEmployees;
     if (gridSearch.trim()) {
       const q = gridSearch.toLowerCase();
       base = base.filter((e) => e.name.toLowerCase().includes(q) || e.userId.toLowerCase().includes(q));
     }
     return base;
-  }, [isPrivileged, activeEmployees, user, gridSearch]);
+  }, [isPrivileged, isSupervisor, activeEmployees, supervisorDirectReports, user, gridSearch]);
 
   function empName(eid: string) { return allUsers.find((u) => u.userId === eid)?.name ?? eid; }
 
@@ -1188,6 +1204,7 @@ export default function SchedulePage() {
                     ) : (
                       agencyEmployees.map((emp) => {
                         const isSelected = selectedEids.has(emp.userId);
+                        const empHasAnyShift = days.some((d) => (scheduleMap[`${emp.userId}::${format(d, "yyyy-MM-dd")}`] ?? []).length > 0);
                         return (
                         <tr key={emp.userId} className={`border-t border-border/40 hover:bg-muted/10 group ${isSelected ? "bg-destructive/5" : ""}`}>
                           <td className={`py-2 pr-2 pl-2 align-middle sticky left-0 z-10 border-r border-border/40 ${isSelected ? "bg-destructive/5" : "bg-background group-hover:bg-muted/10"}`}>
@@ -1909,7 +1926,7 @@ export default function SchedulePage() {
       <RosterBuilder
         open={rosterOpen}
         onClose={() => setRosterOpen(false)}
-        employees={activeEmployees}
+        employees={managedEmployees}
         onSaved={refreshSchedules}
       />
 
@@ -1917,7 +1934,7 @@ export default function SchedulePage() {
       <BuilderDialog
         open={builderOpen}
         onClose={() => setBuilderOpen(false)}
-        employees={activeEmployees}
+        employees={managedEmployees}
         defaultEid={builderDefEid}
         defaultDate={builderDefDate}
         createdBy={user?.userId ?? ""}
@@ -1926,7 +1943,7 @@ export default function SchedulePage() {
 
       <EditDialog
         shift={editShift}
-        employees={activeEmployees}
+        employees={managedEmployees}
         onClose={() => setEditShift(null)}
         onSaved={refreshSchedules}
         onDelete={(s) => { setEditShift(null); setDeleteTarget(s); }}
