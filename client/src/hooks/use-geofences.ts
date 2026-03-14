@@ -1,13 +1,12 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, buildUrl, type InsertGeofence, type Geofence } from "@shared/routes";
+import { cachedGetJson } from "@/lib/offlineApi";
 
 export function useGeofences() {
   return useQuery<Geofence[]>({
     queryKey: [api.geofences.list.path],
     queryFn: async () => {
-      const res = await fetch(api.geofences.list.path);
-      if (!res.ok) throw new Error("Failed to fetch geofences");
-      return res.json();
+      return cachedGetJson<Geofence[]>(api.geofences.list.path);
     },
   });
 }

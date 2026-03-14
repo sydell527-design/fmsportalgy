@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, buildUrl, type InsertTimesheet, type Timesheet } from "@shared/routes";
+import { cachedGetJson, queueMutation, shadowCreate, shadowListCreates, shadowGetPatch, shadowPatch } from "@/lib/offlineApi";
 
 export interface TimesheetFilters {
   startDate?: string;
@@ -28,9 +29,22 @@ export function useTimesheets(filters: TimesheetFilters = {}) {
   return useQuery<Timesheet[]>({
     queryKey,
     queryFn: async () => {
-      const res = await fetch(url, { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to fetch timesheets");
-      return api.timesheets.list.responses[200].parse(await res.json());
+      const base = api.timesheets.list.responses[200].parse(
+        await cachedGetJson(url, { credentials: "include" }),
+      );
+
+      const pendingCreates = await shadowListCreates("timesheets");
+      const localCreates = pendingCreates.map((c) => c.value) as Timesheet[];
+
+      const patched = await Promise.all(
+        base.map(async (t) => {
+          const p = await shadowGetPatch<Partial<Timesheet>>("timesheets", String(t.id));
+          return p ? ({ ...t, ...p } as Timesheet) : t;
+        }),
+      );
+
+      // Show local items (pending) first, then patched server items.
+      return [...localCreates, ...patched];
     },
     refetchInterval: 10_000,
     refetchOnWindowFocus: true,
@@ -42,6 +56,15 @@ export function useCreateTimesheet() {
   return useMutation({
     mutationFn: async (data: InsertTimesheet) => {
       const validated = api.timesheets.create.input.parse(data);
+
+      if (!navigator.onLine) {
+        await shadowCreate("timesheets", validated.tsId, validated);
+        await queueMutation(api.timesheets.create.method, api.timesheets.create.path, validated, {
+          credentials: "include",
+        });
+        return validated as unknown as Timesheet;
+      }
+
       const res = await fetch(api.timesheets.create.path, {
         method: api.timesheets.create.method,
         headers: { "Content-Type": "application/json" },
@@ -61,6 +84,15 @@ export function useUpdateTimesheet() {
     mutationFn: async ({ id, ...updates }: { id: number } & Partial<InsertTimesheet>) => {
       const validated = api.timesheets.update.input.parse(updates);
       const url = buildUrl(api.timesheets.update.path, { id });
+
+      if (!navigator.onLine) {
+        await shadowPatch("timesheets", String(id), validated);
+        await queueMutation(api.timesheets.update.method, url, validated, {
+          credentials: "include",
+        });
+        return ({ id, ...validated } as unknown) as Timesheet;
+      }
+
       const res = await fetch(url, {
         method: api.timesheets.update.method,
         headers: { "Content-Type": "application/json" },

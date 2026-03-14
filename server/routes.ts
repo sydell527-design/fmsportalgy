@@ -433,19 +433,22 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 async function seedDatabase() {
   const existing = await storage.getUsers();
 
-  // Always seed geofences if table is empty
+  // Always seed geofences (idempotent: only create missing names)
+  const geoSeed = [
+    { name:"HEAD OFFICE", lat:6.813348605011895, lng:-58.14785407612874, radius:150, description:"FMS Head Office, Georgetown", active:true },
+    { name:"CARICOM", lat:6.820304251566827, lng:-58.11685547637608, radius:200, description:"CARICOM Secretariat", active:true },
+    { name:"EU", lat:6.8080, lng:-58.1600, radius:200, description:"European Union Office", active:true },
+    { name:"UN", lat:6.8100, lng:-58.1550, radius:200, description:"UN House Guyana", active:true },
+    { name:"DMC", lat:6.8050, lng:-58.1620, radius:200, description:"Diamond/Eccles area", active:true },
+    { name:"ARU", lat:6.8120, lng:-58.1480, radius:200, description:"Arouca site", active:true },
+    { name:"CANTEEN", lat:6.813512295307431, lng:-58.147828217112774, radius:80, description:"Onsite Canteen", active:true },
+  ];
   const existingGeo = await storage.getGeofences();
-  if (existingGeo.length === 0) {
-    const geoSeed = [
-      { name:"HEAD OFFICE", lat:6.813348605011895, lng:-58.14785407612874, radius:150, description:"FMS Head Office, Georgetown", active:true },
-      { name:"CARICOM", lat:6.820304251566827, lng:-58.11685547637608, radius:200, description:"CARICOM Secretariat", active:true },
-      { name:"EU", lat:6.8080, lng:-58.1600, radius:200, description:"European Union Office", active:true },
-      { name:"UN", lat:6.8100, lng:-58.1550, radius:200, description:"UN House Guyana", active:true },
-      { name:"DMC", lat:6.8050, lng:-58.1620, radius:200, description:"Diamond/Eccles area", active:true },
-      { name:"ARU", lat:6.8120, lng:-58.1480, radius:200, description:"Arouca site", active:true },
-      { name:"CANTEEN", lat:6.813512295307431, lng:-58.147828217112774, radius:80, description:"Onsite Canteen", active:true },
-    ];
-    for (const g of geoSeed) await storage.createGeofence(g);
+  const existingGeoNames = new Set(existingGeo.map((g) => g.name));
+  for (const g of geoSeed) {
+    if (!existingGeoNames.has(g.name)) {
+      await storage.createGeofence(g);
+    }
   }
 
   if (existing.length > 0) return;
@@ -484,16 +487,4 @@ async function seedDatabase() {
     { reqId:"REQ004", eid:"1004", type:"Shift Swap", sub:"Shift Swap", start:`${year}-${month}-22`, end:`${year}-${month}-22`, reason:"Personal commitment", status:"pending", at:`${year}-${month}-16 10:00`, comments:[] },
   ];
   for (const req of reqseed) await storage.createRequest(req as any);
-
-  // Seed geofences
-  const geoSeed = [
-    { name:"HEAD OFFICE", lat:6.813348605011895, lng:-58.14785407612874, radius:150, description:"FMS Head Office, Georgetown", active:true },
-    { name:"CARICOM", lat:6.820304251566827, lng:-58.11685547637608, radius:200, description:"CARICOM Secretariat", active:true },
-    { name:"EU", lat:6.8080, lng:-58.1600, radius:200, description:"European Union Office", active:true },
-    { name:"UN", lat:6.8100, lng:-58.1550, radius:200, description:"UN House Guyana", active:true },
-    { name:"DMC", lat:6.8050, lng:-58.1620, radius:200, description:"Diamond/Eccles area", active:true },
-    { name:"ARU", lat:6.8120, lng:-58.1480, radius:200, description:"Arouca site", active:true },
-    { name:"CANTEEN", lat:6.813512295307431, lng:-58.147828217112774, radius:80, description:"Onsite Canteen", active:true },
-  ];
-  for (const g of geoSeed) await storage.createGeofence(g);
 }

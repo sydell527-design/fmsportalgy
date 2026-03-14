@@ -4,6 +4,8 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useAuth } from "@/hooks/use-auth";
+import { useEffect } from "react";
+import { flushOfflineQueue } from "@/lib/offlineSync";
 
 import NotFound from "@/pages/not-found";
 import Login from "@/pages/Login";
@@ -55,6 +57,23 @@ function Router() {
 }
 
 function App() {
+  useEffect(() => {
+    const tryFlush = async () => {
+      if (!navigator.onLine) return;
+      const { sent } = await flushOfflineQueue();
+      if (sent > 0) {
+        queryClient.invalidateQueries();
+      }
+    };
+
+    // Flush once on mount if online.
+    void tryFlush();
+
+    // Flush every time we reconnect.
+    window.addEventListener("online", tryFlush);
+    return () => window.removeEventListener("online", tryFlush);
+  }, []);
+
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>

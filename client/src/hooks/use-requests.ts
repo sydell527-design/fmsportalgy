@@ -1,13 +1,20 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, buildUrl, type InsertRequest, type Request } from "@shared/routes";
+import { cachedGetJson, queueMutation, shadowCreate, shadowListCreates } from "@/lib/offlineApi";
 
 export function useRequests() {
   return useQuery<Request[]>({
     queryKey: [api.requests.list.path],
     queryFn: async () => {
-      const res = await fetch(api.requests.list.path, { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to fetch requests");
-      return api.requests.list.responses[200].parse(await res.json());
+      const base = api.requests.list.responses[200].parse(
+        await cachedGetJson(api.requests.list.path, { credentials: "include" }),
+      );
+
+      const pendingCreates = await shadowListCreates("requests");
+      const local = pendingCreates.map((c) => c.value) as Request[];
+
+      // Show local (pending) items first so the user can see what they submitted offline.
+      return [...local, ...base];
     },
   });
 }
@@ -17,6 +24,16 @@ export function useCreateRequest() {
   return useMutation({
     mutationFn: async (data: InsertRequest) => {
       const validated = api.requests.create.input.parse(data);
+
+      if (!navigator.onLine) {
+        await shadowCreate("requests", validated.reqId, validated);
+        await queueMutation(api.requests.create.method, api.requests.create.path, validated, {
+          credentials: "include",
+        });
+        // Return a local placeholder that matches the Request shape.
+        return validated as unknown as Request;
+      }
+
       const res = await fetch(api.requests.create.path, {
         method: api.requests.create.method,
         headers: { "Content-Type": "application/json" },
