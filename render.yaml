@@ -3,6 +3,7 @@ services:
     name: fmsportalgy-api
     env: node
     plan: free
+    rootDirectory: .
     buildCommand: npm run build
     startCommand: npm run start
     envVars:
