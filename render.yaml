@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: fmsportalgy-api
+    env: node
+    plan: free
+    buildCommand: npm run build
+    startCommand: npm run start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+  - type: postgres
+    name: fmsportalgy-db
+    plan: free
+    ipAllowList: []
+    connectionMethod: direct
+databases:
+  - name: fmsportalgy-db
