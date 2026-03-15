@@ -11,10 +11,15 @@ import {
   shadowPatchPut,
 } from "./offlineDb";
 
+const API_BASE = import.meta.env.PROD
+  ? 'https://fmsportalgy-api-production.up.railway.app'
+  : 'http://localhost:5000';
+
 export async function cachedGetJson<T>(url: string, init?: RequestInit): Promise<T> {
+  const fullUrl = url.startsWith('http') ? url : `${API_BASE}${url}`;
   try {
-    const res = await fetch(url, init);
-    if (!res.ok) throw new Error(`Failed to fetch ${url}`);
+    const res = await fetch(fullUrl, init);
+    if (!res.ok) throw new Error(`Failed to fetch ${fullUrl}`);
     const json = (await res.json()) as T;
     await cacheSet(url, json);
     return json;

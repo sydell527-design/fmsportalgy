@@ -1,4 +1,7 @@
 import { db } from "./db";
+import { eq, desc, inArray, and, gte, lte } from "drizzle-orm";
+import { eq as eq2, desc as desc2, inArray as inArray2, and as and2, gte as gte2, lte as lte2 } from "drizzle-orm";
+import { setCache, getCache, clearCache } from "./cache";
 import {
   users, timesheets, requests, geofences, employeeChildren, employeeLoans, schedules, callSigns, companySettings, payslips, periodDeductions, passwordResetRequests,
   type User, type InsertUser,
@@ -101,13 +104,29 @@ export class DatabaseStorage implements IStorage {
     const [u] = await db.select().from(users).where(eq(users.username, username));
     return u;
   }
-  async getUsers() { return db.select().from(users); }
+  async getUsers() {
+    const cacheKey = "users:all";
+    const cached = getCache<User[]>(cacheKey);
+    if (cached) return cached;
+    
+    const userList = await db.select().from(users);
+    setCache(cacheKey, userList, 10 * 60 * 1000); // 10 minutes
+    return userList;
+  }
   async createUser(user: InsertUser) {
-    const [u] = await db.insert(users).values(user).returning();
+    const values = {
+      ...user,
+      geo: Array.isArray(user.geo) ? user.geo : []
+    };
+    const [u] = await db.insert(users).values(values).returning();
     return u;
   }
   async updateUser(id: number, updates: Partial<InsertUser>) {
-    const [u] = await db.update(users).set(updates).where(eq(users.id, id)).returning();
+    const values = {
+      ...updates,
+      geo: updates.geo && Array.isArray(updates.geo) ? updates.geo : undefined
+    };
+    const [u] = await db.update(users).set(values).where(eq(users.id, id)).returning();
     return u;
   }
   async deleteUser(id: number) {
@@ -184,7 +203,22 @@ export class DatabaseStorage implements IStorage {
     return toDelete.length;
   }
 
-  async getRequests() { return db.select().from(requests); }
+  async getTimesheets(limit = 1000, offset = 0, eid?: string) {
+    let query = db.select().from(timesheets).orderBy(desc(timesheets.date)).limit(limit).offset(offset);
+    if (eid) {
+      query = query.where(eq(timesheets.eid, eid));
+    }
+    return query;
+  }
+
+  async getRequests(limit = 1000, offset = 0, eid?: string) {
+    let query = db.select().from(requests).orderBy(desc(requests.id)).limit(limit).offset(offset);
+    if (eid) {
+      query = query.where(eq(requests.eid, eid));
+    }
+    return query;
+  }
+
   async getRequest(id: number) {
     const [r] = await db.select().from(requests).where(eq(requests.id, id));
     return r;
@@ -204,11 +238,19 @@ export class DatabaseStorage implements IStorage {
     return g;
   }
   async createGeofence(geo: InsertGeofence) {
-    const [g] = await db.insert(geofences).values(geo).returning();
+    const values = {
+      ...geo,
+      postNames: Array.isArray(geo.postNames) ? geo.postNames : []
+    };
+    const [g] = await db.insert(geofences).values(values).returning();
     return g;
   }
   async updateGeofence(id: number, updates: Partial<InsertGeofence>) {
-    const [g] = await db.update(geofences).set(updates).where(eq(geofences.id, id)).returning();
+    const values = {
+      ...updates,
+      postNames: updates.postNames && Array.isArray(updates.postNames) ? updates.postNames : undefined
+    };
+    const [g] = await db.update(geofences).set(values).where(eq(geofences.id, id)).returning();
     return g;
   }
   async deleteGeofence(id: number) {

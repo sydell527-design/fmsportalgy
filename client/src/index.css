@@ -28,25 +28,19 @@
     --secondary-foreground: 211 47% 12%;
 
     --muted: 210 30% 94%;
-    --muted-foreground: 215 16% 47%;
+    --muted-foreground: 211 47% 45%;
 
-    --accent: 210 30% 92%;
+    --accent: 210 30% 96%;
     --accent-foreground: 211 47% 12%;
 
     --destructive: 0 84% 60%;
-    --destructive-foreground: 0 0% 100%;
-
-    --success: 127 42% 32%;
-    --success-foreground: 0 0% 100%;
-
-    --warning: 38 92% 50%;
-    --warning-foreground: 48 96% 89%;
+    --destructive-foreground: 0 0% 98%;
 
     --border: 214 32% 91%;
     --input: 214 32% 91%;
     --ring: 127 42% 32%;
 
-    --radius: 0.75rem;
+    --radius: 0.5rem;
 
     /* Sidebar: FMS Dark Navy (matches logo left block) */
     --sidebar: 211 73% 17%;
@@ -57,39 +51,67 @@
   }
 
   .dark {
-    --background: 211 47% 10%;
+    --background: 222 84% 5%;
     --foreground: 210 40% 98%;
-    --card: 211 47% 13%;
+    --card: 222 84% 5%;
     --card-foreground: 210 40% 98%;
-    --popover: 211 47% 13%;
+    --card-border: 217 33% 13%;
+    --popover: 222 84% 5%;
     --popover-foreground: 210 40% 98%;
-    --primary: 127 42% 40%;
-    --primary-foreground: 0 0% 100%;
-    --secondary: 211 33% 18%;
+    --primary: 127 42% 45%;
+    --primary-foreground: 222 84% 5%;
+    --secondary: 217 33% 13%;
     --secondary-foreground: 210 40% 98%;
-    --muted: 211 33% 18%;
-    --muted-foreground: 215 20% 65%;
-    --accent: 211 33% 18%;
+    --muted: 217 33% 13%;
+    --muted-foreground: 210 40% 63%;
+    --accent: 217 33% 13%;
     --accent-foreground: 210 40% 98%;
     --destructive: 0 62% 30%;
     --destructive-foreground: 210 40% 98%;
-    --border: 211 33% 18%;
-    --input: 211 33% 18%;
-    --ring: 127 42% 40%;
+    --border: 217 33% 13%;
+    --input: 217 33% 13%;
+    --ring: 127 42% 45%;
   }
-}
 
-@layer base {
   * {
     @apply border-border;
   }
+
   body {
     @apply bg-background text-foreground antialiased;
     font-family: var(--font-sans);
+    font-feature-settings: "rlig" 1, "calt" 1;
   }
+
   h1, h2, h3, h4, h5, h6 {
     font-family: var(--font-display);
     @apply font-bold tracking-tight;
+  }
+
+  /* Smooth scrolling for mobile */
+  html {
+    scroll-behavior: smooth;
+    -webkit-text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Better touch targets on mobile */
+  button, a, input, textarea, select {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Prevent horizontal scroll on mobile */
+  body {
+    overflow-x: hidden;
+    max-width: 100vw;
+  }
+
+  /* Better mobile viewport handling */
+  @supports (-webkit-touch-callout: none) {
+    .container {
+      padding-left: max(1rem, env(safe-area-inset-left));
+      padding-right: max(1rem, env(safe-area-inset-right));
+    }
   }
 }
 

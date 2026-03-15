@@ -1,6 +1,10 @@
 import { queueDelete, queueList } from "./offlineDb";
 import { shadowDeleteCreate, shadowDeletePatch } from "./offlineApi";
 
+const API_BASE = import.meta.env.PROD
+  ? 'https://fmsportalgy-api-production.up.railway.app'
+  : 'http://localhost:5000';
+
 function getPathname(url: string): string {
   try {
     return new URL(url, window.location.origin).pathname;
@@ -18,7 +22,8 @@ export async function flushOfflineQueue(): Promise<{ attempted: number; sent: nu
     if (item.id === undefined) continue;
 
     try {
-      const res = await fetch(item.url, {
+      const fullUrl = item.url.startsWith('http') ? item.url : `${API_BASE}${item.url}`;
+      const res = await fetch(fullUrl, {
         method: item.method,
         headers: {
           "Content-Type": "application/json",

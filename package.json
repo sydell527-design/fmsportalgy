@@ -6,8 +6,9 @@
   "scripts": {
     "dev": "cross-env NODE_ENV=development tsx server/index.ts",
     "build": "tsx script/build.ts",
-    "start": "node dist/index.cjs",
+    "start": "cross-env NODE_ENV=production node dist/index.cjs",
     "start:prod": "cross-env NODE_ENV=production node dist/index.cjs",
+    "railway:start": "npm run build && npm start",
     "check": "tsc",
     "db:push": "dotenv -e .env -- drizzle-kit push"
   },

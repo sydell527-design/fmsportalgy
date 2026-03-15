@@ -107,7 +107,10 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
 
   // ── REQUESTS ──────────────────────────────────────────────────────────────
-  app.get(api.requests.list.path, async (_req, res) => res.json(await storage.getRequests()));
+  app.get(api.requests.list.path, async (req, res) => {
+    const { limit = "1000", offset = "0", eid } = req.query as Record<string, string>;
+    res.json(await storage.getRequests(Number(limit), Number(offset), eid));
+  });
   app.post(api.requests.create.path, async (req, res) => {
     try {
       const input = api.requests.create.input.parse(req.body);
