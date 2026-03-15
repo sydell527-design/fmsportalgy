@@ -6,6 +6,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { useAuth } from "@/hooks/use-auth";
 import { useEffect } from "react";
 import { flushOfflineQueue } from "@/lib/offlineSync";
+import SyncStatus from "@/components/SyncStatus";
 
 import NotFound from "@/pages/not-found";
 import Login from "@/pages/Login";
@@ -79,6 +80,7 @@ function App() {
       <TooltipProvider>
         <Toaster />
         <Router />
+        <SyncStatus />
       </TooltipProvider>
     </QueryClientProvider>
   );

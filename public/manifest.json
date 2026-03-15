@@ -1,0 +1,27 @@
+{
+  "name": "FMS Time Tracker",
+  "short_name": "FMS Tracker",
+  "description": "Field Management System Time Tracking for Security Officers",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#1e293b",
+  "theme_color": "#3b82f6",
+  "orientation": "portrait",
+  "scope": "/",
+  "icons": [
+    {
+      "src": "/fms_logo_acronym_(2)_1773261874549-DfpcKGxE.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/fms_logo_acronym_(2)_1773261874549-DfpcKGxE.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ],
+  "categories": ["business", "productivity", "utilities"],
+  "lang": "en",
+  "dir": "ltr",
+  "prefer_related_applications": false
+}
