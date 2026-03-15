@@ -23,6 +23,11 @@ app.use(
 
 app.use(express.urlencoded({ extended: false }));
 
+// Add health check route for Railway
+app.get('/', (req, res) => { 
+  res.status(200).json({ status: 'ok', message: 'Server is running' }); 
+});
+
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {
     hour: "numeric",
@@ -88,30 +93,8 @@ app.use((req, res, next) => {
     await setupVite(httpServer, app);
   }
 
-  const port = parseInt(process.env.PORT || "5000", 10);
-  httpServer.listen(
-    {
-      port,
-      host: "0.0.0.0",
-      ...(process.platform !== "win32" ? { reusePort: true } : {}),
-    },
-    () => {
-      log(`serving on port ${port}`);
-
-      if (process.env.NODE_ENV === "production") {
-        const domains = process.env.REPLIT_DOMAINS ?? "";
-        const host = domains.split(",").find((d) => d.includes(".replit.app"))?.trim();
-        if (host) {
-          const pingUrl = `https://${host}/api/health`;
-          setInterval(async () => {
-            try {
-              const { default: https } = await import("https");
-              https.get(pingUrl, (r) => r.resume()).on("error", () => {});
-            } catch {}
-          }, 4 * 60 * 1000);
-          log(`keep-alive ping scheduled → ${pingUrl}`);
-        }
-      }
-    },
-  );
+  const PORT = process.env.PORT || 5000;
+httpServer.listen(PORT, '0.0.0.0', () => {
+  console.log('Server running on port ' + PORT);
+});
 })();

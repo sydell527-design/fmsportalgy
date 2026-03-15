@@ -2,7 +2,7 @@ import { queueDelete, queueList } from "./offlineDb";
 import { shadowDeleteCreate, shadowDeletePatch } from "./offlineApi";
 
 const API_BASE = import.meta.env.PROD
-  ? 'https://fmsportalgy-api-production.up.railway.app'
+  ? 'https://debora-unstandard-feyly.ngrok-free.dev'
   : 'http://localhost:5000';
 
 function getPathname(url: string): string {
